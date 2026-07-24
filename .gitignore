@@ -1,0 +1,10 @@
+*.xmind
+*.h5ad
+*.pyc
+*.ai
+.env
+.opencode*
+*.ipynb
+*.png
+*.json
+*.csv
