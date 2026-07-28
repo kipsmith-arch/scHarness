@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-pipeline 有 46 个原子操作,产出 177 个统计指标;LLM 在 13 个决策点做判断。所有指标和判断需要:
+pipeline 有 47 个原子操作,产出 247 个统计指标;LLM 在 13 个决策点做判断。所有指标和判断需要:
 
 1. **统一存储** — 一个文件,append-only,不覆盖
 2. **时间线** — 时间戳 + 序号,自然区分新旧
@@ -178,7 +178,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | kg_match | step3_kg query_genes 后 | session | 1 |
 | candidate_gap | step4_judge rank_candidates 后 | cluster | N(簇数) |
 | candidate_disambiguate | step4_judge rank_candidates 后 | cluster | ≤N(仅并列簇) |
-| refine_effect | step5_refine subcluster + marker_overlap 后 | cluster | ≤N(仅 analyzed 簇) |
+| refine_effect | step5_refine candidate_autocorr + subcluster + marker_overlap 后 | cluster | ≤N(仅 analyzed 簇) |
 | unknown_cluster | step5_refine unknown_overlap 后 | session | 1 |
 | label_confirm | step6_validate marker_expression 后 | cluster | N(簇数) |
 | global_quality | step7_diagnose cross_cluster 后 | session | 1 |
@@ -197,7 +197,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | marker_quality | `markers_accept` / `markers_adjust_filter` / `markers_fail` | 接受 / 调参 / 失败 |
 | kg_match | `id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ` | ID 匹配诊断 |
 | candidate_gap | `first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown` | 候选差距判断 |
-| refine_effect | `refine_effective` / `refine_ineffective` / `refine_skipped` | 子聚类效果 |
+| refine_effect | `refine_effective` / `refine_ineffective` / `refine_skipped` / `refine_autocorr_low` | 子聚类效果(含 candidate_autocorr 预判) |
 | unknown_cluster | `single_unknown_type` / `multiple_unknown_types` | Unknown 簇判断 |
 | label_confirm | `label_confirmed` / `label_downgraded` / `label_unknown` | 逐簇标签确认 |
 | global_quality | `quality_good` / `quality_acceptable` / `quality_poor` | 全局质量 |
@@ -670,7 +670,7 @@ atomic_operations.md
     │ defines 46 ops
     ▼
 operations_metrics_catalog.md
-    │ defines 177 metrics per op
+    │ defines 247 metrics per op
     ▼
 tool_design.md
     │ implements ops, computes metrics

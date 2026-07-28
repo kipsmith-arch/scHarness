@@ -12,62 +12,63 @@
 - **候选指标**: 见 `operations_metrics_catalog.md` 对应的 Op 编号
 - **依赖**: 必须先完成的操作
 
-共 **46 个原子操作**,分布在 **7 个阶段**。当前由 **7 个脚本**实现,其中 `step1_prepare.py` 单独承担 16 个操作。
+共 **47 个原子操作**,分布在 **7 个阶段**。当前由 **7 个脚本**实现,其中 `step1_prepare.py` 单独承担 16 个操作。
 
 ---
 
 ## 全局操作索引
 
-| ID | 操作名 | 阶段 | 当前脚本 | 当前指标数 | 候选指标数 |
+| ID | 操作名 | 阶段 | 当前脚本 | 核心指标数 | 扩展指标数 |
 |---|---|---|---|---|---|
 | step1_prepare.load_data | 加载原始数据 | 1 数据准备 | step1_prepare.py | 0 | 0 |
-| step1_prepare.compute_qc | 计算质控变量 | 1 | step1_prepare.py | 5 | 10 |
-| step1_prepare.qc_distribution | 质控分布统计 | 1 | step1_prepare.py | 3 | 7 |
+| step1_prepare.compute_qc | 计算质控变量 | 1 | step1_prepare.py | 8 | 6 |
+| step1_prepare.qc_distribution | 质控分布统计 | 1 | step1_prepare.py | 2 | 5 |
 | step1_prepare.qc_plot | 质控可视化 | 1 | step1_prepare.py | 0 | 0 |
-| step1_prepare.filter_cells | 细胞过滤(多准则) | 1 | step1_prepare.py | 2 | 6 |
-| step1_prepare.filter_genes | 基因过滤(多准则) | 1 | step1_prepare.py | 0 | 3 |
-| step1_prepare.detect_doublets | 双峰检测与移除 | 1 | step1_prepare.py | 0 | 4 |
+| step1_prepare.filter_cells | 细胞过滤(多准则) | 1 | step1_prepare.py | 5 | 4 |
+| step1_prepare.filter_genes | 基因过滤(多准则) | 1 | step1_prepare.py | 3 | 2 |
+| step1_prepare.detect_doublets | 双峰检测与移除 | 1 | step1_prepare.py | 3 | 2 |
 | step1_prepare.normalize | 归一化 | 1 | step1_prepare.py | 0 | 4 |
-| step1_prepare.select_hvg | HVG 选择与子集化 | 1 | step1_prepare.py | 1 | 5 |
-| step1_prepare.pca | 缩放与 PCA | 1 | step1_prepare.py | 0 | 5 |
-| step1_prepare.knn_graph | kNN 邻域图构建 | 1 | step1_prepare.py | 0 | 6 |
-| step1_prepare.leiden_cluster | Leiden 聚类(多分辨率) | 1 | step1_prepare.py | 1 | 16 |
-| step1_prepare.choose_resolution | 分辨率选择 | 1 | step1_prepare.py | 2 | 8 |
-| step1_prepare.umap | UMAP 嵌入 | 1 | step1_prepare.py | 0 | 7 |
-| step1_prepare.batch_mixing | 批次混合评估 | 1 | step1_prepare.py | 1 | 4 |
+| step1_prepare.select_hvg | HVG 选择与子集化 | 1 | step1_prepare.py | 3 | 4 |
+| step1_prepare.pca | 缩放与 PCA | 1 | step1_prepare.py | 5 | 2 |
+| step1_prepare.knn_graph | kNN 邻域图构建 | 1 | step1_prepare.py | 1 | 6 |
+| step1_prepare.leiden_cluster | Leiden 聚类(多分辨率) | 1 | step1_prepare.py | 9 | 8 |
+| step1_prepare.choose_resolution | 分辨率选择 | 1 | step1_prepare.py | 5 | 5 |
+| step1_prepare.umap | UMAP 嵌入 | 1 | step1_prepare.py | 1 | 7 |
+| step1_prepare.batch_mixing | 批次混合评估 | 1 | step1_prepare.py | 4 | 3 |
 | step1_prepare.write_output | 写出处理后数据与指标 | 1 | step1_prepare.py | — | — |
-| step2_markers.de_rank | DE 排序 | 2 Marker | step2_markers.py | 2 | 9 |
+| step2_markers.de_rank | DE 排序 | 2 Marker | step2_markers.py | 7 | 6 |
 | step2_markers.pct1_pct2 | pct1/pct2 计算 | 2 | step2_markers.py | 3 | 4 |
-| step2_markers.filter_markers | Marker 过滤 | 2 | step2_markers.py | 2 | 4 |
+| step2_markers.filter_markers | Marker 过滤 | 2 | step2_markers.py | 6 | 3 |
 | step2_markers.pseudobulk_de | 稀有簇 Pseudobulk DE | 2 | step2_markers.py | 2 | 2 |
 | step2_markers.write_markers | 写出 markers | 2 | step2_markers.py | — | — |
-| step3_kg.connect | KG 连接与来源 | 3 KG | step3_kg.py | 3 | 0 |
-| step3_kg.query_genes | KG 查询(基因→细胞类型) | 3 | step3_kg.py | 2 | 4 |
+| step3_kg.connect | KG 连接与来源 | 3 KG | step3_kg.py | 0 | 0 |
+| step3_kg.query_genes | KG 查询(基因→细胞类型) | 3 | step3_kg.py | 2 | 6 |
 | step3_kg.query_hierarchy | 本体层级查询 | 3 | step3_kg.py | 0 | 0 |
-| step3_kg.aggregate_candidates | 候选聚合 | 3 | step3_kg.py | 5 | 7 |
+| step3_kg.aggregate_candidates | 候选聚合 | 3 | step3_kg.py | 8 | 6 |
 | step3_kg.write_hits | 写出 KG 命中 | 3 | step3_kg.py | — | — |
-| step4_judge.rank_candidates | 候选排名(first/second) | 4 判断 | step4_judge.py | 5 | 6 |
+| step4_judge.rank_candidates | 候选排名(first/second) | 4 判断 | step4_judge.py | 9 | 4 |
 | step4_judge.write_annotations | 写出注释 | 4 | step4_judge.py | — | — |
+| step5_refine.candidate_autocorr | 候选倾向自相关(预判) | 5 细化 | step5_refine.py | 2 | 4 |
 | step5_refine.subcluster | 子聚类 | 5 细化 | step5_refine.py | 2 | 3 |
-| step5_refine.subcluster_de | 子簇 DE | 5 | step5_refine.py | 0 | 0 |
-| step5_refine.subcluster_kg | 子簇 KG 重查 | 5 | step5_refine.py | 4 | 1 |
-| step5_refine.marker_overlap | 子簇间 marker 重叠 | 5 | step5_refine.py | 2 | 4 |
-| step5_refine.type_membership | 类型归属检查 | 5 | step5_refine.py | 1 | 2 |
-| step5_refine.unknown_overlap | Unknown 簇 marker 重叠 | 5 | step5_refine.py | 2 | 2 |
+| step5_refine.subcluster_de | 子簇 DE | 5 | step5_refine.py | 3 | 1 |
+| step5_refine.subcluster_kg | 子簇 KG 重查 | 5 | step5_refine.py | 0 | 0 |
+| step5_refine.marker_overlap | 子簇间 marker 重叠 | 5 | step5_refine.py | 3 | 3 |
+| step5_refine.type_membership | 类型归属检查 | 5 | step5_refine.py | 1 | 3 |
+| step5_refine.unknown_overlap | Unknown 簇 marker 重叠 | 5 | step5_refine.py | 2 | 3 |
 | step5_refine.write_refined | 写出细化注释 | 5 | step5_refine.py | — | — |
-| step6_validate.marker_expression | Top marker 表达验证 | 6 验证 | step6_validate.py | 4 | 8 |
+| step6_validate.marker_expression | Top marker 表达验证 | 6 验证 | step6_validate.py | 7 | 8 |
 | step6_validate.violin_plot | 小提琴图生成 | 6 | step6_validate.py | 0 | 0 |
-| step6_validate.global_summary | 全局汇总统计 | 6 | step6_validate.py | 3 | 8 |
+| step6_validate.global_summary | 全局汇总统计 | 6 | step6_validate.py | 5 | 6 |
 | step6_validate.write_report | 报告生成 | 6 | step6_validate.py | — | — |
 | step6_validate.write_final | 写出最终注释 | 6 | step6_validate.py | — | — |
 | step7_diagnose.hit_rate | 每簇 KG 命中率 | 7 诊断 | step7_diagnose.py | 1 | 0 |
 | step7_diagnose.candidate_count | 每簇候选计数 | 7 | step7_diagnose.py | 1 | 0 |
-| step7_diagnose.first_second | 每簇 first/second | 7 | step7_diagnose.py | 2 | 0 |
-| step7_diagnose.batch_entropy | 每簇批次熵 | 7 | step7_diagnose.py | 1 | 0 |
+| step7_diagnose.first_second | 每簇 first/second | 7 | step7_diagnose.py | 1 | 0 |
+| step7_diagnose.batch_entropy | 每簇批次熵 | 7 | step7_diagnose.py | 2 | 1 |
 | step7_diagnose.metadata_check | 元数据完整性 | 7 | step7_diagnose.py | 1 | 0 |
-| step7_diagnose.cross_cluster | 跨簇测量与报告 | 7 | step7_diagnose.py | 0 | 6 |
+| step7_diagnose.cross_cluster | 跨簇测量与报告 | 7 | step7_diagnose.py | 0 | 9 |
 
-**汇总**: 当前已有指标 **55 个** | 候选新增指标 **146 个** | 完全空白操作 **11 个**
+**汇总**: 核心指标 **117 个** | 扩展指标 **130 个** | 完全空白操作 **13 个**
 
 ---
 
@@ -164,10 +165,13 @@ step1_prepare.load_data 加载原始数据
     ════════════════════════════════════════════
                   │
           ┌───────┴───────┐
-          │ first>second   │ first<=second
-          │ (decisive)     │
-          │               ▼
-          │        step5_refine.subcluster 子聚类(subset+PCA+neighbors+Leiden)
+           │ first>second   │ first<=second
+           │ (decisive)     │
+           │               ▼
+           │        step5_refine.candidate_autocorr 候选倾向自相关(score_genes + morans_i)
+           │               │
+           │               ▼ (morans_i 高→继续;低→refine_skipped)
+           │        step5_refine.subcluster 子聚类(subset+PCA+neighbors+Leiden)
           │               │
           │               ▼
           │        step5_refine.subcluster_de 子簇 DE(within parent scope)
@@ -634,6 +638,21 @@ step1_prepare.load_data 加载原始数据
 ---
 
 ### 阶段 5: 细化
+
+---
+
+#### step5_refine.candidate_autocorr　候选倾向自相关(预判细分必要性)
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 对 first<=second 的 ambiguous 簇:用 `sc.tl.score_genes` 计算每个细胞对两个候选的倾向分数,用 `sc.metrics.morans_i`/`gearys_c` 在 kNN 图上算自相关。**在 subcluster 之前执行**,高自相关→有子群体→细分有效;低自相关→marker 共享→可跳过细分 |
+| **输入** | processed.h5ad(kNN 图 + 表达) + step4/annotations.json(候选列表) + step3/kg_hits.json(候选 marker 基因列表) |
+| **输出** | per ambiguous cluster: {morans_i, gearys_c, score_distribution, cand1_score_mean, cand2_score_mean} |
+| **当前实现** | (新增,无旧实现) |
+| **当前指标** | (无) |
+| **候选指标** | 见 catalog step5_refine.candidate_autocorr: morans_i, gearys_c, score_distribution, score_bimodality_coefficient, cand1/2_score_mean |
+| **依赖** | step4_judge.write_annotations, step3_kg.write_hits, step1_prepare.knn_graph(kNN 图) |
+| **备注** | scanpy 接口:`sc.tl.score_genes(adata, gene_list, score_name)` + `sc.metrics.morans_i(adata, vals=score)`. 倾向分数 x_i = cand1_score - cand2_score. 预判逻辑不写进代码,LLM 根据 morans_i 决定是否触发 subcluster |
 
 ---
 

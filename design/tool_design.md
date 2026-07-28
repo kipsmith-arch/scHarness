@@ -5,7 +5,7 @@
 1. **最小化 h5ad 加载次数** — h5ad 文件可达 GB 级,每次 I/O 是主要时间瓶颈
 2. **最大化单次加载的计算密度** — 在一次加载中完成所有需要该数据的操作和指标计算
 3. **轻量中间件** — 将 obs/var/统计量分离写出,让不需要表达矩阵的操作读小文件而非 h5ad
-4. **零额外加载** — 146 个候选指标全部在已有加载中完成,不新增 h5ad 读取
+4. **零额外加载** — 130 个扩展指标全部在已有加载中完成,不新增 h5ad 读取
 5. **可恢复** — 每步输出独立 JSON,断点续跑无需从头开始
 6. **统一日志** — 所有指标和 LLM 判断写入 `run_log.jsonl`(见 `trajectory_design.md`)
 7. **环境变量管外部依赖** — 知识图谱等外部依赖通过环境变量配置,不硬编码在代码或配置文件中
@@ -58,6 +58,7 @@
 | step3_kg.write_hits 写出 KG 命中 | **JSON** | **不需要 h5ad** |
 | step4_judge.rank_candidates 候选排名 | **JSON** (kg_hits.json) | **不需要 h5ad** |
 | step4_judge.write_annotations 写出注释 | **JSON** | **不需要 h5ad** |
+| step5_refine.candidate_autocorr 候选自相关 | **X** (kNN 图 + score_genes 需表达) | 否(在 step5_refine.subcluster 加载中完成) |
 | step5_refine.subcluster 子聚类 | **X + RAW** (但只需 ambiguous 簇的细胞) | 部分(backed 模式子集化) |
 | step5_refine.subcluster_de 子簇 DE | **RAW** (子集 raw.X) | 否(但在 step5_refine.subcluster 加载中已完成) |
 | step5_refine.subcluster_kg 子簇 KG 重查 | **JSON** (cached gene_to_cts) | **不需要 h5ad** |
@@ -283,7 +284,7 @@ step7_diagnose.py run      [0× h5ad]       → step7_diagnose.hit_rate~46 (read
 | 仅 step7_diagnose | 1 (proc h5ad) | 0 (读 obs_snapshot.csv) | **-1** |
 | recluster | 1 (proc h5ad) | 1 (proc h5ad) | 0 |
 | step6_validate report | 1 (proc h5ad) | 0 (读 final.json) | **-1** |
-| 新增 146 个候选指标 | 需要额外 N 次加载 | **0 次额外加载** | **全部在已有加载中完成** |
+| 新增 130 个扩展指标 | 需要额外 N 次加载 | **0 次额外加载** | **全部在已有加载中完成** |
 
 ### 4.3 详细数据流
 
@@ -855,9 +856,49 @@ def resolution_stability(adata, res_list):
 
 **适用操作:** step1_prepare.choose_resolution
 
----
+### 6.9 candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers) → dict
 
-## 7. obs_snapshot.csv 的使用场景
+```python
+def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
+    """Compute Moran's I / Geary's C of candidate preference score on kNN graph.
+
+    Uses scanpy built-in: sc.tl.score_genes + sc.metrics.morans_i/gearys_c.
+    The kNN graph must already exist on cluster_adata (obsp['connectivities']).
+    """
+    import scanpy as sc
+    import numpy as np
+
+    # 1. Score each cell for both candidates
+    sc.tl.score_genes(cluster_adata, candidate1_markers, score_name="cand1_score")
+    sc.tl.score_genes(cluster_adata, candidate2_markers, score_name="cand2_score")
+
+    # 2. Candidate preference score
+    x = cluster_adata.obs["cand1_score"].values - cluster_adata.obs["cand2_score"].values
+
+    # 3. Moran's I and Geary's C (one-liner each, uses existing kNN graph)
+    moran = float(sc.metrics.morans_i(cluster_adata, vals=x))
+    geary = float(sc.metrics.gearys_c(cluster_adata, vals=x))
+
+    # 4. Score distribution (for LLM to check bimodality)
+    dist = describe_distribution(x)
+
+    return {
+        "morans_i": moran,
+        "gearys_c": geary,
+        "score_distribution": dist,
+        "score_bimodality_coefficient": dist.get("bimodality"),
+        "cand1_score_mean": float(cluster_adata.obs["cand1_score"].mean()),
+        "cand2_score_mean": float(cluster_adata.obs["cand2_score"].mean()),
+    }
+```
+
+**适用操作:** step5_refine.candidate_autocorr(预判 subcluster 必要性)
+
+**设计要点:**
+- `sc.tl.score_genes` 默认对 mean expression 做 z-score,再取均值——跨基因可比
+- kNN 图来自 step1_prepare.knn_graph,子集化后需在子集上重建 neighbors(子集空间 ≠ 全量空间的子空间)
+- 成本极低:两次 score_genes + 两次 morans_i,都是矩阵乘法级别
+- **不加载额外 h5ad**——在 step5_refine.subcluster 的 h5ad 加载中完成(子集化后直接算)
 
 | 操作 | 当前数据源 | 改用 obs_snapshot.csv 后 | 省掉的 h5ad 加载 |
 |---|---|---|---|
@@ -876,7 +917,7 @@ def resolution_stability(adata, res_list):
 ### Phase A: 通用函数 + Step 1 enrichment(最高价值)
 
 1. 在 `common.py` 中实现 8 个通用函数 + `append_log()` + `next_run_id()`
-2. 改造 `step1_prepare.py:cmd_run` — 在已有加载中增加全部 Step 1 候选指标,每个原子操作完成后调 `append_log()` 写入 `run_log.jsonl`
+2. 改造 `step1_prepare.py:cmd_run` — 在已有加载中增加全部 Step 1 扩展指标,每个原子操作完成后调 `append_log()` 写入 `run_log.jsonl`
 3. 新增 `obs_snapshot.csv` + `var_snapshot.csv` 写出
 4. 改造 `step1_prepare.py:cmd_metrics` — 增强分布统计
 
@@ -906,7 +947,7 @@ def resolution_stability(adata, res_list):
 
 ### Phase E: metrics_interpretation.md 更新
 
-12. 更新 `references/metrics_interpretation.md` — 增加所有新指标的 LLM 解读指南
+12. 更新 `knowledge/metrics_interpretation.md` — 增加所有新指标的 LLM 解读指南
 
 **验证:** 文档完整,所有 `run_log.jsonl` 中的指标字段都有解读说明
 
