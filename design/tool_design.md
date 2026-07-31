@@ -275,16 +275,16 @@ step6_validate.py report [0× h5ad]        → step6_validate.write_report (rege
 step7_diagnose.py run      [0× h5ad]       → step7_diagnose.hit_rate~46 (reads JSON + obs_snapshot.csv)
 ```
 
-### 4.2 加载次数对比
+### 4.2 加载次数
 
-| 场景 | 当前加载次数 | 设计后加载次数 | 变化 |
-|---|---|---|---|
-| 完整 pipeline(含 step7_diagnose) | 5 (1 raw + 4 proc) | 4 (1 raw + 3 proc) | **-1** |
-| 完整 pipeline(不含 step7_diagnose) | 4 (1 raw + 3 proc) | 4 (1 raw + 3 proc) | 0 |
-| 仅 step7_diagnose | 1 (proc h5ad) | 0 (读 obs_snapshot.csv) | **-1** |
-| recluster | 1 (proc h5ad) | 1 (proc h5ad) | 0 |
-| step6_validate report | 1 (proc h5ad) | 0 (读 final.json) | **-1** |
-| 新增 130 个扩展指标 | 需要额外 N 次加载 | **0 次额外加载** | **全部在已有加载中完成** |
+| 场景 | 设计后加载次数 |
+|---|---|
+| 完整 pipeline(含 step7_diagnose) | 4 (1 raw + 3 proc) |
+| 完整 pipeline(不含 step7_diagnose) | 4 (1 raw + 3 proc) |
+| 仅 step7_diagnose | 0 (读 obs_snapshot.csv) |
+| recluster | 1 (proc h5ad) |
+| step6_validate report | 0 (读 final.json) |
+| 新增 130 个扩展指标 | **0 次额外加载**(全部在已有加载中完成) |
 
 ### 4.3 详细数据流
 
@@ -433,7 +433,7 @@ silhouette 需要 X_pca + leiden 标签。`sklearn.metrics.silhouette_samples` �
 
 #### 5.1.5 关键实现: 过滤漏斗
 
-当前过滤是串联的(filter_cells → filter_genes → mt → cp → mt_pct → cp_pct),无法知道每步各去掉多少。改为分步 + 记录:
+过滤需分步执行 + 记录漏斗(每步各去掉多少),而非串联:
 
 ```python
 n_before = adata.n_obs
@@ -483,7 +483,7 @@ funnel = {
 - mapping_multiplicity_per_gene
 - candidate_ranking_entropy (Shannon over candidate marker_counts)
 - n_tied_at_top
-- **ancestors map 写入 kg_hits.json**(当前被收集但丢失!)
+- **ancestors map 写入 kg_hits.json**(供 step4_judge 使用)
 
 ### 5.4 Step 4: 簇判断
 
@@ -566,7 +566,7 @@ sub_raw = adata.raw.X[:, idx].to_memory()  # ~34K × 100, <50 MB
 输出: step7_diagnose/step7_diagnose.json, step7_diagnose/report.md
 ```
 
-**关键改进:** 当前 step7_diagnose 加载 processed.h5ad 仅为计算 batch entropy。改为读 `obs_snapshot.csv`:
+**关键改进:** step7_diagnose 读 `obs_snapshot.csv` 而非 processed.h5ad 计算 batch entropy:
 
 ```python
 obs = pd.read_csv(paths.obs_snapshot, index_col=0)
@@ -900,13 +900,13 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 - 成本极低:两次 score_genes + 两次 morans_i,都是矩阵乘法级别
 - **不加载额外 h5ad**——在 step5_refine.subcluster 的 h5ad 加载中完成(子集化后直接算)
 
-| 操作 | 当前数据源 | 改用 obs_snapshot.csv 后 | 省掉的 h5ad 加载 |
-|---|---|---|---|
-| step1_prepare.qc_distribution 质控分布 | adata.obs (需加载 h5ad) | pd.read_csv | 1 (但通常在 run 中完成) |
-| step1_prepare.choose_resolution 分辨率选择 | adata.obs | pd.read_csv | 0 (在 run 中完成) |
-| step1_prepare.batch_mixing 批次混合 | adata.obs | pd.read_csv | 0 (在 run 中完成) |
-| step7_diagnose.batch_entropy 诊断批次熵 | **adata.obs (加载 processed.h5ad!)** | **pd.read_csv** | **1** |
-| step7_diagnose.cross_cluster 跨簇报告 | adata.obs | pd.read_csv | (已被 step7_diagnose.batch_entropy 覆盖) |
+| 操作 | 数据源(obs_snapshot.csv) | 省掉的 h5ad 加载 |
+|---|---|---|
+| step1_prepare.qc_distribution 质控分布 | pd.read_csv | 1 (但通常在 run 中完成) |
+| step1_prepare.choose_resolution 分辨率选择 | pd.read_csv | 0 (在 run 中完成) |
+| step1_prepare.batch_mixing 批次混合 | pd.read_csv | 0 (在 run 中完成) |
+| step7_diagnose.batch_entropy 诊断批次熵 | pd.read_csv | **1** |
+| step7_diagnose.cross_cluster 跨簇报告 | pd.read_csv | (已被 step7_diagnose.batch_entropy 覆盖) |
 
 **核心收益: step7_diagnose 从 1× h5ad 加载降到 0×。**
 
@@ -917,31 +917,31 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 ### Phase A: 通用函数 + Step 1 enrichment(最高价值)
 
 1. 在 `common.py` 中实现 8 个通用函数 + `append_log()` + `next_run_id()`
-2. 改造 `step1_prepare.py:cmd_run` — 在已有加载中增加全部 Step 1 扩展指标,每个原子操作完成后调 `append_log()` 写入 `run_log.jsonl`
+2. 实现 `step1_prepare` 的 run 子命令 — 在单次加载中增加全部 Step 1 扩展指标,每个原子操作完成后调 `append_log()` 写入 `run_log.jsonl`
 3. 新增 `obs_snapshot.csv` + `var_snapshot.csv` 写出
-4. 改造 `step1_prepare.py:cmd_metrics` — 增强分布统计
+4. 实现 `step1_prepare` 的 metrics 子命令 — 增强分布统计
 
 **验证:** 跑完后检查 `run_log.jsonl` 有 `step1_prepare.leiden_cluster#1` 等记录,`metrics` 含 silhouette/pca/knn_graph 等新块
 
 ### Phase B: Step 2 + Step 6 enrichment
 
-5. 改造 `step2_markers.py` — 增加 BH-FDR, AUC, 过滤漏斗, DE 分布,每个 op 调 `append_log()`
-6. 改造 `step6_validate.py` — 增加 Cohen's d, AUC, fold_change, 全局汇总指标,每个 op 调 `append_log()`
+5. 实现 `step2_markers` — 增加 BH-FDR, AUC, 过滤漏斗, DE 分布,每个 op 调 `append_log()`
+6. 实现 `step6_validate` — 增加 Cohen's d, AUC, fold_change, 全局汇总指标,每个 op 调 `append_log()`
 7. 实现 step6_validate backed 模式(可选优化)
 
 **验证:** 检查 `run_log.jsonl` 有 `step2_markers.de_rank#1` 等记录,`metrics` 含 de_distribution/effect_sizes 等新块
 
 ### Phase C: Step 3/4/5 enrichment(纯 JSON,无 I/O)
 
-8. 改造 `step3_kg.py` — 增加查询统计,候选排名熵,ancestors 写入,每个 op 调 `append_log()`
-9. 改造 `step4_judge.py` — 增加 gap metrics, ancestor overlap,调 `append_log()`
-10. 改造 `step5_refine.py` — 增加 Jaccard, sub_silhouette, type membership 计数,每个 op 调 `append_log()`
+8. 实现 `step3_kg` — 增加查询统计,候选排名熵,ancestors 写入,每个 op 调 `append_log()`
+9. 实现 `step4_judge` — 增加 gap metrics, ancestor overlap,调 `append_log()`
+10. 实现 `step5_refine` — 增加 Jaccard, sub_silhouette, type membership 计数,每个 op 调 `append_log()`
 
 **验证:** 检查 `run_log.jsonl` 有各步记录,`metrics` 含 ancestors/gap_metrics/jaccard 等新块
 
 ### Phase D: Diagnostics 重构
 
-11. 改造 `step7_diagnose.py` — 读 obs_snapshot.csv 替代 h5ad,增加跨簇指标,每个 op 调 `append_log()`
+11. 实现 `step7_diagnose` — 读 obs_snapshot.csv 替代 h5ad,增加跨簇指标,每个 op 调 `append_log()`
 
 **验证:** step7_diagnose 不加载 h5ad,检查 `run_log.jsonl` 有 `step7_diagnose.cross_cluster#1` 等记录
 
@@ -1029,7 +1029,6 @@ python scripts/step3_kg.py query --project-dir ./output --organ root \
 - **不硬编码密码** — 密码只通过环境变量或 CLI flags 传入,不写入任何文件
 - **不使用配置文件** — 不在 skill 目录或项目目录中放 config.json,避免密码泄露到 git
 - **`.env` 是项目级配置** — 每个 project 的 .env 包含该环境特有的连接信息,skill 本身保持环境无关
-- **回退机制** — Neo4j 不可用时,`--kg-file` 可指定本地 JSON KG 文件作为降级路径(供测试用,不可信)
 
 ---
 

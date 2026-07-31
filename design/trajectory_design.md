@@ -644,7 +644,7 @@ python scripts/validate_log.py --project-dir ./output
 | Phase | 内容 | 产出 |
 |---|---|---|
 | **L-1** | 在 `common.py` 中实现 `append_log()` + `next_run_id()` | 通用日志函数 |
-| **L-2** | 在每个 pipeline 脚本的每个原子操作后调用 `append_log()` | 7 个脚本产出 exec 记录 |
+| **L-2** | 在每个 pipeline 脚本的每个原子操作后调用 `append_log()` | 各脚本产出 exec 记录 |
 | **L-3** | 在 SKILL.md 中增加运行日志指导 | LLM 知道何时、怎么写 judgment 记录 |
 | **L-4** | 实现 `validate_log.py` | 验证日志完整性 |
 | **L-5** | 实现 `export_log.py` | 导出微调训练对 + 自我纠正对 |

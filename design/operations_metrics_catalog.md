@@ -14,25 +14,7 @@
 
 ---
 
-## 0. 当前工具粒度问题
-
-当前 7 个脚本把大量操作捆在一起:
-
-| 脚本 | 实际包含的原子操作数 | 问题 |
-|---|---|---|
-| `step1_prepare.py` | **11** (QC→过滤→双峰→归一化→HVG→PCA→kNN→Leiden→选分辨率→UMAP→批次检查) | 一个 `run` 子命令做所有事,大部分操作零指标输出 |
-| `step2_markers.py` | 4 (DE→pct→过滤→pseudobulk切换) | 过滤漏斗不透明 |
-| `step3_kg.py` | 2 (查询→聚合) | 候选分布信息不足 |
-| `step4_judge.py` | 1 (排名) | 只输出 first/second,差距指标缺失 |
-| `step5_refine.py` | 5 (子聚类→DE→重查→重叠→归属) | 重叠只用 overlap/min,缺 Jaccard |
-| `step6_validate.py` | 2 (marker表达→汇总) | 缺效应量(AUC/Cohen's d) |
-| `step7_diagnose.py` | 3 (命中率→批次→元数据) | 缺跨簇指标 |
-
-**原则:每个原子操作应产出自己的指标块,写入对应步骤的 JSON。**
-
----
-
-## 1. 数据准备阶段(当前全部在 Step 1 内)
+## 1. 数据准备阶段(全部在 Step 1 内)
 
 ### step1_prepare.compute_qc　质控变量计算
 
@@ -86,7 +68,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (无独立输出,混在 n_genes_after 里) | — | — |
 | `[核心]` | n_genes_before, n_genes_after, frac_genes_lost | 过滤前后基因数 | ★★★ |
 | `[扩展]` | expression_breadth_distribution | 各基因的表达细胞比例分布(>0) | ★★ |
 | `[扩展]` | n_genes_in_<1%_cells | 极低表达基因数 | ★ |
@@ -97,7 +78,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (仅 log 输出,未写入 JSON!) | — | — |
 | `[核心]` | doublet_score_distribution (percentiles, mean, std) | doublet 分数分布 | ★★★ |
 | `[核心]` | n_doublets_detected, frac_doublets | 检出并移除的数量与比例 | ★★★ |
 | `[扩展]` | doublet_score_bimodality | 分数是否形成独立峰(双峰=有意义的分离) | ★★ |
@@ -109,7 +89,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (无任何指标!) | — | — |
 | `[扩展]` | median_library_size_before | 归一化前的中位库大小 | ★★ |
 | `[扩展]` | normalization_target | 归一化目标值(1e4) | ★ |
 | `[扩展]` | post_norm_mean_expression_distribution | 归一化后表达均值分布(percentiles) | ★★ |
@@ -134,7 +113,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (无任何指标!) | — | — |
 | `[核心]` | variance_explained_per_pc (PC1~PC50) | 每个 PC 的方差解释量 | ★★★ |
 | `[核心]` | cumulative_variance_explained | 累积方差解释 | ★★★ |
 | `[核心]` | n_pcs_for_50pct, n_pcs_for_80pct, n_pcs_for_90pct | 解释 X% 方差需要多少 PC | ★★★ |
@@ -530,7 +508,7 @@
 | step1_prepare.pca | variance_explained per PC | LLM 无法判断 PCA 质量,影响 n_pcs 选择 |
 | step1_prepare.leiden_cluster | cluster_size 分布统计 (Gini, CV, n_rare, n_singleton) | 判断过聚类/欠聚类 |
 | step1_prepare.choose_resolution | adjacent_resolution_ARI | 判断分辨率选择是否稳定 |
-| step2_markers.de_rank | BH_adjusted_pval (FDR) | 多重检验校正,当前 pval 未校正 |
+| step2_markers.de_rank | BH_adjusted_pval (FDR) | 多重检验校正(BH-FDR) |
 | step2_markers.de_rank | AUC per gene | 判别力指标,比 logfc 更直观 |
 | step6_validate.marker_expression | Cohen's d + AUC per top marker | 标准化效应量,跨基因/跨簇可比 |
 | step1_prepare.filter_cells | filter funnel (n_lost_per_criterion) | 过滤透明度 |
