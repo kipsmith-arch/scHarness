@@ -2,13 +2,14 @@
 
 ## 1. 设计目标
 
-实现一个**极简通用的 agent loop**,不感知任何领域知识。loop 只做三件事:
+实现一个**极简通用的 agent loop**,不感知任何领域知识。loop 做四件事:
 
 1. **加载 skill** — 从 skill 获取 system prompt、工具 schema、工具执行方式
 2. **跑循环** — LLM ↔ tool 循环,function calling 驱动,不做上下文管理(messages 只增不减)
 3. **记轨迹** — 保存完整 conversation
+4. **通用记忆(笔记本)** — 注册内置笔记本工具(write_note / retrieve_notes),拼接 loop 通用提示。完全被动:读写时机由 LLM 决定,loop 不解析内容(见 `rag_design.md`)
 
-LLM 需要哪些信息(知识、工具、决策流程)完全由 **skill** 决定,loop 不硬编码任何领域内容。
+LLM 需要哪些信息(知识、工具、决策流程)完全由 **skill** 决定;记忆是 loop 自带的通用项,同样不含领域内容。loop 不硬编码任何领域内容。
 
 ---
 
@@ -19,7 +20,8 @@ LLM 需要哪些信息(知识、工具、决策流程)完全由 **skill** 决定
 | 职责 | 说明 |
 |---|---|
 | 加载 skill | 从 skill 获取 system prompt、工具 schema、工具执行方式 |
-| 注册工具 | 按 skill 声明注册工具,name + schema + 执行函数 |
+| 注册工具 | 注册 skill 声明的工具(name + schema + 执行函数)+ loop 内置笔记本工具(write_note / retrieve_notes) |
+| 拼接系统提示 | `loop 通用提示(含笔记本用法指导)+ skill.system_prompt` 合成系统消息 |
 | 运行 agent 循环 | LLM → tool_calls → 执行 → result → LLM,循环直到 LLM 不再调工具 |
 | 记录 conversation | 完整 messages 数组写入 `conversation.jsonl`,不截断 |
 | 生命周期管理 | session 开始/结束、recursion limit、中断恢复 |
@@ -33,10 +35,12 @@ LLM 需要哪些信息(知识、工具、决策流程)完全由 **skill** 决定
 | 结构化日志 | 工具内部写什么日志、什么格式 — loop 和 LLM 都不感知 |
 | 决策流程 | SOP 步骤、决策点 — 全在 skill 里指导 LLM |
 
+skill 不感知 loop 内置的笔记本,也不决定其内容(记录什么、何时记录由 LLM 自主)。
+
 ### 2.3 核心原则
 
 ```
-loop = 通用运行器(加载 skill → 跑循环 → 记轨迹)
+loop = 通用运行器(加载 skill + 内置记忆 → 跑循环 → 记轨迹)
 skill = 领域规范(知识 + 工具 + prompt)
 ```
 
@@ -55,6 +59,13 @@ loop 不规定 skill 的文件格式,只声明它需要从 skill 获取三样东
 | `tool_runtime` | dict[name → spec] | loop(执行用) | 每个工具的执行方式,LLM 看不到 |
 
 具体 skill 怎么组织文件、怎么生成这三样东西,是 skill 设计阶段的事。
+
+除 skill 提供的三样东西外,loop 自带两样,**不由 skill 提供**:
+
+| 接口 | 类型 | 给谁 | 说明 |
+|---|---|---|---|
+| `base_prompt` | string | LLM(进 messages) | loop 通用提示(角色 + 笔记本用法指导),与 `skill.system_prompt` 拼接成系统消息 |
+| `notebook_tools` | schemas + runtime | LLM + loop | 内置 `write_note` / `retrieve_notes` 工具(见 `rag_design.md` §2),dispatcher 按 `type="builtin"` 执行 |
 
 ### 3.1 工具执行方式
 
@@ -93,16 +104,20 @@ subprocess 类型的工具,脚本需在 stdout 最后一行输出 JSON,loop 解�
 │  输入: skill(system_prompt + tool_schemas + tool_runtime)      │
 │        + 用户 task message                                     │
 │                                                                │
+│  系统消息 = loop 通用提示(含笔记本用法)+ skill.system_prompt    │
+│                                                                │
 │  ┌─────────────┐    tool_calls    ┌──────────────────────┐    │
 │  │     LLM     │ ──────────────→ │  Tool dispatcher     │    │
-│  │ (OpenAI FC) │                 │                      │    │
-│  │             │ ←── result ──── │  type=subprocess:    │    │
-│  │             │                 │    subprocess.run()  │    │
-│  └─────────────┘                 │  type=function:      │    │
-│       │                          │    importlib 调函数   │    │
+│  │ (OpenAI FC) │                 │  ├ skill 工具:       │    │
+│  │             │ ←── result ──── │  │  subprocess /     │    │
+│  │             │                 │  │  function          │    │
+│  │             │                 │  └ loop 内置:        │    │
+│  └─────────────┘                 │     write_note /     │    │
+│       │                          │     retrieve_notes   │    │
 │  no tool_calls → END             └──────────────────────┘    │
 │                                                                │
 │  输出: conversation.jsonl (完整 messages)                      │
+│        + 笔记本 notes.jsonl (仅 LLM 主动写入时)                │
 │                                                                │
 └────────────────────────────────────────────────────────────────┘
          │ tool 内部自行处理(副作用)
@@ -117,12 +132,13 @@ subprocess 类型的工具,脚本需在 stdout 最后一行输出 JSON,loop 解�
 ### 4.1 数据流
 
 ```
-1. loop 从 skill 获取 system_prompt + tool_schemas + tool_runtime
-2. loop 发 {system + user task} 给 LLM
+1. loop 从 skill 获取 system_prompt + tool_schemas + tool_runtime,并入内置 base_prompt + 笔记本工具
+2. loop 发 {base_prompt + system + user task} 给 LLM
 3. LLM 返回 tool_calls
 4. loop 按 tool_runtime 声明的 type 执行每个 tool_call:
    - subprocess → subprocess.run() → 解析 stdout JSON → 返回给 loop
    - function → 调函数 → 返回给 loop
+   - builtin → 调笔记本工具(notebook.py)→ 返回给 loop
 5. loop 把 result 包成 ToolMessage 追加到 messages
 6. loop 发全部 messages 给 LLM
 7. 重复 3-6 直到 LLM 不再调工具
@@ -142,10 +158,12 @@ from langgraph.graph.message import add_messages
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    base_prompt: str              # loop 通用提示(含笔记本用法指导)
     system_prompt: str
-    tool_schemas: list[dict]
-    tool_runtime: dict
+    tool_schemas: list[dict]      # skill 工具 + 笔记本工具合并
+    tool_runtime: dict            # skill 工具 + 笔记本工具合并
     project_dir: str
+    notes_path: str               # 笔记本路径(env RAG_NOTES_DIR 或 project_dir/notes.jsonl)
     session_id: str
 ```
 
@@ -192,6 +210,8 @@ def dispatch(spec: dict, args: dict, state: AgentState) -> dict:
         return run_subprocess(spec, args)
     elif spec["type"] == "function":
         return run_function(spec, args, state)
+    elif spec["type"] == "builtin":
+        return run_builtin(spec, args, state)   # loop 内置笔记本工具
     else:
         return {"status": "error", "error": f"unknown tool type: {spec['type']}"}
 
@@ -215,26 +235,35 @@ def run_function(spec: dict, args: dict, state: AgentState) -> dict:
     module = importlib.import_module(module_path)
     func = getattr(module, func_name)
     return func(args, state)
+
+def run_builtin(spec: dict, args: dict, state: AgentState) -> dict:
+    """执行 loop 内置笔记本工具(notebook.py),不涉及 skill。"""
+    func = NOTEBOOK_FUNCS[spec["name"]]   # {"write_note": ..., "retrieve_notes": ...}
+    return func(args, state)
 ```
 
 ### 5.4 入口
 
 ```python
 def run_session(skill, project_dir: str, task_message: str, llm_config: dict):
-    """通用入口:从 skill 加载 → 构建 prompt → 跑 loop → 存轨迹。
+    """通用入口:从 skill 加载 → 拼接内置提示 → 跑 loop → 存轨迹。
 
     Args:
         skill: skill 实例,提供 system_prompt / tool_schemas / tool_runtime
     """
+    tool_schemas = skill.tool_schemas + NOTEBOOK_TOOL_SCHEMAS
+    tool_runtime = {**skill.tool_runtime, **NOTEBOOK_TOOL_RUNTIME}
     state = {
         "messages": [
-            SystemMessage(content=skill.system_prompt),
+            SystemMessage(content=f"{LOOP_BASE_PROMPT}\n\n{skill.system_prompt}"),
             HumanMessage(content=task_message),
         ],
+        "base_prompt": LOOP_BASE_PROMPT,
         "system_prompt": skill.system_prompt,
-        "tool_schemas": skill.tool_schemas,
-        "tool_runtime": skill.tool_runtime,
+        "tool_schemas": tool_schemas,
+        "tool_runtime": tool_runtime,
         "project_dir": project_dir,
+        "notes_path": os.environ.get("RAG_NOTES_DIR") or f"{project_dir}/notes.jsonl",
         "session_id": generate_session_id(),
     }
 
@@ -259,6 +288,8 @@ loop 唯一的轨迹职责是在 session 结束时把完整 messages 写出:
 {"role": "assistant", "content": "分析结果...", "tool_calls": [{"id": "call_2", "name": "yyy", "args": {...}}]}
 ...
 ```
+
+> **笔记本不是轨迹**:loop 内置笔记本(`notes.jsonl`)是 LLM 主动写的记忆,不属于轨迹,与 `conversation.jsonl` / skill 的 `run_log.jsonl` 独立。loop 只负责存与检索,不把它当作轨迹记录。笔记本操作本身(工具调用)已自然记录在 conversation 的 messages 里。
 
 ### 6.2 结构化日志由 skill 的工具负责
 
@@ -298,12 +329,13 @@ session 中断后,`conversation.jsonl` 保留了完整历史。重新启动时�
 ```
 harness/
 ├── loop.py             ← 通用 agent loop(LangGraph)
-├── dispatcher.py       ← tool dispatcher(subprocess / function)
+├── dispatcher.py       ← tool dispatcher(subprocess / function / builtin)
 ├── session.py          ← 入口:run_session()
-└── conversation.py     ← conversation.jsonl 读写
+├── conversation.py     ← conversation.jsonl 读写
+└── notebook.py         ← 内置笔记本工具(write_note / retrieve_notes + 存储 + 索引)
 ```
 
-loop 只包含上述 4 个文件。skill、脚本、知识文件都不属于 loop。
+loop 只包含上述 5 个文件(`notebook.py` 为 loop 的通用记忆,不属于 skill)。skill、脚本、知识文件都不属于 loop。
 
 ---
 
@@ -314,6 +346,7 @@ atomic_operations.md            ← pipeline 有哪些操作 (WHAT)
 operations_metrics_catalog.md   ← 每个操作输出什么指标 (WHY)
 tool_design.md                  ← 怎么实现,加载策略 (HOW)
 trajectory_design.md            ← 指标和判断怎么记录 (LOG) — 属于 skill
+rag_design.md                   ← 通用笔记本记忆 (MEM) — loop 内置,不含领域知识
 loop_design.md (本文档)         ← 通用 loop 怎么跑 (RUN) — 不含领域知识
 ```
 
@@ -322,13 +355,14 @@ Skill (领域规范)
     │ 提供 system_prompt + tool_schemas + tool_runtime
     ▼
 Loop (通用)
-    │ 加载 skill → 跑循环 → 记 conversation
+    │ 拼接 base_prompt + skill.system_prompt → 跑循环 → 记 conversation
     │
-    ├── subprocess 工具 → 脚本执行(内部副作用由 skill 管)
-    └── function 工具 → 函数执行(内部副作用由 skill 管)
+    ├── skill 工具 → subprocess/function 执行(内部副作用由 skill 管)
+    └── loop 内置 → 笔记本工具(write_note / retrieve_notes)
                               │
                               ▼
                     conversation.jsonl (loop 产出)
+                    笔记本 notes.jsonl (LLM 主动写入)
                     skill 工具内部日志 (skill 产出)
 ```
 
@@ -341,6 +375,7 @@ Loop (通用)
 | **L-1** | `loop.py` + `dispatcher.py` + `session.py` + `conversation.py` | 通用 loop |
 | **L-2** | 定义 skill 接口协议(system_prompt / tool_schemas / tool_runtime) | 接口规范 |
 | **L-3** | 端到端测试:用最小 skill 验证 loop 通用性 | 验证 |
+| **L-4** | `notebook.py`(write_note / retrieve_notes)+ 通用提示拼接 + env 配置 | 内置记忆(见 `rag_design.md` §8 M-1/M-2) |
 
 skill 的具体实现(工具清单、知识文件、日志格式)不在本阶段,属于 skill 设计。
 
@@ -355,3 +390,9 @@ skill 的具体实现(工具清单、知识文件、日志格式)不在本阶段
 ### 11.2 接口验证
 
 skill 提供的三个接口(system_prompt / tool_schemas / tool_runtime)能被 loop 正确加载和使用。
+
+### 11.3 笔记本验证
+
+- 最小 skill 下 write_note / retrieve_notes 可注册、可读写、可跨会话检索(见 `rag_design.md` §7 N3)
+- 系统消息 = `base_prompt + skill.system_prompt`,拼接正确
+- skill 对笔记本无感知:不声明笔记本工具、不写相关内容,loop 仍能正常跑(向后兼容)

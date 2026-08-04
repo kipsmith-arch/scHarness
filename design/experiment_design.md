@@ -8,6 +8,7 @@
 2. **LLM 作为 13 个决策点的判断引擎** — 贯穿 pipeline 做 accept/adjust 判断,而非只在末端给标签
 3. **轨迹日志设计** — `run_log.jsonl` 记录判断的 inputs(看了哪些指标)+ reasoning + output,可导出训练对
 4. **247 个结构化指标 → LLM 判断** — 把统计测量"翻译"成决策
+5. **Loop 级通用记忆(笔记本)** — loop 内置、完全被动、与 skill 解耦的经验库;跨会话复用"上次类似情况怎么判的",验证其对判断质量的增益(见 §4.4 N 组)
 
 **核心问题**:LLM 在 pipeline 决策点上,比固定启发式/默认参数更好吗?
 
@@ -38,6 +39,9 @@
 | E1 | 成本与效率 | 工程 | ★★ | 实用性 |
 | C2 | KG 消融 | 消融 | ★ | 知识图谱这一层值不值 |
 | C4 | 多 API 模型对比 | 泛化 | ★(建议) | LLM-as-judge 是否模型无关 |
+| N1 | 笔记本开关消融 | 记忆 | ★★ | 通用经验库(笔记本)对判断质量是否有增益 |
+| N2 | 笔记本使用分析 | 记忆 | ★★ | LLM 是否真用笔记本、用了是否有用 |
+| N3 | 笔记本通用性验证 | 记忆/工程 | ★ | 记忆能力是否与 skill 无关(loop 级通用) |
 
 **砍掉**:D1(微调,无 GPU)。轨迹价值由 B4/D2 的模式挖掘体现。
 
@@ -312,6 +316,56 @@ for key, records in by_key.items():
 
 ---
 
+### 4.4 N 组 — 笔记本消融与使用(通用记忆)
+
+> 被测对象是 loop 内置笔记本(`write_note` / `retrieve_notes`,见 `rag_design.md`)。本组不绑定 13 个决策点——记忆是 loop 级通用能力,评估也随之解耦。
+
+#### 假设
+loop 内置笔记本能让 LLM 跨会话复用经验,提升判断质量;且该能力与 skill 无关。
+
+#### N1 — 笔记本开关消融
+
+同一 skill、同一 pipeline,两组唯一差别是笔记本可用与否:
+
+| 组 | 笔记本 | 说明 |
+|---|---|---|
+| ⑥ no-notebook | 不注册笔记本工具,系统提示不含用法 | 基线 |
+| ⑦ notebook | 注册 write_note / retrieve_notes + 通用提示指导 | 被测对象 |
+
+比较(每组多个 session):
+- 端到端质量:final_annotations 逐簇准确率、unknown_rate
+- 判断稳定性:相同指标形态跨 session 的 decision 一致率(⑥ 应天然不稳定,⑦ 靠笔记收敛)
+
+#### N2 — 使用分析(零额外成本,只读 conversation.jsonl)
+
+- 调用频次与时机:write_note / retrieve_notes 出现在哪些轮次/步骤前后
+- 笔记概况:条数、平均长度、主题分布(人工或关键词聚类)
+- 检索质量:top-k 返回是否相关(人工抽查)
+- 采纳率:检索后 LLM 的判断 / reasoning 是否体现笔记内容(人工抽查)
+
+N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记本,则 N1 差异无意义,先治系统提示强度。
+
+#### N3 — 通用性验证
+
+换最小 skill(如 echo),验证笔记本可注册、可读写、可跨会话检索——证明它是 loop 级能力,与 skill 无耦合。
+
+#### 指标
+- N1:逐簇准确率、unknown_rate、decision 一致率(⑥ vs ⑦)
+- N2:调用频次、笔记主题分布、top-k 相关性、采纳率
+- N3:功能通过/失败
+
+#### 输出
+- `experiments/N1/accuracy_compare.json`(⑥ vs ⑦ 配对)
+- `experiments/N2/usage_stats.json` + 抽查样本
+- `experiments/N3/smoke_test.log`
+
+#### 执行
+1. 跑 ⑥ 基线(笔记本禁用)与 ⑦(启用)各若干 session
+2. 从 conversation.jsonl 统计 N2 指标
+3. 最小 skill 冒烟测试验证 N3
+
+---
+
 ## 5. 支撑实验
 
 ### 5.1 A1 — 端到端准确率
@@ -367,6 +421,7 @@ operations_metrics_catalog.md   247 指标   — B3 分析 LLM 引用了哪些
 trajectory_design.md            13 决策点  — B1/B3/B4 的数据来源
 tool_design.md                  pipeline 实现 — 实验的执行载体
 loop_design.md                  通用 loop   — C4 换模型只改 loop 的 LLM 后端
+rag_design.md                   通用笔记本  — N1/N2/N3 的被测对象
 ```
 
 ```
@@ -376,6 +431,11 @@ run_log.jsonl
 B1: 逐簇准确率配对(② vs ③)
 B3: inputs[].path 频次统计 → 最小充分集
 B4: 同 decision_point 多 judgment → 自我纠正对 → 改善幅度
+
+conversation.jsonl
+    │ 工具调用序列(含 write_note / retrieve_notes)
+    ▼
+N2: 笔记本调用频次/时机 → 使用分析
 ```
 
 实验分析全部基于 `run_log.jsonl` 的现有字段,无需新增日志格式。
@@ -405,8 +465,9 @@ B4: 同 decision_point 多 judgment → 自我纠正对 → 改善幅度
 | **X-6** | A1 准确率 + A3 baseline + E1 成本 | X-2 | `A/`、`E/` 结果 |
 | **X-7** | C2 KG 消融 + C4 多模型(可选) | X-1 | 消融结果 |
 | **X-8** | (可选)跨数据集复现 B1 | 补充数据集 | 外部效度 |
+| **X-9** | N1/N2/N3 笔记本实验 | loop 笔记本(L-4) | 记忆增益结论 |
 
-X-1~X-3 与系统实现并行;X-4~X-6 在有第一批轨迹后即可启动;X-7 视算力/API 预算;X-8 视数据集可得性。
+X-1~X-3 与系统实现并行;X-4~X-6 在有第一批轨迹后即可启动;X-7 视算力/API 预算;X-8 视数据集可得性;X-9 依赖 `loop_design.md` L-4(笔记本内核),不依赖多数据集(单数据集多 session 即可对比)。
 
 ---
 
@@ -423,3 +484,8 @@ X-1~X-3 与系统实现并行;X-4~X-6 在有第一批轨迹后即可启动;X-7 �
 
 ### 10.3 因果链完整性
 - 每条 B1 的逐簇结论,能从 `final_annotations.json` → `run_ref`(judgment)→ `exec`(metrics)回溯,验证 `trajectory_design.md` §4.5 的因果链可追溯。
+
+### 10.4 N 组实验的有效性
+- ⑥ vs ⑦ 除笔记本外完全同构(同一 skill / pipeline / 参数,仅重复跑),否则比的是 skill 而非记忆。
+- N2 统计只读 `conversation.jsonl`,可重跑复现;抽查样本人工标注,标注标准写进脚本。
+- N3 用最小 skill,不依赖领域数据,可独立复现。
