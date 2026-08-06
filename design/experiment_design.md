@@ -22,7 +22,7 @@
 |---|---|---|
 | 算力 | 仅商业 API(GPT/Claude 等),无 GPU | 砍掉微调实验(D1),轨迹价值改用模式挖掘体现 |
 | 模型 | 可调用多 API 模型 | C4 多模型对比可行,反而支撑"model-agnostic"论点 |
-| 数据 | 当前仅 SRP171040(Arabidopsis root,2GB,29 簇) | B1 在簇级(N=29)做配对统计;跨数据集复现需补充数据集(见 §8) |
+| 数据 | 当前仅 SRP171040(Arabidopsis root,2GB,12 真值类型) | B1 走细胞级评估 + cluster-aware bootstrap(见 `experiment_implementation.md` §2);跨数据集复现需补充数据集(见 §8) |
 | 论述侧重 | 方法论:LLM-as-judge 有效性 | B 组为核心,A 组为基线,C/D/E 为支撑 |
 
 ---
@@ -42,8 +42,11 @@
 | N1 | 笔记本开关消融 | 记忆 | ★★ | 通用经验库(笔记本)对判断质量是否有增益 |
 | N2 | 笔记本使用分析 | 记忆 | ★★ | LLM 是否真用笔记本、用了是否有用 |
 | N3 | 笔记本通用性验证 | 记忆/工程 | ★ | 记忆能力是否与 skill 无关(loop 级通用) |
+| S1 | 合成场景注入(簇合并探针) | 方法论 | ★★ | 已知真值下 LLM 能否检出"两群被合成一群"并正确决定细分/不细分 |
 
 **砍掉**:D1(微调,无 GPU)。轨迹价值由 B4/D2 的模式挖掘体现。
+
+> S1 为新增受控能力探针:把 6 个陷阱操作化为 8 个已知真值的簇合并用例,为真实数据里出现较少的 refine 决策点补统计力。实施细节见 `experiment_implementation.md` §3.2。
 
 ---
 
@@ -207,30 +210,31 @@ def rule_judge(dp, exec_record, history):
 1. **动作空间一致**:② 的规则表覆盖的 decision/action 枚举,必须与 ③ SKILL.md 允许 LLM 用的相同(`trajectory_design.md` §3.2 的枚举)。即 ③ 不许干规则表之外的动作,否则 ③ 领先可能是"动作空间更大"而非"判断更聪明"。
 2. **② 须确定性代码**:不用 LLM 跟随规则 prompt——LLM 采样非确定性,会让 ② 不可复现且混入 LLM 方差。
 3. **工具执行路径字面相同**:①②③ 都调 `dispatcher.dispatch(spec, args)` 执行同一 pipeline 脚本,唯一差异是"下一步调哪个 op / 带什么参 / 要不要重试"——这正是被测的决策层。
-4. **簇 ID 对齐**:三臂基于同一份 `processed.h5ad` 的聚类结果(同一 `leiden` 簇编号),否则逐簇配对失效。
+4. **评估口径(2026-08 修订)**:三臂改按**细胞级评估**(详见 `experiment_implementation.md` §2)——逐细胞标签 vs 真值计算准确率/F1,不再要求簇 ID 对齐。原"三臂同一份 processed.h5ad、簇 ID 配对"与 qc/resolution/clustering 三个决策点必然改变聚类的设计自相矛盾,已废弃。
 
-#### 指标
-- **主指标**:逐簇注释准确率(预测 Celltype vs `dataset/index/SRP171040.h5ad.csv` 真值)
-- 统计检验:29 簇配对 — McNemar(分类配对)+ Wilcoxon 符号秩(连续配对,如准确率提升幅度)
+#### 指标(2026-08 修订为细胞级,详见 `experiment_implementation.md` §2)
+- **主指标**:per-cell macro-F1(12 类平均)+ per-cell accuracy(预测标签 vs `dataset/index/SRP171040.h5ad.csv` 真值)
+- 统计检验:cluster-aware bootstrap(按簇整组重抽样)对 ③ vs ② 的 macro-F1 差做 95% CI;per-type Wilcoxon 符号秩作稳健性参考(不用细胞级 McNemar——细胞非独立会伪造显著)
 - **辅指标**:
   - 全局 unknown_rate(`session_end.final_summary.unknown_rate`)
-  - 加权 F1(按簇细胞数加权)
-  - 簇级 confusion matrix
+  - weighted-F1 + 12×12 confusion matrix
+  - 标签粒度诊断:细分/粗命中率(label_map 的 subtype/supertype,计分规则见实施文档 §2.1)
+  - 聚类纯度诊断(每 leiden 簇最大真值类型占比均值)
 
 #### 执行
 1. 跑 ① 固定默认 pipeline,得 `output_arm1/` + run_log
 2. 跑 ② Rule-based pipeline,得 `output_arm2/` + run_log
 3. 跑 ③ LLM-judge pipeline,得 `output_arm3/` + run_log(已是系统主路径)
-4. 三个 arm 各导出 `final_annotations.json`,对齐到 `leiden` 簇 ID
-5. 逐簇对真值,算配对统计量
+4. 三个 arm 各导出 `final_annotations.json`,经 obs_snapshot.csv(细胞→leiden)展开为逐细胞标签
+5. 逐细胞对真值(`experiments/gt_cells.csv`),按实施文档 §2 口径算指标 + bootstrap CI
 
 #### 预期
 ③ 显著优于 ② > ①。若 ③≈②,说明 LLM 判断未超越简单阈值,需反思 skill 设计;若 ③≈①,说明判断本身无价值。
 
 #### 输出
-- `experiments/B1/confusion_matrix_{arm}.png`
-- `experiments/B1/paired_test.json`(McNemar p、Wilcoxon p、效应量)
-- `experiments/B1/cluster_accuracy.csv`(逐簇三臂准确率)
+- `experiments/B1/confusion_matrix_{arm}.csv`(12×12,细胞级)
+- `experiments/B1/eval/macro_f1.json`(macro-F1 点估计 + bootstrap CI + per-type Wilcoxon)
+- `experiments/B1/eval/cell_labels_arm{1,2,3}.csv`(逐细胞标签)
 
 ---
 
@@ -333,7 +337,7 @@ loop 内置笔记本能让 LLM 跨会话复用经验,提升判断质量;且该�
 | ⑦ notebook | 注册 write_note / retrieve_notes + 通用提示指导 | 被测对象 |
 
 比较(每组多个 session):
-- 端到端质量:final_annotations 逐簇准确率、unknown_rate
+- 端到端质量:细胞级准确率/macro-F1(见 `experiment_implementation.md` §2)、unknown_rate
 - 判断稳定性:相同指标形态跨 session 的 decision 一致率(⑥ 应天然不稳定,⑦ 靠笔记收敛)
 
 #### N2 — 使用分析(零额外成本,只读 conversation.jsonl)
@@ -350,7 +354,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 换最小 skill(如 echo),验证笔记本可注册、可读写、可跨会话检索——证明它是 loop 级能力,与 skill 无耦合。
 
 #### 指标
-- N1:逐簇准确率、unknown_rate、decision 一致率(⑥ vs ⑦)
+- N1:细胞级准确率/macro-F1、unknown_rate、decision 一致率(⑥ vs ⑦)
 - N2:调用频次、笔记主题分布、top-k 相关性、采纳率
 - N3:功能通过/失败
 
@@ -370,7 +374,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 
 ### 5.1 A1 — 端到端准确率
 
-对比 `step6_validate/final_annotations.json` 与 `dataset/index/SRP171040.h5ad.csv` 的 `Celltype` 列,按 `leiden` 簇对齐。产出整体准确率 + 按类型的混淆矩阵。识别哪些类型易注释、哪些易错(失败模式分析)。
+对比 `step6_validate/final_annotations.json` 与 `dataset/index/SRP171040.h5ad.csv` 的 `Celltype` 列,经 obs_snapshot.csv 展开为逐细胞标签对齐(口径见 `experiment_implementation.md` §2)。产出整体准确率 + 按类型的混淆矩阵。识别哪些类型易注释、哪些易错(失败模式分析)。
 
 ### 5.2 A3 — 与 baseline 方法对比
 
@@ -380,7 +384,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 | CellTypist | 若有植物参考集 | 通用自动注释工具(需确认 Arabidopsis 可用性) |
 | SingleR | 若有植物参考集 | 同上,基于参考集 |
 
-对比最终逐簇准确率,定位本 harness 在文献中的位置。若无可用的植物参考集,只做 Marker 硬匹配对比。
+对比最终细胞级准确率,定位本 harness 在文献中的位置。若无可用的植物参考集,只做 Marker 硬匹配对比。
 
 ### 5.3 E1 — 成本与效率
 
@@ -406,7 +410,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 
 同一 pipeline 同一 skill,换不同 API 后端(GPT-4o / Claude-3.5 / Gemini 等),比:
 - 13 决策点的判断一致性(同输入下 decision 是否一致)
-- 最终逐簇准确率
+- 最终细胞级准确率
 - token 成本
 
 **无 GPU 即可做**,且直接支撑"LLM-as-judge 模型无关"论点。对方法论定位是加分项,建议不砍。
@@ -428,7 +432,7 @@ rag_design.md                   通用笔记本  — N1/N2/N3 的被测对象
 run_log.jsonl
     │ exec 记录(指标) + judgment 记录(LLM 判断 + inputs + reasoning)
     ▼
-B1: 逐簇准确率配对(② vs ③)
+B1: 细胞级准确率/F1 + cluster-aware bootstrap(② vs ③)
 B3: inputs[].path 频次统计 → 最小充分集
 B4: 同 decision_point 多 judgment → 自我纠正对 → 改善幅度
 
@@ -444,10 +448,10 @@ N2: 笔记本调用频次/时机 → 使用分析
 
 ## 8. 单数据集缓解策略
 
-当前仅 SRP171040。B1 在簇级(N=29)做配对统计已可用(McNemar/Wilcoxon 对配对簇),但跨数据集复现会让结论外部效度更强。
+当前仅 SRP171040。B1 细胞级评估(12 类型 + cluster-aware bootstrap)已可独立成立,但跨数据集复现会让结论外部效度更强。
 
 ### 策略
-1. **簇级配对(已有数据集可立即做)**:29 簇做 ② vs ③ 的逐簇准确率配对检验,N=29 够用。
+1. **细胞级评估(已有数据集可立即做)**:按 `experiment_implementation.md` §2 的 cluster-aware bootstrap + per-type Wilcoxon 口径(12 类型配对),无需额外数据。细胞级评估避免簇 ID 对齐问题。
 2. **跨数据集复现(需补充)**:找 1-2 个 Arabidopsis root scRNA-seq 数据集(同物种同组织,控制变量),复跑 B1 三臂。候选(Denyer 2019、Wendrich 2020、Ryu 2019 等)的 GEO/SRA 访问号与 h5ad 可得性待联网核实。
 3. **若无法补充数据集**:B1 结论限定为"在该数据集上",并在讨论部分说明单数据集局限;加强 B3/B4 的分析深度作为补偿。
 
@@ -460,7 +464,7 @@ N2: 笔记本调用频次/时机 → 使用分析
 | **X-1** | 实现 loop + skill + pipeline(见 `loop_design.md` §10 / `tool_design.md` 实施计划) | — | 可跑的 harness |
 | **X-2** | 跑 ③ LLM-judge 主路径,产出 `run_log.jsonl` | X-1 | 主路径轨迹 |
 | **X-3** | 实现 Rule-based 启发式开关 + 跑 ①② | X-1 | 三臂轨迹 |
-| **X-4** | B1 逐簇准确率配对分析 | X-3 | `B1/` 结果 |
+| **X-4** | B1 细胞级评估 + cluster-aware bootstrap 分析 | X-3 | `B1/` 结果 |
 | **X-5** | B3 指标频次统计 + B4 自我纠正挖掘 | X-2 | `B3/`、`B4/` 结果 |
 | **X-6** | A1 准确率 + A3 baseline + E1 成本 | X-2 | `A/`、`E/` 结果 |
 | **X-7** | C2 KG 消融 + C4 多模型(可选) | X-1 | 消融结果 |
@@ -475,15 +479,15 @@ X-1~X-3 与系统实现并行;X-4~X-6 在有第一批轨迹后即可启动;X-7 �
 
 ### 10.1 B1 的有效性验证
 - 三臂使用同一份 Rule-based 规则表(②③ 共享),否则 ② 与 ③ 比较的是参数空间而非判断智能。
-- 簇 ID 对齐:三臂的 `leiden` 簇编号须一致(同一份 `processed.h5ad` 的聚类结果),否则配对失效。
-- 配对检验使用 McNemar(分类)+ Wilcoxon(连续),报告效应量而非仅 p 值。
+- 评估口径:细胞级(2026-08 修订,见 `experiment_implementation.md` §2)。三臂聚类必然不同,不以簇 ID 配对;以逐细胞标签对真值计算,统计用 cluster-aware bootstrap(避免细胞非独立的伪显著)。
+- 报告效应量(macro-F1 差)而非仅 p 值;判定线预先注册在实施文档 §4.1。
 
 ### 10.2 轨迹分析的可复现性
 - B3/B4 的分析脚本只读 `run_log.jsonl`,不依赖任何中间状态,可重跑复现。
 - B4 的"改善"判定阈值(silhouette 上升、n_singleton 下降等)在脚本中显式定义,不靠 LLM 自评。
 
 ### 10.3 因果链完整性
-- 每条 B1 的逐簇结论,能从 `final_annotations.json` → `run_ref`(judgment)→ `exec`(metrics)回溯,验证 `trajectory_design.md` §4.5 的因果链可追溯。
+- 每条 B1 的逐簇判断结论,能从 `final_annotations.json` → `run_ref`(judgment)→ `exec`(metrics)回溯,验证 `trajectory_design.md` §4.5 的因果链可追溯(评估口径虽为细胞级,但判断单元仍是簇级,故逐簇回溯仍然成立)。
 
 ### 10.4 N 组实验的有效性
 - ⑥ vs ⑦ 除笔记本外完全同构(同一 skill / pipeline / 参数,仅重复跑),否则比的是 skill 而非记忆。

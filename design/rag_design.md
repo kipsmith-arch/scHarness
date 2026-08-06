@@ -217,7 +217,7 @@ skill 的系统提示**不提到笔记本**。两者物理拼接:loop_base_promp
 
 | 实验 | 对比 | 指标 |
 |---|---|---|
-| **N1 笔记本开关消融** | 笔记本可用 vs 禁用(工具注册但系统提示禁用它) | 端到端质量:final_annotations 逐簇准确率、unknown_rate;判断稳定性 |
+| **N1 笔记本开关消融** | 笔记本可用 vs 禁用(工具注册但系统提示禁用它) | 端到端质量:细胞级准确率/macro-F1(见 `experiment_implementation.md` §2)、unknown_rate;判断稳定性 |
 | **N2 使用分析** | — | write_note / retrieve_notes 调用次数与时机分布、笔记主题分布、top-k 相关性抽查、检索结果是否被采纳(人工抽查后续 LLM 输出是否体现笔记内容) |
 | **N3 工具本身验证** | 换最小 skill(如 echo) | 证明笔记本是 loop 级通用能力,与 skill 无关 |
 
