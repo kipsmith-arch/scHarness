@@ -9,3 +9,5 @@
 *.json
 *.csv
 output/
+_bmad
+.agents
