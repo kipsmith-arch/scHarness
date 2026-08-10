@@ -14,8 +14,8 @@
 | 数据入库 | ✅ 完成 | `dataset/h5ad/SRP171040.h5ad`(33,956 细胞)、`dataset/index/SRP171040.h5ad.csv`(12 真值类型) |
 | 知识图谱 | ✅ 在线 | `NEO4J_*` 可连:195,322 节点 / 466,606 条 `marker_of` 边 |
 | 基因名映射 | ✅ 就绪 | `name_map4Arabidopsis_thaliana_symbol.json`(10,963 条) |
-| **skill 包** | ❌ 不存在 | `skills/` 为空(SKILL.md / scripts / references / evals 全无) |
-| **loop 代码** | ❌ 不存在 | `harness/`(loop / dispatcher / skill 加载器 / notebook)未写 |
+| **skill 包** | ⚠️ 冒烟级 | `skills/echo`(标准格式:SKILL.md frontmatter + scripts/ + --dump-schema)已建并跑通;cell-annotation 包未建 |
+| **loop 代码** | ✅ 完成 | `harness/` 6 文件(loop / dispatcher / skill_loader / session / conversation / notebook)已实现,P1 验收通过 |
 | **pipeline 代码** | ❌ 不存在 | `common.py` + 7 个 `stepN_*.py` 未写 |
 | **实验代码** | ❌ 不存在 | `scripts/`、`experiments/` 未建 |
 | 依赖环境 | ⚠️ 基本齐 | langgraph/scanpy/neo4j/sentence-transformers/sklearn/statsmodels/leidenalg 均可用;**scrublet 未安装** |
@@ -105,11 +105,11 @@ scripts/*.py         → 每个脚本执行 `--dump-schema` 输出 {subcommand, 
 - **单一事实源**:工具声明写在脚本 argparse 里,派生自动对齐,无手工 JSON 漂移(取代旧计划的 S-3/S-4 手写任务)
 - 新增工具类型(function/builtin)只需加载器扩展,不动 skill 格式
 
-### 3.3 验证标准
+### 3.3 验证标准(P1 已完成 ✅)
 
-- [ ] echo skill:frontmatter 可读、body 进 system message、scripts 工具可调、tool_calls 循环正常 END
-- [ ] 笔记本:write_note → 新 session → retrieve_notes 命中;无 embedding 时 BM25 兜底可用
-- [ ] 加载器对"缺 frontmatter / 缺 scripts"的 skill 报清晰错误
+- [x] echo skill:frontmatter 可读、body 进 system message、scripts 工具可调、tool_calls 循环正常 END
+- [x] 笔记本:write_note → 新 session → retrieve_notes 命中;无 embedding 时 BM25 兜底可用
+- [x] 加载器对"缺 frontmatter / 缺 scripts"的 skill 报清晰错误
 
 ---
 
@@ -311,7 +311,7 @@ P1 Loop+加载器(4~6d) → P2 scripts(10~15d) → P3 SKILL.md+references(3~5d)
 
 | 里程碑 | 验收标准 |
 |---|---|
-| M1 Loop | echo skill(标准格式)跑通;加载器从标准包派生三接口;subprocess/function/builtin 分发正确;笔记本读写 + BM25 兜底可用 |
+| M1 Loop ✅ | echo skill(标准格式)跑通;加载器从标准包派生三接口;subprocess/function/builtin 分发正确;笔记本读写 + BM25 兜底可用 |
 | M2 scripts | 47 op 全跑通;4 次 h5ad 加载;`--dump-schema` 全脚本可用;run_log 全 exec 记录;step7 0 加载;sidecars 写出 |
 | M3 Skill 包 | **标准 anatomy 合规**(SKILL.md frontmatter + scripts/references/assets/evals);SKILL.md <500 行;references 有 TOC 且被引用;三接口派生成功 |
 | M4 数据底座 | gt_cells 100% 对齐;label_map 12 类型全映射且人工定案 |

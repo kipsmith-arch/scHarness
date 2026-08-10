@@ -39,7 +39,7 @@ RAG 从"skill 的决策点检索"收敛为一个**loop 内置的通用笔记本*
 │                                                │                  │
 └────────────────────────────────────────────────┼──────────────────┘
                                                  ▼
-                                  笔记存储 notes.jsonl + 向量索引
+                                  笔记存储 notes.jsonl + Chroma 向量索引
                                   (路径见 §4,默认共享目录)
 ```
 
@@ -141,11 +141,14 @@ retrieve_notes 返回:
 - 设了 `RAG_NOTES_DIR`(如一个跨数据集的共享目录)时,所有会话共享同一笔记本 → **跨数据集经验复用**;不设时笔记只在该 project 内可见。
 - 遵循 tool_design.md §10 环境变量原则,不硬编码路径。
 
-### 3.3 向量索引
+### 3.3 向量索引(**Chroma** 持久化向量库,实施定版)
 
-- 追加式:write_note 时对新笔记 embed,追加进内存/索引文件,不重建全库(量级小,几十~几百条)。
-- embedding 提供方可插拔:默认本地 `sentence-transformers`(CPU 小模型),可选 API,通过 `RAG_EMBEDDING` 指定。
-- 冷启动兜底:embedding 不可用(模型未装/网络断)时,退回关键词匹配(BM25 式),保证工具不失效。
+- **架构**:`notes.jsonl` 仍是权威存储(可审计、loop 不解析);Chroma persistent 向量库是它的**追加式投影**——`write_note` 双写(jsonl + Chroma upsert),`retrieve_notes` 查询 Chroma。
+- **存储位置**:Chroma 数据目录 = `notes.jsonl` 同目录下 `notes_chroma/`(跟随 `RAG_NOTES_DIR` 共享,天然支持跨数据集经验复用)。
+- **嵌入向量**:自定义 EmbeddingFunction 复用可插拔的本地 `sentence-transformers`(默认 `all-MiniLM-L6-v2`,本地缓存优先、离线安全),通过 `RAG_EMBEDDING` 指定(`off`/`none`/`bm25` 则完全禁用向量索引)。
+- **元数据过滤**:每条笔记的 tags 以 list 存入 Chroma metadata,查询时用 `$contains` 做单/多标签过滤(AND)。
+- **一致性**:集合带 `index_version`;检索前若 `count()` 与 jsonl 行数不一致(手工编辑/索引丢失),自动重建(笔记量级几十~几百条,重建成本低)。
+- **冷启动兜底**:Chroma / embedding 任一不可用(未装、模型未缓存、网络断)时,退回关键词匹配(BM25 式,基于 jsonl),保证工具不失效。
 
 ---
 
@@ -230,7 +233,7 @@ skill 的系统提示**不提到笔记本**。两者物理拼接:loop_base_promp
 
 | Phase | 内容 | 依赖 | 产出 |
 |---|---|---|---|
-| M-1 | `write_note` / `retrieve_notes` 工具 + notes.jsonl 存储 + 向量索引(含 BM25 兜底) | loop 本体(L-1) | 笔记本内核 |
+| M-1 | `write_note` / `retrieve_notes` 工具 + notes.jsonl 存储 + **Chroma 向量索引**(含 BM25 兜底) | loop 本体(L-1) | 笔记本内核 |
 | M-2 | loop 注册内置工具 + 系统提示拼接 + `RAG_NOTES_DIR` 配置 | M-1 | 集成 |
 | M-3 | 同步修改 loop_design.md(职责/架构图/State) | M-2 | 文档一致 |
 | M-4 | N1/N2/N3 评估 | M-2 | 量化结论 |
@@ -246,7 +249,7 @@ M-1 不依赖任何历史数据(空库即可用,冷启动自动);M-4 依赖有�
 | LLM 不主动用笔记本,模块空转 | 无增益还多两个工具 | 系统提示强调 + N2 统计使用率;过低则加强提示,而非改主动注入 |
 | 失败会话的笔记误导后续判断 | 质量下降 | 带 `session_id` 可溯源 + 提示"仅供参考,独立判断" |
 | 笔记语义漂移/过期 | 检索到过时经验 | 结果带 `ts`,按时间排序可选项 |
-| embedding 依赖不可用 | 工具失效 | BM25 兜底 + `RAG_EMBEDDING` 可插拔 |
+| embedding 依赖不可用 | 工具失效 | Chroma 不可用时 BM25 兜底 + `RAG_EMBEDDING` 可插拔(默认本地缓存模型,离线安全) |
 | 与 loop"极简"哲学冲突 | 架构漂移 | 显式决策:loop 仍是领域无关,只是多一个通用记忆能力;在 loop_design.md 明示并让 N3 证明通用性 |
 
 ---

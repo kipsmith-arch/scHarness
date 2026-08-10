@@ -19,7 +19,7 @@ LLM 需要哪些信息(知识、工具、决策流程)完全由 **skill** 决定
 
 | 职责 | 说明 |
 |---|---|
-| 加载 skill | 从 skill 获取 system prompt、工具 schema、工具执行方式 |
+| 加载 skill | 经 `skill_loader` 从**标准 skill 包**派生 system_prompt / tool_schemas / tool_runtime(见 §3) |
 | 注册工具 | 注册 skill 声明的工具(name + schema + 执行函数)+ loop 内置笔记本工具(write_note / retrieve_notes) |
 | 拼接系统提示 | `loop 通用提示(含笔记本用法指导)+ skill.system_prompt` 合成系统消息 |
 | 运行 agent 循环 | LLM → tool_calls → 执行 → result → LLM,循环直到 LLM 不再调工具 |
@@ -50,7 +50,27 @@ loop 换一个 skill 就能跑完全不同的任务,不需要改 loop 代码。
 
 ## 3. Loop 对 Skill 的接口需求
 
-loop 不规定 skill 的文件格式,只声明它需要从 skill 获取三样东西:
+loop 通过**标准 skill 加载器**(`harness/skill_loader.py`)从标准 skill 包派生三样东西,不感知领域内容。标准包形态与派生规则见 `implementation_plan.md` §1 / §3.2:
+
+```
+skills/<name>/
+├── SKILL.md     YAML frontmatter(name/description)+ body
+└── scripts/     每个脚本实现 --dump-schema 自描述
+
+frontmatter → name / description(metadata)
+body        → system_prompt
+scripts/*.py → 执行 `python <script> --dump-schema` 输出
+               {subcommand, args[{name,type,required,default,help}]}
+               → 聚合成 tool_schemas(OpenAI function-calling 格式)
+               → 同时生成 tool_runtime:{name:{type:"subprocess",script,subcommand}}
+可选 frontmatter `functions:` 声明 type="function" 工具(module.func 相对 scripts/ 解析)
+```
+
+- **单一事实源** = 每个脚本的 argparse;派生自动对齐,无手工 JSON 漂移。
+- 工具名 = `{script_stem}__{subcommand}`(双下划线分隔;函数名必须匹配 `^[a-zA-Z0-9_-]+$`,含点会被 API 拒绝)。
+- 新增工具类型(function/builtin/http…)只需扩展 dispatcher 与加载器,不动 skill 格式。
+
+loop 从 skill 获取三样东西:
 
 | 接口 | 类型 | 给谁 | 说明 |
 |---|---|---|---|
@@ -330,12 +350,13 @@ session 中断后,`conversation.jsonl` 保留了完整历史。重新启动时�
 harness/
 ├── loop.py             ← 通用 agent loop(LangGraph)
 ├── dispatcher.py       ← tool dispatcher(subprocess / function / builtin)
+├── skill_loader.py     ← 标准 skill 加载器(frontmatter + --dump-schema 派生三接口)
 ├── session.py          ← 入口:run_session()
 ├── conversation.py     ← conversation.jsonl 读写
 └── notebook.py         ← 内置笔记本工具(write_note / retrieve_notes + 存储 + 索引)
 ```
 
-loop 只包含上述 5 个文件(`notebook.py` 为 loop 的通用记忆,不属于 skill)。skill、脚本、知识文件都不属于 loop。
+loop 只包含上述 6 个文件(`notebook.py` 为 loop 的通用记忆,不属于 skill)。skill、脚本、知识文件都不属于 loop。
 
 ---
 
@@ -370,29 +391,34 @@ Loop (通用)
 
 ## 10. 实施计划
 
-| Phase | 内容 | 产出 |
-|---|---|---|
-| **L-1** | `loop.py` + `dispatcher.py` + `session.py` + `conversation.py` | 通用 loop |
-| **L-2** | 定义 skill 接口协议(system_prompt / tool_schemas / tool_runtime) | 接口规范 |
-| **L-3** | 端到端测试:用最小 skill 验证 loop 通用性 | 验证 |
-| **L-4** | `notebook.py`(write_note / retrieve_notes)+ 通用提示拼接 + env 配置 | 内置记忆(见 `rag_design.md` §8 M-1/M-2) |
+| Phase | 内容 | 产出 | 状态 |
+|---|---|---|---|
+| **L-1** | `loop.py` + `dispatcher.py` + `session.py` + `conversation.py` | 通用 loop | ✅ 已完成 |
+| **L-2** | 标准 skill 加载器(`skill_loader.py`)+ 接口协议派生 | 接口规范 + 加载器 | ✅ 已完成 |
+| **L-3** | 端到端测试:echo skill(标准格式)验证 loop 通用性 | 验证 | ✅ 已完成 |
+| **L-4** | `notebook.py`(write_note / retrieve_notes)+ 通用提示拼接 + env 配置 | 内置记忆(见 `rag_design.md` §8 M-1/M-2) | ✅ 已完成 |
+| **L-5** | 会话入口 CLI(`python -m harness.session`,含 `--dump-skill` / `--resume`) | 入口 + 冒烟 | ✅ 已完成 |
+| **L-6** | 本文档同步修订(职责/架构图/State 补笔记本字段;skill 接口改述为“从标准包派生”) | 文档一致 | ✅ 已完成 |
 
-skill 的具体实现(工具清单、知识文件、日志格式)不在本阶段,属于 skill 设计。
+技能的具体实现(工具清单、知识文件、日志格式)属于 skill 设计(P2/P3)。
 
 ---
 
 ## 11. 验证
 
-### 11.1 通用性验证
+### 11.1 通用性验证 ✅(P1 已通过)
 
-换一个最小 skill(如只有一个 echo 工具),loop 应该能直接跑,不需要改 loop 代码。
+换一个最小 skill(echo),loop 直接跑通,未改 loop 代码。
 
-### 11.2 接口验证
+### 11.2 接口验证 ✅(P1 已通过)
 
-skill 提供的三个接口(system_prompt / tool_schemas / tool_runtime)能被 loop 正确加载和使用。
+- echo skill 标准包:frontmatter → name/description;body → system_prompt;`echo__repeat`(subprocess,由 `--dump-schema` 派生)与 `echo_reverse`(function,由 frontmatter 声明)加载成功。
+- 缺 frontmatter / 缺 scripts / 缺 SKILL.md 的包均报清晰 SkillError。
 
-### 11.3 笔记本验证
+### 11.3 笔记本验证 ✅(P1 已通过)
 
-- 最小 skill 下 write_note / retrieve_notes 可注册、可读写、可跨会话检索(见 `rag_design.md` §7 N3)
-- 系统消息 = `base_prompt + skill.system_prompt`,拼接正确
-- skill 对笔记本无感知:不声明笔记本工具、不写相关内容,loop 仍能正常跑(向后兼容)
+- 最小 skill 下 write_note / retrieve_notes 可注册、可读写、可跨会话检索(前一 session 写的笔记在下一 session 命中,score 0.865)。
+- 系统消息 = `base_prompt + skill.system_prompt`,拼接正确。
+- 向量检索走 **Chroma 持久化向量库**(`notes_chroma/` 目录):write_note 双写(jsonl + Chroma),retrieve 返回余弦相似度;tags 用 `$contains` 过滤;索引丢失/不一致时自动重建。
+- 无 embedding(离线/`RAG_EMBEDDING=off`)时 BM25 兜底可用;Chroma/embedding 加载失败自动降级,工具不失效。
+- skill 对笔记本无感知:echo skill 未声明笔记本工具,loop 仍正常注册并提供。
