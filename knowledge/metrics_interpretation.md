@@ -24,7 +24,8 @@
 
 ## 1. 数据准备阶段(step1_prepare)
 
-> 产出文件:`step1/processed.h5ad`(QC + 聚类后的数据)、`step1/qc_metrics.json`(QC 指标 + 分布统计)、`step1/qc_distributions.png`(供人类查看,LLM 应读 JSON 中的分布数据)
+> 产出文件:`step1_prepare/processed.h5ad`(QC + 聚类后的数据)、`step1_prepare/qc_metrics.json`(全部 Step1 指标)、`step1_prepare/obs_snapshot.csv` + `var_snapshot.csv`(**sidecar**:细胞/基因元数据,供 step7 与 OBS 级操作零加载读取)、`step1_prepare/qc_distributions.png`(供人类查看,LLM 应读 JSON 中的分布数据)
+> 加载纪律:`run` 子命令 = 1× raw 加载内完成全部 16 个原子操作;`metrics` 只到 qc_plot(4 op);`recluster` 1× proc 加载。
 
 ### compute_qc — 质控变量计算
 
@@ -81,6 +82,7 @@
 | `[核心]` | `n_genes_before`, `n_genes_after`, `frac_genes_lost` | 过滤前后基因数 | frac_genes_lost 高→数据稀疏(很多基因只在极少数细胞表达) |
 | `[扩展]` | expression_breadth_distribution | 各基因的表达细胞比例分布 | 看分布尾部——长尾→有大量极低表达基因,过滤合理;无尾→数据密集 |
 | `[扩展]` | n_genes_in_<1%_cells | 极低表达基因数 | 高→数据稀疏,影响 DE 检验力 |
+| `[扩展]` | `n_mt_removed`, `n_cp_removed` | 移除的线粒体/叶绿体基因数(植物) | 植物中 ATCG(叶绿体)基因通常数百个、ATMG(线粒体)十几个;数值异常(如 0)→前缀正则没匹配上,检查 `--mt-pattern`/`--cp-pattern` |
 
 ### detect_doublets — 双峰检测
 
@@ -92,6 +94,7 @@ scrublet 检测 doublet 并移除。
 | `[核心]` | `n_doublets_detected`, `frac_doublets` | 检出并移除的数量与比例 | frac_doublets 远超 expected_rate(如 >2×)→阈值可能过严;远低→可能漏检 |
 | `[扩展]` | `doublet_score_bimodality` | 分数是否形成独立峰 | 双峰→分离可信;单峰→阈值是硬切的,不确定 |
 | `[扩展]` | `implied_threshold` | scrublet 隐含的分数阈值 | 看阈值落在分布的什么位置——落在谷底才合理 |
+| `[扩展]` | `de_method` | 检测方法(scrublet / scrublet-failed) | **scrublet 失败时不崩溃**:保留全部细胞、`de_method=scrublet-failed`、error 字段记录原因——此时下游标注需考虑未去双峰的影响 |
 
 ### normalize — 归一化
 
@@ -159,6 +162,7 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 | `[核心]` | `silhouette` per cluster (mean, median, p25, p75) | 簇级轮廓系数 | 低或负→该簇与邻居混淆 |
 | `[核心]` | `silhouette_overall` (mean, std) | 全局聚类质量 | 全局低→聚类整体质量差,需调分辨率或上游 |
 | `[核心]` | `n_clusters_with_negative_mean_silhouette` | 轮廓为负的簇数 | **多→多个簇分错**,需重新聚类 |
+| `[核心]` | `silhouette_sampled` | 是否采样计算(>10K 细胞采 10K,固定 seed=0) | True→数值基于 10K 子样本,簇内均值仍是近似,不要拿它和未采样的数据集直接比 |
 | `[扩展]` | Davies-Bouldin index | 簇间距离/簇内离散比(越低越好) | 与其他分辨率对比,低的更优 |
 | `[扩展]` | Calinski-Harabasz index | 簇间方差/簇内方差(越高越好) | 与其他分辨率对比,高的更优 |
 | `[扩展]` | WCSS per cluster | 簇内离散度 | 高→簇内杂,可能需细分 |
@@ -206,7 +210,7 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 | `[核心]` | `per_cluster_max_batch_fraction` | 单批次最大占比 | →1=批次主导;→1/n_batches=均匀混合 |
 | `[扩展]` | `batch_cluster_chi_square` | 批次×聚类卡方统计量(独立性检验) | 显著→批次与聚类不独立,有批次效应 |
 | `[扩展]` | `overall_batch_mixing_index` | 全局批次混合度 | 低→整体有批次效应 |
-| `[核心]` | `batch_graph_autocorr` | 批次标签在 kNN 图上的 Moran's I | **高(>0.3)→批次在图上分离**(每个批次的细胞聚在一起);低(≈0)→混合好。比 per_cluster 熵更直接——直接看批次标签在图上是否有空间结构 |
+| `[核心]` | `batch_graph_autocorr_morans_i` | 批次标签在 kNN 图上的 Moran's I(每批次 + `mean_abs`) | **高(>0.3)→批次在图上分离**(每个批次的细胞聚在一起);低(≈0)→混合好。比 per_cluster 熵更直接——直接看批次标签在图上是否有空间结构 |
 | `[扩展]` | `embedding_density_per_batch` | 每批次在 UMAP 空间的细胞密度 | 一批次挤在一片→批次效应 |
 
 ### LLM 描述模板(step1)
@@ -216,7 +220,7 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 
 ## 2. Marker 发现阶段(step2_markers)
 
-> 产出文件:`step2/markers.csv`(全部 marker DE 表)、`step2/markers.json`(按簇组织)
+> 产出文件:`step2_markers/markers.csv`(全部 marker DE 表)、`step2_markers/markers.json`(按簇组织,含 de_distribution/filter_funnel/pseudobulk)
 
 ### de_rank — DE 排序
 
@@ -277,7 +281,7 @@ Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,�
 
 ## 3. 知识图谱查询阶段(step3_kg)
 
-> 产出文件:`step3/kg_hits.json`(每簇候选细胞类型)、`step3/kg_source.txt`(KG 来源)
+> 产出文件:`step3_kg/kg_hits.json`(每簇候选细胞类型 + gene_to_cts + ancestors)、`step3_kg/kg_source.txt`(KG 来源)
 
 ### query_genes — KG 查询
 
@@ -307,6 +311,15 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 | `[扩展]` | `confidence_distribution_across_candidates` (mean, std) | 候选间置信度离散度 | std 大→候选质量参差 |
 | `[扩展]` | `n_unique_cell_types_across_clusters` | 全局命中了多少不同 cell type | 看全局多样性 |
 
+### query_hierarchy — 本体层级查询(ancestors)
+
+对每个命中的细胞类型,查 KG 本体中的祖先节点(ontology_relation,默认 ≤3 跳)。
+
+| 状态 | 指标 | 含义 | LLM 解读要点 |
+|---|---|---|---|
+| `[核心]` | `ancestors` map(写入 kg_hits.json) | {cell_type: [ancestor_name,...]} | **step4 的 `first_second_ancestor_overlap` 直接用它**;也用于判断两个候选是否为父子关系(如 "root cap" 是 "lateral root cap" 的祖先)。空列表→该类型在本体中没有已收录祖先,不代表不存在,只是 KG 没存 |
+| `[核心]` | `n_cell_types_queried` / `n_cell_types_with_ancestors` | 层级查询规模 | 命中类型大多无祖先→本体收录浅,父子关系判断需更多依赖生物学知识 |
+
 ### LLM 描述模板(step3)
 > "Step3 完成:KG 来源 neo4j,整体命中率 98%。簇 0 的第一候选 'lateral root cap' 有 36 个支持 marker(平均置信度 0.75),第二候选 'root cap' 也有 36 个..."
 
@@ -314,7 +327,7 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ## 4. 簇判断阶段(step4_judge)
 
-> 产出文件:`step4/annotations.json`(每簇第一/第二候选 + 原始证据)
+> 产出文件:`step4_judge/annotations.json`(每簇第一/第二候选 + 原始证据)
 
 ### rank_candidates — 候选排名与差距
 
@@ -345,8 +358,8 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ## 5. 细化阶段(step5_refine)
 
-> 产出文件:`step5/refined_annotations.json`
-> 触发条件(定义性,非阈值):`first_count <= second_count` 的簇会被分析(子聚类 + 重做 DE + 重查 KG)。
+> 产出文件:`step5_refine/refined_annotations.json`
+> 触发条件(定义性,非阈值):`first_count <= second_count` 的簇会被分析(子聚类 + 重做 DE + 重查 KG);`< min_cells(默认 100)` 的簇直接 skipped(细胞数不足,SOP-5A)。
 
 ### candidate_autocorr — 候选倾向自相关(预判细分必要性)
 
@@ -425,11 +438,12 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ## 6. 验证阶段(step6_validate)
 
-> 产出文件:`step6/final_annotations.json`(最终注释带证据)、`step6/report.md`(人类可读报告)、`step6/figures/cluster_*_markers.png`(供人类查看,LLM 应读 JSON 中的 `top_markers_expression`)
+> 产出文件:`step6_validate/final_annotations.json`(最终注释带证据)、`step6_validate/report.md`(人类可读报告)、`step6_validate/figures/cluster_*_markers.png`(供人类查看,LLM 应读 JSON 中的 `top_markers_expression`)
+> `run` 1× proc 加载(`--backed` 时只按列读 top-3 marker 的 raw.X,`backed_mode` 字段标注实际模式;失败自动回退全量加载)。`report` 子命令 0 加载。
 
 ### marker_expression — Top Marker 表达验证
 
-对每簇 top-3 DE marker 计算簇内外表达统计。**不计算置信度等级**,LLM 从原始证据判断。
+对每簇 top-3 DE marker 计算簇内外表达统计。pipeline 给出**透明规则的证据型置信度**(`confidence` 字段:first_count>15 且 count_ratio≥2 → high;count_ratio≥1.5 → medium;否则 low,规则写在 `_meta.confidence_rule`);**这是证据快照,LLM 在 label_confirm 判断点可依据更多证据覆盖它**。
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
@@ -471,7 +485,7 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 >
 > 逐簇标签:[cluster 0 = lateral root cap(36 支持 marker,置信度 0.75,top marker AT4G23590 pct1=0.85 pct2=0.02)...]
 >
-> 注意:本 pipeline 不输出置信度等级。以上可信度判断基于 first/second count 差距和 marker 表达,由 LLM 解读,非自动计算。"
+> 注意:以上可信度判断基于 first/second count 差距和 marker 表达,由 LLM 解读;`confidence` 字段为证据型初值,LLM 可覆盖。"
 
 ### 元数据块
 `final_annotations.json` 的 `_meta` 包含 KG source + version、阈值参数、scanpy 版本、日期。**必须在总结中告知用户,保证可追溯**——"cluster 0 = T cell" 没有依据是没意义的。
@@ -480,7 +494,8 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ## 7. 诊断阶段(step7_diagnose)
 
-> 产出文件:`step7/diagnostics.json`(原始测量值)、`step7/report.md`(表格报告)
+> 产出文件:`step7_diagnose/step7_diagnose.json`(原始测量值)、`step7_diagnose/report.md`(表格报告)
+> **0 次 h5ad 加载**:批次熵读 `step1_prepare/obs_snapshot.csv`,其余全读 step JSON——这是硬约束,任何需要表达矩阵的指标都不属于本步。
 > 原则:报告原始测量,无阈值警告,无 pass/fail。LLM 结合组织生物学背景判断。
 
 ### hit_rate — 每簇 KG 命中率
@@ -525,6 +540,8 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 | `[扩展]` | `cluster_purity_proxy` = mean(silhouette) | 全局聚类纯度代理 | 低→整体聚类质量差 |
 | `[扩展]` | `mean_first_count_gap` | 全局 first-second 差距均值 | 低→整体模糊 |
 | `[扩展]` | `cross_cluster_marker_overlap_matrix` | 簇间 marker 共享度矩阵 | 高共享→过聚类 |
+| `[扩展]` | `mean_cross_cluster_marker_overlap` | 全局簇间平均 marker 重叠 | 高→大量簇共享 marker,过聚类信号 |
+| `[扩展]` | `n_clusters_no_candidates` | 无任何 KG 候选的簇数 | 与 unknown 率一致时→KG 覆盖不足或 organ 不对齐 |
 | `[扩展]` | `paga_connectivity_matrix` | 簇间 PAGA 连通性矩阵 | 高连通→簇间关系密切(可能是同类型的不同状态);低→簇独立。可补充 KG 层级判断:若两个 ambiguous 簇 PAGA 高,可能是同一类型的子状态 |
 | `[扩展]` | `paga_expression_entropies` | 每簇的表达熵 | 高→表达多样,可能需细化;低→表达集中,同质 |
 | `[扩展]` | `cell_cycle_contamination` | 细胞周期基因驱动的簇数 | >0→有簇被细胞周期主导,不是真实细胞类型,需在 step1 regress_out 细胞周期后重跑 |
@@ -535,6 +552,15 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 - 命中率低的簇:不要自动判为"标签错误"。先查基因 ID 系统是否匹配
 
 ---
+
+### 实现补充说明(P2 评审修复)
+
+- `step1_prepare` 的 `qc_metrics.json` 顶部含 `organ` 字段(来自 `--organ`),step6 的 `_meta.organ` 从它继承——不要用写死的 "root" 解读非根组织数据。
+- `choose_resolution` 的 `auto_knee_not_applicable=true` 表示簇数随分辨率单调递增(无拐点),自动选择了中间分辨率而非最高;此时 `resolution_select` 判断点应人工确认。
+- `step3_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
+- `step3_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
+- `--max-ancestor-hops 0` 表示跳过层级查询(ancestors 为空);`>=1` 才执行。
+- step6 `final_annotations.json` 的 `_meta.kg_version` 亦为上述代理值;`metadata_check` 只检查字段存在。
 
 ## 附:解读时的常见陷阱
 
