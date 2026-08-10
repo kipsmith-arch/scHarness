@@ -125,7 +125,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (无!) | — | — |
 | `[核心]` | n_connected_components | 图的连通分量数(>1=数据碎片化) | ★★★ |
 | `[扩展]` | graph_density | 边数/最大可能边数 | ★★ |
 | `[扩展]` | mean_degree, median_degree | 节点平均/中位度数(应接近 2×n_neighbors) | ★★ |
@@ -178,7 +177,6 @@
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | (无!) | — | — |
 | `[核心]` | trustworthiness | UMAP 保留局部邻域的程度(0~1,>0.9=良好) | ★★★ |
 | `[扩展]` | continuity | 原始空间近邻在 UMAP 空间仍近邻的比例 | ★★ |
 | `[扩展]` | mean_intra_cluster_distance_umap | UMAP 空间簇内平均距离 | ★★ |
@@ -504,7 +502,7 @@
 
 | 操作 | 指标 | 理由 |
 |---|---|---|
-| step1_prepare.leiden_cluster | silhouette per cluster + modularity | 聚类质量是整个 pipeline 的基石,目前完全空白 |
+| step1_prepare.leiden_cluster | silhouette per cluster + modularity | 聚类质量是整个 pipeline 的基石 |
 | step1_prepare.pca | variance_explained per PC | LLM 无法判断 PCA 质量,影响 n_pcs 选择 |
 | step1_prepare.leiden_cluster | cluster_size 分布统计 (Gini, CV, n_rare, n_singleton) | 判断过聚类/欠聚类 |
 | step1_prepare.choose_resolution | adjacent_resolution_ARI | 判断分辨率选择是否稳定 |

@@ -18,7 +18,7 @@
 ## 标注约定
 
 - `[核心]` = 基础必备(无★)或高优先级(★★★)指标,本文件给出完整解读
-- `[扩展]` = 有价值(★★)或诊断参考(★)指标,本文件给出"读什么 + 解读方向",待 script 实现后回填详细解读
+- `[扩展]` = 有价值(★★)或诊断参考(★)指标,本文件给出"读什么 + 解读方向"
 
 ---
 
@@ -78,7 +78,6 @@
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (无独立输出,混在 n_genes_after 里) | — | 当前看不到基因过滤规模,需新增指标 |
 | `[核心]` | `n_genes_before`, `n_genes_after`, `frac_genes_lost` | 过滤前后基因数 | frac_genes_lost 高→数据稀疏(很多基因只在极少数细胞表达) |
 | `[扩展]` | expression_breadth_distribution | 各基因的表达细胞比例分布 | 看分布尾部——长尾→有大量极低表达基因,过滤合理;无尾→数据密集 |
 | `[扩展]` | n_genes_in_<1%_cells | 极低表达基因数 | 高→数据稀疏,影响 DE 检验力 |
@@ -89,7 +88,6 @@ scrublet 检测 doublet 并移除。
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (仅 log 输出,未写入 JSON!) | — | 当前 doublet 信息丢失,必须新增 |
 | `[核心]` | `doublet_score_distribution` (percentiles, mean, std) | doublet 分数分布 | 分数分布是否有明显双峰(双峰→有意义的阈值分离) |
 | `[核心]` | `n_doublets_detected`, `frac_doublets` | 检出并移除的数量与比例 | frac_doublets 远超 expected_rate(如 >2×)→阈值可能过严;远低→可能漏检 |
 | `[扩展]` | `doublet_score_bimodality` | 分数是否形成独立峰 | 双峰→分离可信;单峰→阈值是硬切的,不确定 |
@@ -101,7 +99,6 @@ total-count 归一化(target_sum=1e4)→ log1p 变换。
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (无任何指标!) | — | 当前无归一化质量信息 |
 | `[扩展]` | `median_library_size_before` | 归一化前的中位库大小 | 与 target_sum 对比,差太多→归一化拉伸幅度大 |
 | `[扩展]` | `normalization_target` | 归一化目标值(1e4) | 记录用,供追溯 |
 | `[扩展]` | `post_norm_mean_expression_distribution` | 归一化后表达均值分布(percentiles) | 看分布是否合理(log 后应近似正态) |
@@ -126,7 +123,6 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (无任何指标!) | — | 当前无法判断 PC 数选择是否合理 |
 | `[核心]` | `variance_explained_per_pc` (PC1~PC50) | 每个 PC 的方差解释量 | 前几 PC 应显著高,后面趋于平台 |
 | `[核心]` | `cumulative_variance_explained` | 累积方差解释 | 看 n_pcs_for_Xpct 判断 PC 数是否够 |
 | `[核心]` | `n_pcs_for_50pct`, `n_pcs_for_80pct`, `n_pcs_for_90pct` | 解释 X% 方差需要多少 PC | 若 30 PC 解释<50%→信息不够,kNN 图质量打折 |
@@ -139,7 +135,6 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (无!) | — | 当前无图结构信息 |
 | `[核心]` | `n_connected_components` | 图的连通分量数 | **>1=数据碎片化**,孤立群体会形成独立簇,需检查 |
 | `[扩展]` | `graph_density` | 边数/最大可能边数 | 太低→图稀疏,聚类不稳;太高→过度连接 |
 | `[扩展]` | `mean_degree`, `median_degree` | 节点平均/中位度数 | 应接近 2×n_neighbors;偏离→有异常连接 |
@@ -192,7 +187,6 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | (无!) | — | 当前无法判断 UMAP 图可信度 |
 | `[核心]` | `trustworthiness` | UMAP 保留局部邻域的程度(0~1) | **>0.9=良好**;<0.8→UMAP 图有误导,不能只看图 |
 | `[扩展]` | `continuity` | 原始空间近邻在 UMAP 空间仍近邻的比例 | 低→UMAP 把真邻居画远了 |
 | `[扩展]` | `mean_intra_cluster_distance_umap` | UMAP 空间簇内平均距离 | 大→簇在图上散 |
@@ -231,9 +225,9 @@ Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,�
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
 | `[核心]` | `logfc` (per gene) | log2 倍数变化 | >1 说明强差异表达;<0.5 说明差异弱 |
-| `[核心]` | `pval` (per gene) | p 值 | 注意:当前未做多重检验校正,看 BH-FDR 才靠谱 |
+| `[核心]` | `pval` (per gene) | p 值 | 注意:pval 未做多重检验校正,看 BH-FDR 才靠谱 |
 | `[扩展]` | `n_genes_tested` per cluster | DE 检验的基因总数 | 看分母,marker 数 / tested 数 = 命中率 |
-| `[核心]` | `BH_adjusted_pval` (FDR) | Benjamini-Hochberg 校正 p 值 | **当前 pval 未校正**,FDR<0.05 才算显著 |
+| `[核心]` | `BH_adjusted_pval` (FDR) | Benjamini-Hochberg 校正 p 值 | **pval 未校正**,FDR<0.05 才算显著 |
 | `[核心]` | `AUC` per gene (0.5~1.0) | ROC 曲线下面积,Wilcoxon 等价的判别力指标 | **0.5=无判别力,1.0=完美**;>0.7=好 marker;比 logfc 更直观 |
 | `[扩展]` | `logfc_distribution` per cluster (mean, median, std, percentiles) | DE 整体强度 | mean logfc 低→DE 整体弱,簇可能不清晰 |
 | `[扩展]` | `pval_distribution` (histogram) | p 值分布 | 全小→系统性偏差;均匀→无信号 |
