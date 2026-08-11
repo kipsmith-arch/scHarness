@@ -197,6 +197,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | marker_quality | `markers_accept` / `markers_adjust_filter` / `markers_fail` | 接受 / 调参 / 失败 |
 | kg_match | `id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ` | ID 匹配诊断 |
 | candidate_gap | `first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown` | 候选差距判断 |
+| candidate_disambiguate | `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` | 并列候选消歧(仅并列簇;candidate_gap 词表子集) |
 | refine_effect | `refine_effective` / `refine_ineffective` / `refine_skipped` / `refine_autocorr_low` | 子聚类效果(含 candidate_autocorr 预判) |
 | unknown_cluster | `single_unknown_type` / `multiple_unknown_types` | Unknown 簇判断 |
 | label_confirm | `label_confirmed` / `label_downgraded` / `label_unknown` | 逐簇标签确认 |

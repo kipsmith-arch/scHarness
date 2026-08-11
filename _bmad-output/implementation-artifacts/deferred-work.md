@@ -14,6 +14,8 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: references/metrics.md 附:max_mt_pct 默认值写成 20,与脚本实际默认 15.0(step1_prepare.py)不一致
   evidence: P2 评审遗留——该值位于 knowledge/metrics_interpretation.md 原文(verbatim 抄入 references/metrics.md);需在上游 knowledge 修正为 15 后重抄 references(冻结约束禁止单独改副本)
+  resolved: '2026-08-11'  # knowledge/metrics_interpretation.md 已改 15,references/metrics.md 同步
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: design/trajectory_design.md §3.2 枚举表只有 12 行,candidate_disambiguate 无专属枚举行(13 决策点缺 1)
   evidence: 上游设计文档缺口;SKILL.md 已用 candidate_gap 词表子集补位,合规;未来 validate_log.py 逐决策点枚举校验时需要该行
+  resolved: '2026-08-11'  # §3.2 已补 candidate_disambiguate 行(与 SKILL.md §3.9 枚举集合相等)

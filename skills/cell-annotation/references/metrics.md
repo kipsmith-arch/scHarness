@@ -583,7 +583,7 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ## 附:解读时的常见陷阱
 
-1. **植物 mt/chloroplast 与动物不同**:线粒体基因是 `ATMG` 前缀,叶绿体是 `ATCG` 前缀,`MT-` 前缀匹配不到植物基因。`--max-mt-pct 20` 默认值是动物/血液的,肝脏天然高 mt,植物叶看 chloroplast。
+1. **植物 mt/chloroplast 与动物不同**:线粒体基因是 `ATMG` 前缀,叶绿体是 `ATCG` 前缀,`MT-` 前缀匹配不到植物基因。`--max-mt-pct 15` 默认值是动物/血液的,肝脏天然高 mt,植物叶看 chloroplast。
 2. **层级本体下的并列不是模糊**:植物根 "root cap" ⊃ "lateral root cap" 共享所有 marker,first_count == second_count 是正常的,选更具体的。查 `first_second_ancestor_overlap` 或用生物学知识。
 3. **小样本时 ratio 会骗人**:first_count=2, second_count=1 时 count_ratio=2 看着像"2 倍优势",其实只差 1 个 marker。同时看 count_diff。
 4. **pct1 高不等于好 marker**:管家基因 pct1 也高(所有细胞都表达)。必须同时看 pct2(低才特异)。
