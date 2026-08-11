@@ -7,6 +7,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: P3 的 assets/ 目录(加载器派生的 11 工具总览 tools.md + 交付报告模板 report-template.md,S-6)
   evidence: 与 SKILL.md/references 无耦合——SKILL.md 只给工具概览表、加载器不读 assets/;独立补做不影响主交付,从主 spec 拆分以压缩 token
+  resolved: '2026-08-11'  # assets/tools.md + assets/report-template.md 已交付
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: P3 的 evals/ 目录骨架(README 说明,用例内容归 P5,S-1)
   evidence: 纯目录 + 说明、无实质内容;P5 写 evals.json 时一并创建更自然,从主 spec 拆分
