@@ -156,10 +156,12 @@ pipeline 脚本执行后自动追加 exec 记录,你不需要手动写。但要�
 
 ### session_start(会话开始)
 
-第一次调用工具之前,追加一条 session_start 记录,含数据集元数据:
+第一次调用工具之前,调用 `write_judgment__session-start` 追加一条 session_start 记录,含数据集元数据:
 
-```json
-{"type": "session_start", "session_id": "sess-20260810-SRP171040", "dataset": {"id": "SRP171040", "h5ad_path": "dataset/h5ad/SRP171040.h5ad", "n_cells_raw": 33956, "n_genes_raw": 53678, "organism": "Arabidopsis thaliana", "organ": "root", "batch_key": "sample", "n_batches": 5}}
+```
+write_judgment__session-start(project_dir="<project-dir>",
+  session_id="sess-20260810-SRP171040",
+  dataset='{"id":"SRP171040","h5ad_path":"dataset/h5ad/SRP171040.h5ad","n_cells_raw":33956,"n_genes_raw":53678,"organism":"Arabidopsis thaliana","organ":"root","batch_key":"sample","n_batches":5}')
 ```
 
 ### judgment(每个决策点后)
@@ -177,35 +179,28 @@ pipeline 脚本执行后自动追加 exec 记录,你不需要手动写。但要�
 | output.action | 是 | 后续动作指令(调哪个工具、带什么参数) |
 | reasoning | 是 | 自然语言推理链 |
 
-追加模板(把 `<project-dir>` 换成实际目录):
+追加方式:调用 `write_judgment__add` 工具(工具会校验 decision 枚举与字段,非法值直接报错、不写入轨迹)。示例(把 `<project-dir>` 换成实际目录):
 
-```bash
-python -c "
-import json, datetime, os
-log = '<project-dir>/run_log.jsonl'
-seq = sum(1 for _ in open(log, encoding='utf-8')) + 1 if os.path.exists(log) else 1
-record = {
-    'ts': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    'seq': seq,
-    'type': 'judgment',
-    'decision_point': 'clustering_quality',
-    'scope': {'type': 'session'},
-    'run_ref': 'step1_prepare.leiden_cluster#1',
-    'inputs': [{'path': 'step1_prepare.leiden_cluster.silhouette_overall.mean', 'value': 0.15}],
-    'output': {'decision': 'clustering_adjust', 'confidence': 'high', 'action': 'recluster'},
-    'reasoning': 'silhouette 偏低且有负值簇,需要调整分辨率'
-}
-with open(log, 'a', encoding='utf-8') as f:
-    f.write(json.dumps(record, ensure_ascii=False) + '\n')
-"
 ```
+write_judgment__add(project_dir="<project-dir>", decision_point="clustering_quality",
+  decision="clustering_adjust", scope_type="session",
+  run_ref="step1_prepare.leiden_cluster#1",
+  inputs='[{"path":"step1_prepare.leiden_cluster.silhouette_overall.mean","value":0.15}]',
+  confidence="high", action="recluster",
+  reasoning="silhouette 偏低且有负值簇,需要调整分辨率")
+```
+
+- `run_ref`:取最近一次相关 exec 记录 stdout 输出的 run_id,重跑同一操作会递增 `#2`…
+- `inputs`:填你实际读取并用于判断的指标变量(path/value 快照)
+- 返回的 `data.seq` 可确认记录已追加;decision 必须在对应枚举内,否则工具报错
 
 ### session_end(会话结束)
 
-交付总结时追加,含 final_summary:
+交付总结时,调用 `write_judgment__session-end` 追加一条 session_end 记录,含 final_summary:
 
-```json
-{"type": "session_end", "final_summary": {"n_clusters": 29, "n_unknown": 0, "unknown_rate": 0.0, "n_unique_labels": 27, "run_count": 12, "judgment_count": 67}}
+```
+write_judgment__session-end(project_dir="<project-dir>",
+  final_summary='{"n_clusters":29,"n_unknown":0,"unknown_rate":0.0,"n_unique_labels":27,"run_count":12,"judgment_count":67}')
 ```
 
 ## 8. 工具概览
@@ -225,6 +220,9 @@ with open(log, 'a', encoding='utf-8') as f:
 | `step6_validate__run` | top-marker 表达验证 + 最终注释 | 1× proc(backed 可选) |
 | `step6_validate__report` | 生成人类可读报告 | 0 |
 | `step7_diagnose__run` | 诊断与全局质量测量 | 0 |
+| `write_judgment__add` | 追加一条 judgment 记录(决策留痕;校验 decision 枚举,非法值不写入) | 0 |
+| `write_judgment__session-start` | 追加 session_start 记录(会话开始,含数据集元数据) | 0 |
+| `write_judgment__session-end` | 追加 session_end 记录(会话结束,含 final_summary) | 0 |
 
 使用注意:
 - step3_kg__query 的 `--gene-key` 默认用 name_map 做 TAIR→symbol 映射,查询语义见 references/kg-schema.md。
