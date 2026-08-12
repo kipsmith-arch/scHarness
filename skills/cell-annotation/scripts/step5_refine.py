@@ -198,10 +198,10 @@ def op_subcluster_de(subs, log_path, params, n_genes, top_n, min_pct1, max_pct1,
     return sub_markers
 
 
-def op_subcluster_kg(sub_markers, gene_to_cts, log_path, params) -> dict:
+def op_subcluster_kg(sub_markers, gene_to_cts, log_path, params, target) -> dict:
     sub_results = {}
     for c, markers in sub_markers.items():
-        per = _rank_candidates(markers, gene_to_cts)
+        per = _rank_candidates(markers, gene_to_cts, target)
         sub_results[c] = {}
         for sub_id, info in per.items():
             cands = info["candidates"]
@@ -299,6 +299,12 @@ def cmd_run(args) -> dict:
         return common.fail("缺少 step3_kg/kg_hits.json 或 step2_markers/markers.json")
     if not os.path.exists(h5ad):
         return common.fail(f"processed.h5ad 不存在:{h5ad}")
+    # Target organ fail-fast:在 h5ad 加载前检查 kg_hits.json 的 query_config.organ,
+    # 避免后续 op_* 调用产生的孤立 exec 记录(参见 step5_fail_late 改动)。
+    query_config = kg.get("query_config")
+    if not isinstance(query_config, dict) or not query_config.get("organ"):
+        return common.fail("kg_hits.json 缺少 query_config.organ,无法确定目标 organ;请重新运行 step3_kg query")
+    target_organ = query_config["organ"]
     adata = common.read_h5ad(h5ad)
     if adata.raw is None:
         return common.fail("h5ad 缺少 raw(请先运行 step1_prepare run 的归一化)")
@@ -327,7 +333,8 @@ def cmd_run(args) -> dict:
     sub_markers = op_subcluster_de(subs, log, p, args.sub_de_n_genes, args.sub_top_n,
                                    args.min_pct1, args.max_pct1, args.min_pct1_pct2)
     gene_to_cts = kg.get("gene_to_cts", {})
-    sub_results = op_subcluster_kg(sub_markers, gene_to_cts, log, p)
+    # target_organ 由 cmd_run 提前从 kg["query_config"]["organ"] 读取并 fail-fast
+    sub_results = op_subcluster_kg(sub_markers, gene_to_cts, log, p, target_organ)
     overlap = op_marker_overlap(sub_markers, log, p)
     membership = op_type_membership(sub_results, kg, annotations, log, p)
     unknown = op_unknown_overlap(markers, annotations, log, p)

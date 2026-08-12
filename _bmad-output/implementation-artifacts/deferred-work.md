@@ -21,3 +21,19 @@
   summary: design/trajectory_design.md §3.2 枚举表只有 12 行,candidate_disambiguate 无专属枚举行(13 决策点缺 1)
   evidence: 上游设计文档缺口;SKILL.md 已用 candidate_gap 词表子集补位,合规;未来 validate_log.py 逐决策点枚举校验时需要该行
   resolved: '2026-08-11'  # §3.2 已补 candidate_disambiguate 行(与 SKILL.md §3.9 枚举集合相等)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
+  summary: REQUIRED_SCOPE 在 write_judgment.py 与 validate_log.py 各持一份同源拷贝,跨目录无共享模块/无测试,可能漂移
+  evidence: 评审发现;当前靠注释互指防漂移,未做单元测试;加 pytest golden test 或抽到独立 schema 模块后可彻底防止
+- source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
+  summary: _organ_status 的 `target.strip().title()` 归一化对多词/连字符 organ 名称不鲁棒
+  evidence: title() 对 "liver-brain" → "Liver-Brain",但 KG organ 实际可能是 "liver brain"(空格);当前根数据集为单字 "root" 不触发,跨数据集时需重新评估
+- source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
+  summary: _organ_status 的 substring 匹配 `target_norm in o` 存在 false positive("Rootstock" 含 "Root" 会误判为 root status)
+  evidence: 评审发现;原始代码即有该问题,本轮未修;未来可改 anchor 匹配(如按 "Root" 或 "|Root|" 等边界)
+- source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
+  summary: validate_log 覆盖度检查仅查 candidate_gap/label_confirm;refine_effect/candidate_disambiguate 覆盖率未校验
+  evidence: 评审发现;spec 当前只要求前两者,后两者为条件触发(仅 analyzed/tied 簇);后续可扩展
+- source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
+  summary: SKILL.md 中 organ_status 类别名仍是字面量 "root/partial/unknown/mismatch",与 prose "含目标 organ 的候选"在跨 organ 数据集下读起来易混淆
+  evidence: 评审发现;代码 category 名为历史遗留(语义=匹配 target);可通过将 category 名改为 "match/partial/unknown/mismatch"(rename)解决,影响所有 kg_hits.json 输出

@@ -74,15 +74,15 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 
 ### 3.7 kg_match(step3_kg,SOP-3,session 级)
 - 何时:query_genes 之后。
-- 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;候选的 `organ` / `organ_status`(root / partial / unknown / mismatch)。
+- 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
 - 判断要点:命中率高说明基因 ID 匹配与 organ 对齐良好;命中率低先查 organ 是否与数据来源对齐,再查 gene_key 映射——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
-- **组织一致性检查(必做)**:候选带 `organ_status`,根数据集里 `mismatch`(如 mesophyll=Leaf、anther=Flower、pollen)必须排除/降级——KG 的 marker 是跨组织积累的,同一基因可能同时是叶肉和根细胞类型的 marker;`partial`/`unknown` 保留但需结合生物学常识判断。
+- **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
 - decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
 
 ### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
 - 看什么:`step4_judge.rank_candidates.first_count`、`second_count`、`count_ratio`、`count_diff`、`first_second_ancestor_overlap`、`first_mean_confidence`、候选 `organ_status`。
-- 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**先排除 `organ_status=mismatch` 的候选再比较**(根数据集里 mesophyll/anther/pollen 等组织外类型即使 marker 数多也不可信);`unknown` 候选不参与 gap 比较。
+- 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**top 候选已按 organ 优先级排序,无需手动排除 mismatch**;`unknown` 候选不参与 gap 比较。
 - decision 枚举:`first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown`
 
 ### 3.9 candidate_disambiguate(step4_judge,SOP-4,cluster 级,仅并列簇)
@@ -172,13 +172,23 @@ write_judgment__session-start(project_dir="<project-dir>",
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | decision_point | 是 | 13 个决策点之一(见 §3) |
-| scope | 是 | `{"type":"session"}` 或 `{"type":"cluster","cluster_id":"0"}` |
+| scope | 是 | `{"type":"session"}` 或 `{"type":"cluster","cluster_id":"0"}`(粒度由决策点决定,见下表) |
 | run_ref | 是 | 基于的 exec 记录 run_id(从脚本输出获取) |
 | inputs | 是 | [{path, value}] 你实际读取并用于判断的变量 |
 | output.decision | 是 | 枚举值(见各决策点) |
 | output.confidence | 是 | high / medium / low |
 | output.action | 是 | 后续动作指令(调哪个工具、带什么参数) |
 | reasoning | 是 | 自然语言推理链 |
+
+**粒度表**(与 trajectory_design §3.1 一致;write_judgment 工具与 validate_log 脚本强制):
+
+| decision_point | scope 类型 | 每数据集条数 |
+|---|---|---|
+| qc_threshold / resolution_select / clustering_quality / batch_effect / de_method / marker_quality / kg_match / unknown_cluster / global_quality | session | 1 |
+| candidate_gap / candidate_disambiguate / refine_effect / label_confirm | cluster | candidate_gap/label_confirm = 簇数;disambiguate/refine_effect 仅部分簇 |
+
+- **session 级决策点**:一次写一条,scope.type=session,不需 cluster_id。
+- **cluster 级决策点**:每个被处理的簇写一条,scope.type=cluster + cluster_id;LLM 需逐簇调用,不得合并为 session 级(工具会报错拒绝写入,validate_log 也会抓旧账)。
 
 追加方式:调用 `write_judgment__add` 工具(工具会校验 decision 枚举与字段,非法值直接报错、不写入轨迹)。示例(把 `<project-dir>` 换成实际目录):
 

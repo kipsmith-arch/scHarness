@@ -37,6 +37,25 @@ DECISION_ENUMS: dict[str, set[str]] = {
 VALID_TYPES = {"session_start", "exec", "judgment", "session_end"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 
+# 决策点→scope 类型硬映射(trajectory_design §3.1 事实源;与 write_judgment.py
+# 的 REQUIRED_SCOPE 同源拷贝,跨目录不引共享模块,注释互指防漂移)。
+# 9 session 级 + 4 cluster 级;粒度违规报 ERROR。
+REQUIRED_SCOPE: dict[str, str] = {
+    "qc_threshold": "session",
+    "resolution_select": "session",
+    "clustering_quality": "session",
+    "batch_effect": "session",
+    "de_method": "session",
+    "marker_quality": "session",
+    "kg_match": "session",
+    "unknown_cluster": "session",
+    "global_quality": "session",
+    "candidate_gap": "cluster",
+    "candidate_disambiguate": "cluster",
+    "refine_effect": "cluster",
+    "label_confirm": "cluster",
+}
+
 ERROR, WARNING = "error", "warning"
 
 
@@ -47,6 +66,12 @@ def validate(path: str) -> tuple[list[dict], int]:
     seen_types = set()
     exec_run_ids = set()
     prev_seq = 0
+    # 从 step4_judge.rank_candidates 记录的 metrics.n_clusters 跟踪最新簇数,
+    # 供 cluster_id 范围与覆盖度检查使用。
+    n_clusters_latest: int | None = None
+    n_clusters_seq: int = 0
+    # 各决策点已出现的 cluster_id 集合(仅在 cluster 级 dp 下记录),用于覆盖度 warning。
+    coverage: dict[str, set[str]] = {}
 
     def add(level: str, lineno: int, msg: str) -> None:
         issues.append({"level": level, "line": lineno, "msg": msg})
@@ -98,6 +123,12 @@ def validate(path: str) -> tuple[list[dict], int]:
                 for field in ("parameters", "metrics"):
                     if not isinstance(rec.get(field), dict):
                         add(ERROR, lineno, f"exec 缺 {field}(object)")
+                # 跟踪最新 n_clusters(取最近一次 step4_judge.rank_candidates 的 seq)。
+                if isinstance(run_id, str) and run_id.startswith("step4_judge.rank_candidates#"):
+                    n = (rec.get("metrics") or {}).get("n_clusters")
+                    if isinstance(n, int) and n >= 0 and seq > n_clusters_seq:
+                        n_clusters_latest = n
+                        n_clusters_seq = seq
             elif rtype == "judgment":
                 dp = rec.get("decision_point")
                 if dp not in DECISION_ENUMS:
@@ -113,6 +144,25 @@ def validate(path: str) -> tuple[list[dict], int]:
                 scope = rec.get("scope")
                 if isinstance(scope, dict) and scope.get("type") not in ("session", "cluster"):
                     add(ERROR, lineno, f"scope.type 非法: {scope.get('type')!r}(session/cluster)")
+                # 粒度强制(REQUIRED_SCOPE,与 write_judgment.py 同源):session 级拒绝 cluster,反之亦然。
+                if dp in REQUIRED_SCOPE and isinstance(scope, dict):
+                    required_type = REQUIRED_SCOPE[dp]
+                    actual_type = scope.get("type")
+                    if actual_type != required_type:
+                        add(ERROR, lineno,
+                             f"decision_point {dp!r} 粒度违规:要求 scope-type={required_type!r}(trajectory_design §3.1),实际 {actual_type!r}")
+                    # cluster 级决策点:cluster_id 必须存在且是 string;跳数字范围检查交给后续 n_clusters 提供时。
+                    if required_type == "cluster":
+                        cid = scope.get("cluster_id")
+                        if not isinstance(cid, str) or not cid:
+                            add(ERROR, lineno, f"{dp!r} scope-type=cluster 缺 cluster_id")
+                        elif n_clusters_latest is not None:
+                            # 数字簇 id 校验范围;非数字跳过(部分数据集使用字符串簇 id)
+                            if cid.isdigit() and not (0 <= int(cid) < n_clusters_latest):
+                                add(ERROR, lineno,
+                                     f"{dp!r} cluster_id {cid!r} 越界(step4_judge.rank_candidates n_clusters={n_clusters_latest})")
+                        if isinstance(cid, str) and cid:
+                            coverage.setdefault(dp, set()).add(cid)
                 if not isinstance(rec.get("inputs"), list):
                     add(ERROR, lineno, "judgment inputs 应为数组")
                 else:
@@ -146,6 +196,16 @@ def validate(path: str) -> tuple[list[dict], int]:
             add(ERROR, 0, f"缺少 {required} 记录")
     if not any(t == "exec" for t in seen_types):
         add(ERROR, 0, "缺少 exec 记录")
+
+    # 簇覆盖度检查(candidate_gap / label_confirm 应覆盖所有 n_clusters 簇);
+    # 只检查数字 cluster_id;字符串簇名(如 "A","B")不参与覆盖度计算。
+    if n_clusters_latest is not None and n_clusters_latest > 0:
+        for dp in ("candidate_gap", "label_confirm"):
+            cids = coverage.get(dp, set())
+            numeric_cids = {c for c in cids if c.isdigit()}
+            if numeric_cids and len(numeric_cids) < n_clusters_latest:
+                add(WARNING, 0,
+                     f"{dp} 覆盖度不足:distinct numeric cluster_id={len(numeric_cids)}/{n_clusters_latest}(可能为晅缩或重跑补全)")
 
     n_errors = sum(1 for i in issues if i["level"] == ERROR)
     return issues, 1 if n_errors else 0

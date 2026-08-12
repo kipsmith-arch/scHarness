@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
 # decision 枚举词汇表(trajectory_design.md §3.2;与 validate_log.py 保持一致)
+# 校验项:decision 枚举、scope 类型(REQUIRED_SCOPE)、run_ref 格式、inputs JSON、confidence、reasoning
 DECISION_ENUMS: dict[str, set[str]] = {
     "qc_threshold": {"threshold_set", "threshold_default"},
     "resolution_select": {"resolution_chosen"},
@@ -52,6 +53,24 @@ DECISION_ENUMS: dict[str, set[str]] = {
 VALID_SCOPES = {"session", "cluster"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
+
+# 决策点→scope 类型硬映射(trajectory_design §3.1 事实源;与 validate_log.py 保持一致)。
+# 9 session 级 + 4 cluster 级;粒度违规直接拒写入。
+REQUIRED_SCOPE: dict[str, str] = {
+    "qc_threshold": "session",
+    "resolution_select": "session",
+    "clustering_quality": "session",
+    "batch_effect": "session",
+    "de_method": "session",
+    "marker_quality": "session",
+    "kg_match": "session",
+    "unknown_cluster": "session",
+    "global_quality": "session",
+    "candidate_gap": "cluster",
+    "candidate_disambiguate": "cluster",
+    "refine_effect": "cluster",
+    "label_confirm": "cluster",
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,6 +117,12 @@ def _validate_add(args) -> list[str]:
         errors.append(
             f"decision {args.decision!r} 不在 {args.decision_point} 枚举内: "
             f"{sorted(DECISION_ENUMS[args.decision_point])}")
+    # 粒度规荡(REQUIRED_SCOPE):session 级决策点拒绝 cluster scope,反之亦然。
+    required = REQUIRED_SCOPE.get(args.decision_point)
+    if required and args.scope_type != required:
+        errors.append(
+            f"decision_point {args.decision_point!r} 要求 scope-type={required!r}(见 trajectory_design §3.1),"
+            f"实际为 {args.scope_type!r}")
     if args.scope_type == "cluster" and not args.cluster_id:
         errors.append("scope-type=cluster 时必须提供 --cluster-id")
     if not RUN_ID_RE.match(args.run_ref):

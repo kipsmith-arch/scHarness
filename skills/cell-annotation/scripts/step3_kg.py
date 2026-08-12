@@ -24,6 +24,67 @@ import common  # noqa: E402
 
 NAME_MAP_DEFAULT = "name_map4Arabidopsis_thaliana_symbol.json"
 
+# organ_status 分类(语义)
+#   root     — 候选 organ 字段包含目标 target organ(由 --organ 透传,代码中无 organ 字面量)
+#   partial  — 同时含 target 与非 target organ
+#   unknown  — 无 organ 标注或仅 Unknown
+#   mismatch — 仅非 target organ
+# _priority 把这些 category 映射成排序优先级(root/含 target 排最前),与 target 无关。
+ORGAN_STATUS_PRIORITY = {"root": 0, "partial": 1, "unknown": 2, "mismatch": 3}
+
+
+def _organ_status(organs, target):
+    """Classify candidate by organ consistency with the target organ.
+
+    ``target`` is the dataset's target organ name, passed through from ``--organ``
+    on the step3_kg query subcommand. **No default value** — callers must pass it
+    explicitly so no organ name is hardcoded in this function. KG Organ strings
+    are normalised via ``target.strip().title()`` to match the title-case
+    convention used in the KG (e.g. ``"root" → "Root"``).
+
+    Returned categories are organ-agnostic:
+      - ``"root"``: candidate organs contain the target organ (category name is
+        historical; the semantic is "matches target organ")
+      - ``"partial"``: candidate organs include both target and non-target
+      - ``"unknown"``: no organ label or only "Unknown"
+      - ``"mismatch"``: candidate organs are all non-target
+
+    Caveats:
+      - ``target`` must be a non-empty string; non-string/empty raises ValueError
+        (callers are responsible for fail-fast at the CLI layer; this function
+        defends against accidental None propagation).
+      - ``target`` is normalised via ``strip().title()``; KG organ strings use
+        pipe-or-space-separated titles ("Stem|Root|Leaf"), so single-word
+        targets work, but multi-word or hyphenated targets may need explicit
+        casing. Round-2 scope accepts this limitation.
+    """
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError(f"_organ_status: target must be a non-empty string, got {target!r}")
+    target_norm = target.strip().title()
+    orgs = {str(o).strip() for o in organs if o is not None and str(o).strip()}
+    if not orgs:
+        return "unknown"
+    known = {o for o in orgs if o != "Unknown"}
+    if not known:
+        return "unknown"
+    has_target = any(target_norm in o for o in known)
+    has_other = any(target_norm not in o for o in known)
+    if has_target and has_other:
+        return "partial"
+    if has_target:
+        return "root"
+    return "mismatch"
+
+
+def _priority(status):
+    """Ordinal priority of an organ_status category for candidate ranking.
+
+    Organ-agnostic: depends only on the category name returned by
+    ``_organ_status``. ``root`` (matching target) ranks highest; ``mismatch``
+    (non-target only) ranks lowest.
+    """
+    return ORGAN_STATUS_PRIORITY.get(status, ORGAN_STATUS_PRIORITY["mismatch"])
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -34,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="subcommand")
 
     p_q = sub.add_parser("query", help="查询 KG 并聚合候选")
-    p_q.add_argument("--organ", default="root", help="组织过滤(对应 o.Organ)")
+    p_q.add_argument("--organ", default=None, help="组织过滤(对应 o.Organ),必填;不提供则 fail")
     p_q.add_argument("--species", default=None, help="物种(信息性,对应 g.Species)")
     p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type)")
     p_q.add_argument("--min-confidence", type=float, default=0.0, help="关系置信度下限")
@@ -229,33 +290,18 @@ def op_query_hierarchy(driver, cell_types, max_hops, log_path, params) -> dict:
     return ancestors, m
 
 
-def _organ_status(organs) -> str:
-    """Classify candidate by organ consistency with the target organ (root).
+def _rank_candidates(per_cluster_genes, gene_to_cts, target):
+    """Aggregate gene->cell_type hits into ranked candidates per cluster.
 
-    - unknown : 无 organ 标注或全 Unknown(不误杀,保留)
-    - root    : 明确含 Root(可含 Root|xxx 组合)
-    - partial : 同时含 Root 与明确非 Root 组织(如 Root|Leaf)
-    - mismatch: 明确非 Root 组织(如 Leaf/Flower/Stem/Seed/Fruit)
+    ``target`` is the dataset's target organ, passed through from ``--organ``.
+    Used by ``_organ_status`` to classify each candidate's organs; the result
+    drives candidate ranking via ``_priority`` (organ-matching candidates first,
+    same-category ties broken by marker_count then confidence). Organ-agnostic
+    ranking — no organ name appears in the sort key.
 
-    供 LLM 组织一致性检查:根数据集里 mismatch 候选应排除/降级。
+    Within an organ_status category the ranking preserves the original order
+    (marker_count descending, mean_confidence descending, cell_type ascending).
     """
-    orgs = {str(o).strip() for o in organs if o is not None and str(o).strip()}
-    if not orgs:
-        return "unknown"
-    known = {o for o in orgs if o != "Unknown"}
-    if not known:
-        return "unknown"
-    has_root = any("Root" in o for o in known)
-    has_other = any("Root" not in o for o in known)
-    if has_root and has_other:
-        return "partial"
-    if has_root:
-        return "root"
-    return "mismatch"
-
-
-def _rank_candidates(per_cluster_genes, gene_to_cts):
-    """Aggregate gene->cell_type hits into ranked candidates per cluster."""
     per_cluster = {}
     for c, genes in per_cluster_genes.items():
         agg = {}
@@ -283,9 +329,12 @@ def _rank_candidates(per_cluster_genes, gene_to_cts):
                 "min_confidence": float(np.min(e["confidences"])) if e["confidences"] else None,
                 "sources": sorted(e["sources"]),
                 "organ": organs,
-                "organ_status": _organ_status(organs),
+                "organ_status": _organ_status(organs, target),
             })
-        candidates.sort(key=lambda x: (-x["marker_count"],
+        # Rank: organ_status priority first (organ-matching > non-matching);
+        # same-category ties keep original marker_count → confidence → cell_type.
+        candidates.sort(key=lambda x: (_priority(x["organ_status"]),
+                                       -x["marker_count"],
                                        -(x["mean_confidence"] or 0.0), x["cell_type"]))
         n_queried = len(genes)
         per_cluster[c] = {
@@ -296,9 +345,9 @@ def _rank_candidates(per_cluster_genes, gene_to_cts):
     return per_cluster
 
 
-def op_aggregate_candidates(markers_json, gene_to_cts, log_path, params) -> dict:
+def op_aggregate_candidates(markers_json, gene_to_cts, log_path, params, target) -> dict:
     per_cluster_genes = {c: v["marker_genes"] for c, v in markers_json["per_cluster"].items()}
-    per_cluster = _rank_candidates(per_cluster_genes, gene_to_cts)
+    per_cluster = _rank_candidates(per_cluster_genes, gene_to_cts, target)
     candidate_stats = {}
     counts = []
     entropies = {}
@@ -355,6 +404,9 @@ def cmd_query(args) -> dict:
     markers = common.read_json(os.path.join(step2_dir, "markers.json"))
     if not markers:
         return common.fail("缺少 step2_markers/markers.json,请先运行 step2_markers run")
+    # target organ 必填(spec 设计:代码中不硬编码任何 organ 名称;缺 --organ 则 fail-fast)
+    if not args.organ or not str(args.organ).strip():
+        return common.fail("--organ 必填:目标 organ 名称(如 root / brain / leaf);默认不提供任何 organ")
 
     cfg = common.neo4j_config(args)
     p = {"organ": args.organ, "species": args.species, "species_type": args.species_type,
@@ -370,7 +422,7 @@ def cmd_query(args) -> dict:
         gene_to_cts, qstats = op_query_genes(driver, genes, config, log, p)
         cell_types = sorted({h["cell_type"] for hits in gene_to_cts.values() for h in hits})
         ancestors, hstats = op_query_hierarchy(driver, cell_types, args.max_ancestor_hops, log, p)
-        per_cluster, candidate_stats, astats = op_aggregate_candidates(markers, gene_to_cts, log, p)
+        per_cluster, candidate_stats, astats = op_aggregate_candidates(markers, gene_to_cts, log, p, args.organ)
         payload = {
             "kg_source": "neo4j",
             "kg_version": conn.get("kg_version"),
