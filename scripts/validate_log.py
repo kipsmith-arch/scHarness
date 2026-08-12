@@ -7,6 +7,11 @@
 - judgment:decision_point(13 枚举之一)、scope、run_ref、inputs[]、output、reasoning
 - 记录级别:error(exit 1)/ warning(exit 0 但报告)
 
+校验形态(mode):
+- e2e : 完整轨迹校验——session_start/session_end/exec 必须存在,judgment run_ref 必须指向已出现的 exec,cluster 级决策点必须逐簇留痕(完整 pipeline 跑测产物,E-1 用)
+- mini: 单决策点 mini-session——不要求 session_start/end/exec;只校验 judgment 的决策枚举/scope 粒度/字段完整性;调过 pipeline 工具(有 exec)但缺会话边界只给 warning(E-2~E-4 用)
+- auto: 按内容推断——存在 session_start 记录 → e2e;否则 → mini(默认)
+
 E-5 日志合规用例的判据:本脚本对跑测产物 run_log.jsonl 退出码 0。
 本脚本是 P5 测试循环工具,不在 harness / skill 包内。
 """
@@ -48,13 +53,18 @@ RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 ERROR, WARNING = "error", "warning"
 
 
-def validate(path: str) -> tuple[list[dict], int]:
-    """Return (issues, exit_code)."""
+def validate(path: str, mode: str = "auto") -> tuple[list[dict], int]:
+    """Return (issues, exit_code).
+
+    mode: "auto"(按记录推断 e2e/mini)| "e2e" | "mini"。
+    """
     issues: list[dict] = []
     n_records = 0
     seen_types = set()
     exec_run_ids = set()
     prev_seq = 0
+    # 循环内暂存 run_ref 悬空的 judgment(行号, run_ref),形态判定后统一报。
+    orphan_run_refs: list[tuple[int, str]] = []
     # 从 step4_judge.rank_candidates 记录的 metrics.n_clusters 跟踪最新簇数,
     # 供 cluster_id 范围与覆盖度检查使用。
     n_clusters_latest: int | None = None
@@ -170,7 +180,7 @@ def validate(path: str) -> tuple[list[dict], int]:
                     add(ERROR, lineno, "judgment reasoning 为空")
                 run_ref = rec.get("run_ref")
                 if isinstance(run_ref, str) and run_ref not in exec_run_ids:
-                    add(WARNING, lineno, f"judgment run_ref {run_ref!r} 未指向已出现的 exec run_id")
+                    orphan_run_refs.append((lineno, run_ref))
             elif rtype == "session_start":
                 if "session_id" not in rec:
                     add(ERROR, lineno, "session_start 缺 session_id")
@@ -180,15 +190,30 @@ def validate(path: str) -> tuple[list[dict], int]:
 
     if n_records == 0:
         return [{"level": ERROR, "line": 0, "msg": "run_log 无任何记录"}], 1
-    for required in ("session_start", "session_end"):
-        if required not in seen_types:
-            add(ERROR, 0, f"缺少 {required} 记录")
-    if not any(t == "exec" for t in seen_types):
-        add(ERROR, 0, "缺少 exec 记录")
+
+    # 形态判定:auto 按内容推断。判据 = 是否存在 session_start:
+    # - 有 session_start → 完整会话(e2e):要求 session_start/end/exec 齐备、run_ref 指向 exec。
+    # - 无 session_start → 单决策点会话(mini):不要求完整性;即使调过 pipeline 工具(有 exec)
+    #   也算 mini(如 E-4 调 step1 取 QC 数据后做一次判断),只对"有 exec 却无 start/end"给 warning。
+    effective = mode if mode in ("e2e", "mini") else ("e2e" if "session_start" in seen_types else "mini")
+
+    if effective == "e2e":
+        for required in ("session_start", "session_end"):
+            if required not in seen_types:
+                add(ERROR, 0, f"缺少 {required} 记录")
+        if "exec" not in seen_types:
+            add(ERROR, 0, "缺少 exec 记录")
+        for lineno, rr in orphan_run_refs:
+            add(WARNING, lineno, f"judgment run_ref {rr!r} 未指向已出现的 exec run_id")
+    else:  # mini
+        # 单决策点会话不要求完整性,但若实际调过 pipeline 工具却无会话边界,提示留痕不全。
+        if "exec" in seen_types and "session_start" not in seen_types:
+            add(WARNING, 0, "mini 会话含 exec 记录但缺 session_start(如非单决策点会话,请补会话边界或显式 --mode e2e)")
 
     # 簇覆盖度检查(candidate_gap / label_confirm 应覆盖所有 n_clusters 簇);
     # 只检查数字 cluster_id;字符串簇名(如 "A","B")不参与覆盖度计算。
-    if n_clusters_latest is not None and n_clusters_latest > 0:
+    # 仅 e2e 形态执行:mini 无 exec 记录,无从获取 n_clusters_latest。
+    if effective == "e2e" and n_clusters_latest is not None and n_clusters_latest > 0:
         for dp in ("candidate_gap", "label_confirm"):
             cids = coverage.get(dp, set())
             numeric_cids = {c for c in cids if c.isdigit()}
@@ -204,12 +229,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="L-4 校验 run_log.jsonl 合规性")
     ap.add_argument("run_log", help="run_log.jsonl 路径(或 --project-dir 下的该文件)")
     ap.add_argument("--project-dir", default=None, help="若给出,run_log 参数视为 project-dir 内的文件名")
+    ap.add_argument("--mode", choices=("auto", "e2e", "mini"), default="auto",
+                    help="校验形态:auto=按记录推断(e2e=有 exec / mini=仅 judgment);e2e=完整轨迹校验;mini=单决策点会话(只验 judgment)")
     args = ap.parse_args()
 
     path = args.run_log
     if args.project_dir:
         path = os.path.join(args.project_dir, path if path != args.run_log else "run_log.jsonl")
-    issues, code = validate(path)
+    issues, code = validate(path, mode=args.mode)
 
     print(f"[validate_log] {path}: {code == 0 and 'PASS' or 'FAIL'}")
     if issues:

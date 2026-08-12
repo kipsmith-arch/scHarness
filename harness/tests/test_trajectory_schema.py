@@ -109,3 +109,80 @@ def test_validator_passes_well_formed_log(tmp_path):
 
     issues, code = _VALIDATOR.validate(str(log))
     assert code == 0, issues
+
+
+def test_mini_mode_passes_judgment_only_log(tmp_path):
+    """mini 形态:只有 judgment、无 session_start/end/exec,应通过(auto 推断)。"""
+    records = [
+        {"ts": "2026-08-11T00:00:00Z", "seq": 1, "type": "judgment",
+         "decision_point": "qc_threshold", "decision": "threshold_set",
+         "scope": {"type": "session"},
+         "run_ref": "step1_prepare.metrics#1",
+         "inputs": [], "output": {"decision": "threshold_set", "confidence": "high", "action": "none"},
+         "reasoning": "reason"},
+    ]
+    log = tmp_path / "run_log.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    issues, code = _VALIDATOR.validate(str(log), mode="auto")
+    assert code == 0, issues
+    issues, code = _VALIDATOR.validate(str(log), mode="mini")
+    assert code == 0, issues
+
+
+def test_mini_mode_warns_on_exec_without_session_boundary(tmp_path):
+    """mini 形态:调过 pipeline 工具(有 exec)但无 session_start → 通过但带 warning。"""
+    records = [
+        {"ts": "2026-08-11T00:00:00Z", "seq": 1, "type": "exec",
+         "run_id": "step1_prepare.load_data#1", "parameters": {}, "metrics": {}},
+        {"ts": "2026-08-11T00:00:01Z", "seq": 2, "type": "judgment",
+         "decision_point": "qc_threshold", "decision": "threshold_set",
+         "scope": {"type": "session"},
+         "run_ref": "step1_prepare.load_data#1",
+         "inputs": [], "output": {"decision": "threshold_set", "confidence": "high", "action": "none"},
+         "reasoning": "reason"},
+    ]
+    log = tmp_path / "run_log.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    issues, code = _VALIDATOR.validate(str(log), mode="auto")
+    assert code == 0, issues
+    assert any(i["level"] == "warning" and "缺 session_start" in i["msg"] for i in issues)
+
+
+def test_mini_mode_still_checks_scope_and_enum(tmp_path):
+    """mini 形态仍校验决策枚举与 scope 粒度(不合规则 FAIL)。"""
+    records = [
+        {"ts": "2026-08-11T00:00:00Z", "seq": 1, "type": "judgment",
+         "decision_point": "qc_threshold", "decision": "bogus_decision",
+         "scope": {"type": "cluster", "cluster_id": "0"},
+         "run_ref": "step1_prepare.metrics#1",
+         "inputs": [], "output": {"decision": "bogus_decision", "confidence": "high", "action": "none"},
+         "reasoning": "reason"},
+    ]
+    log = tmp_path / "run_log.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    issues, code = _VALIDATOR.validate(str(log), mode="mini")
+    assert code == 1
+    assert any(i["level"] == "error" and "不在" in i["msg"] for i in issues)
+    assert any(i["level"] == "error" and "粒度违规" in i["msg"] for i in issues)
+
+
+def test_explicit_e2e_rejects_judgment_only_log(tmp_path):
+    """显式 e2e 形态:只有 judgment 的日志必须 FAIL(缺完整性记录)。"""
+    records = [
+        {"ts": "2026-08-11T00:00:00Z", "seq": 1, "type": "judgment",
+         "decision_point": "qc_threshold", "decision": "threshold_set",
+         "scope": {"type": "session"},
+         "run_ref": "step1_prepare.metrics#1",
+         "inputs": [], "output": {"decision": "threshold_set", "confidence": "high", "action": "none"},
+         "reasoning": "reason"},
+    ]
+    log = tmp_path / "run_log.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    issues, code = _VALIDATOR.validate(str(log), mode="e2e")
+    assert code == 1
+    assert any(i["level"] == "error" and "缺少 session_start" in i["msg"] for i in issues)
+    assert any(i["level"] == "error" and "缺少 exec" in i["msg"] for i in issues)
