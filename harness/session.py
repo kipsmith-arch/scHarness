@@ -49,7 +49,12 @@ def build_llm(llm_config: Optional[dict] = None) -> ChatOpenAI:
         or os.environ.get("OPENAI_MODEL")
         or DEFAULT_MODEL
     )
-    kwargs: Dict = {"model": model, "temperature": cfg.get("temperature", 0.0)}
+    kwargs: Dict = {
+        "model": model,
+        "temperature": cfg.get("temperature", 0.0),
+        # 对不稳定网关(如 dcsapi 概率性断连)提高重试:llm_config > OPENAI_MAX_RETRIES > 6
+        "max_retries": int(cfg.get("max_retries") or os.environ.get("OPENAI_MAX_RETRIES", "6")),
+    }
     if cfg.get("api_key"):
         kwargs["api_key"] = cfg["api_key"]
     elif os.environ.get("OPENAI_API_KEY"):

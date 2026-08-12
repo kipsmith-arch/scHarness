@@ -229,6 +229,31 @@ def op_query_hierarchy(driver, cell_types, max_hops, log_path, params) -> dict:
     return ancestors, m
 
 
+def _organ_status(organs) -> str:
+    """Classify candidate by organ consistency with the target organ (root).
+
+    - unknown : 无 organ 标注或全 Unknown(不误杀,保留)
+    - root    : 明确含 Root(可含 Root|xxx 组合)
+    - partial : 同时含 Root 与明确非 Root 组织(如 Root|Leaf)
+    - mismatch: 明确非 Root 组织(如 Leaf/Flower/Stem/Seed/Fruit)
+
+    供 LLM 组织一致性检查:根数据集里 mismatch 候选应排除/降级。
+    """
+    orgs = {str(o).strip() for o in organs if o is not None and str(o).strip()}
+    if not orgs:
+        return "unknown"
+    known = {o for o in orgs if o != "Unknown"}
+    if not known:
+        return "unknown"
+    has_root = any("Root" in o for o in known)
+    has_other = any("Root" not in o for o in known)
+    if has_root and has_other:
+        return "partial"
+    if has_root:
+        return "root"
+    return "mismatch"
+
+
 def _rank_candidates(per_cluster_genes, gene_to_cts):
     """Aggregate gene->cell_type hits into ranked candidates per cluster."""
     per_cluster = {}
@@ -239,14 +264,17 @@ def _rank_candidates(per_cluster_genes, gene_to_cts):
                 key = hit["cell_type"]
                 entry = agg.setdefault(key, {
                     "cell_type": key, "supporting_markers": [], "marker_count": 0,
-                    "confidences": [], "sources": set(),
+                    "confidences": [], "sources": set(), "organs": set(),
                 })
                 entry["supporting_markers"].append(g)
                 entry["confidences"].append(hit["confidence"])
                 entry["sources"].add(hit["source"] or "?")
+                if hit.get("organ"):
+                    entry["organs"].add(str(hit["organ"]))
         candidates = []
         for key, e in agg.items():
             uniq_markers = list(dict.fromkeys(e["supporting_markers"]))
+            organs = sorted(e["organs"])
             candidates.append({
                 "cell_type": key,
                 "supporting_markers": uniq_markers,
@@ -254,6 +282,8 @@ def _rank_candidates(per_cluster_genes, gene_to_cts):
                 "mean_confidence": float(np.mean(e["confidences"])) if e["confidences"] else None,
                 "min_confidence": float(np.min(e["confidences"])) if e["confidences"] else None,
                 "sources": sorted(e["sources"]),
+                "organ": organs,
+                "organ_status": _organ_status(organs),
             })
         candidates.sort(key=lambda x: (-x["marker_count"],
                                        -(x["mean_confidence"] or 0.0), x["cell_type"]))

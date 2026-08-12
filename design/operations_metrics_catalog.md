@@ -12,6 +12,14 @@
 **说明**:本目录只列出有候选指标的操作。以下操作因无独立统计指标(纯 I/O 或格式化操作)而省略:
 `step1_prepare.load_data`(加载)、`step1_prepare.qc_plot`(可视化)、`step1_prepare.write_output`(写出)、`step2_markers.write_markers`、`step3_kg.connect`、`step3_kg.query_hierarchy`、`step3_kg.write_hits`、`step4_judge.write_annotations`、`step5_refine.subcluster_kg`(复用 query_genes 逻辑)、`step5_refine.write_refined`、`step6_validate.violin_plot`、`step6_validate.write_final`、`step6_validate.write_report`。
 
+### 轨迹指标 vs 产物数据判据(P5 回填,2026-08-11)
+
+**exec 记录的 `metrics` 只记指标,不记数据表。** 指标 = 统计摘要(分布、计数、比例、间隙、摘要列表);数据表 = per-gene / per-cluster 全量明细(如 de_rank 的 200 基因 × 9 列)。数据表属产物文件(markers.json / refined_annotations.json 等),不进轨迹。
+
+- **体积约定**:单条 exec 记录 metrics 目标 < 50KB,上限 ~200KB(分布直方图场景)。超限即视为数据表误入轨迹,须瘦身为摘要。
+- **per-gene / per-cluster 全量列表**:若 LLM 判断需要看,轨迹只记 top-N 摘要(如 de_rank 的 `top_genes` = top-15);完整表留给产物文件。
+- **理由**:轨迹是指标因果链,不是数据仓库;全量表进轨迹会膨胀 run_log,并随会话历史放大 API 请求体。
+
 ---
 
 ## 1. 数据准备阶段(全部在 Step 1 内)
@@ -206,6 +214,8 @@
 ### step2_markers.de_rank　DE 排序
 
 **操作**:Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,排序基因。
+
+> **轨迹记 top-15 基因摘要**(`per_cluster.{id}.top_genes`:[{name, logfc, pval_adj, auc, pct1, pct2}]);完整 DE 表是中间计算,不进轨迹(见卷首判据)。
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|

@@ -104,7 +104,7 @@ pipeline 有 47 个原子操作,产出 247 个统计指标;LLM 在 13 个决策�
 |---|---|---|
 | `run_id` | string | `{step}.{op}#{attempt}`,如 `step1_prepare.leiden_cluster#1`。每条 exec 记录唯一 |
 | `parameters` | object | 该操作使用的参数 |
-| `metrics` | object | 该操作产出的统计指标(见 operations_metrics_catalog.md) |
+| `metrics` | object | 该操作产出的统计指标(见 operations_metrics_catalog.md)。**体积约定:单条 < 50KB,上限 ~200KB**;只记指标摘要,不记 per-gene/per-cluster 数据表(数据表进产物文件)——见 catalog 卷首判据 |
 
 ### 2.5 `judgment` 记录
 

@@ -12,6 +12,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: P3 的 evals/ 目录骨架(README 说明,用例内容归 P5,S-1)
   evidence: 纯目录 + 说明、无实质内容;P5 写 evals.json 时一并创建更自然,从主 spec 拆分
+  resolved: '2026-08-11'  # P5 已交付:evals/evals.json(E-1~E-5)+ README,且 E-1~E-5 全部跑通
 - source_spec: `_bmad-output/implementation-artifacts/spec-p3-skill-package.md`
   summary: references/metrics.md 附:max_mt_pct 默认值写成 20,与脚本实际默认 15.0(step1_prepare.py)不一致
   evidence: P2 评审遗留——该值位于 knowledge/metrics_interpretation.md 原文(verbatim 抄入 references/metrics.md);需在上游 knowledge 修正为 15 后重抄 references(冻结约束禁止单独改副本)

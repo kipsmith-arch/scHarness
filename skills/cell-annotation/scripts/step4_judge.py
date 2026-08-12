@@ -41,6 +41,8 @@ def _candidate_summary(cand: dict) -> dict:
         "min_confidence": cand.get("min_confidence"),
         "supporting_markers": cand.get("supporting_markers", []),
         "sources": cand.get("sources", []),
+        "organ": cand.get("organ", []),
+        "organ_status": cand.get("organ_status", "unknown"),
     }
 
 
@@ -60,6 +62,7 @@ def op_rank_candidates(kg_hits, log_path, params) -> dict:
             first, second = cands[0], (cands[1] if len(cands) > 1 else None)
             entry["first_candidate"] = _candidate_summary(first)
             entry["second_candidate"] = _candidate_summary(second) if second else None
+            entry["candidates"] = cands  # 全候选(LLM 决策视图用,见 _cluster_decision_view)
             entry["first_count"] = first["marker_count"]
             entry["second_count"] = second["marker_count"] if second else 0
             entry["first_mean_confidence"] = first.get("mean_confidence")
@@ -135,6 +138,40 @@ def op_write_annotations(out_dir, log_path, params, annotations, rank_metrics) -
     return m
 
 
+def _cluster_decision_view(c, v):
+    """LLM 决策视图:每簇候选摘要 + gap 指标(工具 data 回传,替代不可读的文件)。
+
+    设计依据:LLM 只能看到工具 stdout 的 data,读不到产物文件;
+    候选/gap 指标必须随 data 回传,否则 LLM 无数据可判断(见 P5 迭代发现)。
+    """
+    def slim(cand, with_markers=True):
+        if not cand:
+            return None
+        out = {
+            "cell_type": cand.get("cell_type"),
+            "marker_count": cand.get("marker_count"),
+            "mean_confidence": cand.get("mean_confidence"),
+            "organ": cand.get("organ", []),
+            "organ_status": cand.get("organ_status", "unknown"),
+        }
+        if with_markers:
+            out["supporting_markers"] = cand.get("supporting_markers", [])[:10]
+        return out
+    all_cands = v.get("candidates") or []
+    return {
+        "n_candidates": v.get("n_candidates"),
+        "status": v.get("status"),
+        "first_count": v.get("first_count"),
+        "second_count": v.get("second_count"),
+        "gap": v.get("gap_metrics"),
+        "first": slim(v.get("first_candidate")),
+        "second": slim(v.get("second_candidate")),
+        # 全部候选精简(前 15,不带 markers):first/second 都是 mismatch/unknown 时,
+        # LLM 需要看到后续的 root 候选(如 root endodermis)才能正确判断
+        "candidates": [slim(c, with_markers=False) for c in all_cands[:15]],
+    }
+
+
 def cmd_run(args) -> dict:
     out_dir = common.step_dir(args.project_dir, "step4_judge")
     log = common.run_log_path(args.project_dir)
@@ -145,9 +182,14 @@ def cmd_run(args) -> dict:
     p = {}
     annotations, rank_metrics = op_rank_candidates(kg_hits, log, p)
     m = op_write_annotations(out_dir, log, p, annotations, rank_metrics)
+    per_cluster = {
+        c: _cluster_decision_view(c, v)
+        for c, v in annotations.items()
+    }
     return common.ok({"annotations_json": m["annotations_json"],
                       "n_clusters": m["n_clusters"],
                       "n_with_candidates": rank_metrics["n_clusters_with_candidates"],
+                      "per_cluster": per_cluster,
                       "last_exec_run_id": m["run_id"]})
 
 

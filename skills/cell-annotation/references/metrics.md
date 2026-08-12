@@ -245,6 +245,8 @@ Seurat flavor 高变基因选择,默认 n_top_genes=2000,可选 batch_key 分批
 
 Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,排序基因。DE 始终基于原始 counts(scanpy `rank_genes_groups` 用 `adata.raw`)。
 
+> **轨迹指标形态**:run_log 的 `step2_markers.de_rank` 记录每簇 **top-15 基因摘要**(`top_genes`:[{name, logfc, pval_adj, auc, pct1, pct2}])+ 分布/统计指标;完整 DE 表属中间计算,不进轨迹。看 per-gene 明细时以 `top_genes` 为准。
+
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
 | `[核心]` | `logfc` (per gene) | log2 倍数变化 | >1 说明强差异表达;<0.5 说明差异弱 |

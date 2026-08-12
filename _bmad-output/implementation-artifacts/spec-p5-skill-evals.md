@@ -2,7 +2,7 @@
 title: 'P5 skill 测试循环第一轮(evals + 评估口径)'
 type: 'feature'
 created: '2026-08-11'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '0849c9a3f7b7ed7a0966d15841499eab2bd3f7c2'
 review_loop_iteration: 0
 context: []
@@ -58,14 +58,14 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `experiments/gt_cells.csv` -- 从 index CSV 提取 cell_barcode + true_type,校验 33,956 与 obs_names 100% 对齐 -- D-1 真值规范化
-- [ ] `scripts/build_label_map.py` -- 起稿 `experiments/label_map.json`(预填映射 + KG ancestors 查证,`_meta.verified: false`)-- D-2 起稿
-- [ ] `experiments/label_map.json` -- 人工定案 13 条映射,置 `_meta.verified: true` -- D-2 定案(Ask First)
-- [ ] `scripts/validate_log.py` -- 校验 run_log:公共字段(ts/seq/type)、exec(run_id 格式、parameters、metrics)、judgment(decision_point 枚举、scope、run_ref、inputs、output、reasoning)、seq 单调、session_start/session_end 存在 -- L-4
-- [ ] `scripts/evaluate_annotations.py` -- 连接 obs_snapshot(细胞→leiden)× final_annotations(leiden→标签)× label_map(标签→真值)× gt_cells(条码→真值),输出 per-cell 准确率 / macro-F1 / 聚类纯度 -- D-4 + 评估
-- [ ] `skills/cell-annotation/evals/evals.json` -- E-1~E-5 用例(prompt + expected_output 断言)-- 测试用例
-- [ ] `skills/cell-annotation/evals/README.md` -- 用例说明:怎么跑、断言怎么判、结果落哪 -- 目录说明
-- [ ] 跑测 `output/p5_evals/` -- with-skill E-1 端到端 + E-2~E-4 mini-session + E-5 日志校验,产出报告 -- 测试循环
+- [x] `experiments/gt_cells.csv` -- 从 index CSV 提取 cell_barcode + true_type,校验 33,956 与 obs_names 100% 对齐 -- D-1 真值规范化
+- [x] `scripts/build_label_map.py` -- 起稿 `experiments/label_map.json`(预填映射 + KG ancestors 查证,`_meta.verified: false`)-- D-2 起稿
+- [x] `experiments/label_map.json` -- 人工定案 13 条映射,置 `_meta.verified: true` -- D-2 定案(Ask First)
+- [x] `scripts/validate_log.py` -- 校验 run_log:公共字段(ts/seq/type)、exec(run_id 格式、parameters、metrics)、judgment(decision_point 枚举、scope、run_ref、inputs、output、reasoning)、seq 单调、session_start/session_end 存在 -- L-4
+- [x] `scripts/evaluate_annotations.py` -- 连接 obs_snapshot(细胞→leiden)× final_annotations(leiden→标签)× label_map(标签→真值)× gt_cells(条码→真值),输出 per-cell 准确率 / macro-F1 / 聚类纯度 -- D-4 + 评估
+- [x] `skills/cell-annotation/evals/evals.json` -- E-1~E-5 用例(prompt + expected_output 断言)-- 测试用例
+- [x] `skills/cell-annotation/evals/README.md` -- 用例说明:怎么跑、断言怎么判、结果落哪 -- 目录说明
+- [x] 跑测 `output/p5_evals/` -- with-skill E-1 端到端 + E-2~E-4 mini-session + E-5 日志校验,产出报告 -- 测试循环
 
 **Acceptance Criteria:**
 - Given E-1 端到端跑完,when 检查 run_log 与评估输出,then session_start/session_end 存在、judgment 的 decision 全部落在 §3.2 枚举内、评估脚本输出 accuracy/macro-F1/聚类纯度
@@ -76,7 +76,13 @@ context: []
 
 ## Spec Change Log
 
-<!-- Append-only. Empty until first review loopback. -->
+- **2026-08-11 P5 迭代发现与修复**(实施中暴露,非 spec 缺陷,记录备案):
+  1. dcsapi 概率性断连(带 tools 请求 ~50% 首连失败)→ harness `build_llm` 加 max_retries(默认 6,env 可调)
+  2. de_rank metrics 3.7MB / filter_markers 306KB(数据表误入轨迹)→ 瘦身(364KB/67KB),完整数据留产物文件;catalog 回填"指标 vs 数据"判据 + 体积约定
+  3. **markers.json 重构引入 bug**(full 恢复时循环外引用 `markers` 变量 → 39 簇同一批 marker)→ 修复,与 p2 原始结果一致(1077 markers,39/39 簇各异)
+  4. KG 候选缺 organ → step3 `_rank_candidates` 候选加 `organ`/`organ_status`(root/partial/unknown/mismatch);step4 候选摘要与决策视图回传(含全候选列表);SKILL.md §3.7/§3.8 加组织一致性检查指导
+  5. 工具 data 契约过薄(LLM 读不到产物文件)→ step4 `data.per_cluster` 回传决策视图(候选 + gap + organ_status)
+- **KEEP**:write_judgment 工具设计(skill 层、枚举校验、common.append_log seq 一致);E-1~E-5 用例结构;organ_status 三值判定
 
 ## Design Notes
 
@@ -97,3 +103,64 @@ context: []
 - `skills/cell-annotation/evals/evals.json` 含 E-1~E-5 五条,prompt 可读、断言可客观验证
 - label_map.json 13 条映射与用户核对结果一致
 - E-2~E-4 的 judgment 人工抽查 reasoning 是否附指标依据
+
+## Suggested Review Order
+
+**轨迹写入契约(设计核心)**
+
+- skill 层工具:枚举校验 + 复用 common.append_log 保证 seq 一致(不改 harness 的领域无关红线)
+  [`write_judgment.py:37`](../../skills/cell-annotation/scripts/write_judgment.py#L37)
+
+- 三子命令(add/session-start/session-end)与 LLM 唯一数据通道契约
+  [`write_judgment.py:146`](../../skills/cell-annotation/scripts/write_judgment.py#L146)
+
+**LLM 数据通道(决策视图回传)**
+
+- 工具 data 是 LLM 唯一数据来源;候选 + gap + organ_status 全量回传
+  [`step4_judge.py:141`](../../skills/cell-annotation/scripts/step4_judge.py#L141)
+
+- 候选摘要带 organ/organ_status(下游消费)
+  [`step4_judge.py:36`](../../skills/cell-annotation/scripts/step4_judge.py#L36)
+
+**数据质量(本轮迭代核心)**
+
+- markers bug 修复:full_kept_markers 按簇保存(此前循环外引用导致 39 簇同批 marker)
+  [`step2_markers.py:312`](../../skills/cell-annotation/scripts/step2_markers.py#L312)
+
+- metrics 瘦身:top_genes 15 / markers 5 摘要,数据留产物文件
+  [`step2_markers.py:221`](../../skills/cell-annotation/scripts/step2_markers.py#L221)
+
+- KG 候选 organ_status 判定(Root 组合/Unknown/None/mismatch)
+  [`step3_kg.py:232`](../../skills/cell-annotation/scripts/step3_kg.py#L232)
+
+**评估与校验**
+
+- 四表连接 + soft macro-F1(partial=0.5 软计数)
+  [`evaluate_annotations.py:29`](../../scripts/evaluate_annotations.py#L29)
+
+- run_log 合规校验(公共字段/枚举/seq/run_ref)
+  [`validate_log.py:43`](../../scripts/validate_log.py#L43)
+
+- D-1 真值条码对齐校验
+  [`build_gt_cells.py:71`](../../scripts/build_gt_cells.py#L71)
+
+- D-2 标签映射 KG 降级 + unrelated 定案
+  [`build_label_map.py:89`](../../scripts/build_label_map.py#L89)
+
+**健壮性**
+
+- dcsapi 概率性断连 → max_retries(env 可调)
+  [`session.py:56`](../../harness/session.py#L56)
+
+**LLM 指导与设计回填**
+
+- 组织一致性检查指导(排除 mismatch 候选)
+  [`SKILL.md:79`](../../skills/cell-annotation/SKILL.md#L79)
+
+- 指标 vs 数据判据 + 体积约定(P5 回填)
+  [`operations_metrics_catalog.md:15`](../../design/operations_metrics_catalog.md#L15)
+
+**测试用例(外围)**
+
+- E-1~E-5 用例与断言
+  [`evals.json:1`](../../skills/cell-annotation/evals/evals.json#L1)

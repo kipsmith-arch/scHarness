@@ -211,11 +211,31 @@ def op_de_rank(adata, log_path, params, n_genes) -> dict:
             "top_marker_logfc_gap": top_gap,
             "frac_positive_logfc": float((lf > 0).mean()),
         }
+    # 轨迹指标瘦身:只记 top-15 基因摘要 + 分布/统计指标(完整 DE 表是中间计算,
+    # 不进轨迹 —— 设计判据:轨迹记指标,产物文件存数据)
+    summary = {}
+    for c, t in de.items():
+        top_n = 15
+        n = min(top_n, len(t["names"]))
+        summary[c] = {
+            "top_genes": [
+                {"name": t["names"][i], "logfc": t["logfc"][i],
+                 "pval_adj": t["pval_adj_bh"][i], "auc": t["auc"][i],
+                 "pct1": t["pct1"][i], "pct2": t["pct2"][i]}
+                for i in range(n)
+            ],
+            "distributions": t["distributions"],
+            "n_genes_tested": t["n_genes_tested"],
+            "genomic_inflation_factor_lambda": t["genomic_inflation_factor_lambda"],
+            "n_significant": t["n_significant"],
+            "top_marker_logfc_gap": t["top_marker_logfc_gap"],
+            "frac_positive_logfc": t["frac_positive_logfc"],
+        }
     m = {"de_method": "wilcoxon",
          "de_distribution": {c: v["distributions"] for c, v in de.items()},
-         "per_cluster": de}
+         "per_cluster": summary}
     common.exec_record(log_path, "step2_markers", "de_rank", params, m)
-    return m
+    return de
 
 
 def op_pct1_pct2(adata, log_path, params, de) -> dict:
@@ -252,6 +272,7 @@ def op_filter_markers(adata, log_path, params, de, min_pct1, max_pct1, min_diff,
                       pb_tables, rare_threshold) -> dict:
     per_cluster = {}
     funnel_global = {}
+    full_kept_markers = {}
     for c, t in de.items():
         n_before = len(t["names"])
         is_pb = c in pb_tables
@@ -288,9 +309,16 @@ def op_filter_markers(adata, log_path, params, de, min_pct1, max_pct1, min_diff,
             })
         kept_markers = [mk for mk in markers if mk["status"] == "kept"][:top_n]
         kept_genes = [mk["gene"] for mk in kept_markers]
+        full_kept_markers[c] = kept_markers  # 完整列表(产物用,非轨迹)
         is_rare = (adata.obs["leiden"].astype(str).values == c).sum() / adata.n_obs < rare_threshold
+        # 轨迹指标瘦身:markers 只记 top-5 摘要(完整列表是 markers.json 的产物数据)
+        summary_markers = [
+            {"gene": mk["gene"], "logfc": mk["logfc"], "pct1": mk["pct1"],
+             "pct2": mk["pct2"], "pct1_minus_pct2": mk["pct1_minus_pct2"]}
+            for mk in kept_markers[:5]
+        ]
         per_cluster[c] = {
-            "markers": kept_markers,
+            "markers": summary_markers,
             "marker_genes": kept_genes,
             "n_markers": len(kept_markers),
             "n_grey_zone": n_grey,
@@ -306,7 +334,11 @@ def op_filter_markers(adata, log_path, params, de, min_pct1, max_pct1, min_diff,
          "thresholds": {"min_pct1": min_pct1, "max_pct1": max_pct1,
                         "min_pct1_pct2": min_diff, "top_n": top_n}}
     common.exec_record(log_path, "step2_markers", "filter_markers", params, m)
-    return m
+    # 返回完整 per_cluster(供 op_write_markers 写产物 markers.csv/json)
+    full = {"per_cluster": {c: dict(v) for c, v in per_cluster.items()}}
+    for c in full["per_cluster"]:
+        full["per_cluster"][c]["markers"] = full_kept_markers[c]
+    return full
 
 
 def op_write_markers(out_dir, log_path, params, markers) -> dict:
@@ -356,7 +388,7 @@ def cmd_run(args) -> dict:
     if not (0 <= args.min_pct1_pct2 <= 1):
         return common.fail(f"min_pct1_pct2 需在 [0,1](当前 {args.min_pct1_pct2})")
 
-    de = op_de_rank(adata, log, p, args.n_genes)["per_cluster"]
+    de = op_de_rank(adata, log, p, args.n_genes)
     op_pct1_pct2(adata, log, p, de)
 
     # rare-cluster pseudobulk tables (conditional)
