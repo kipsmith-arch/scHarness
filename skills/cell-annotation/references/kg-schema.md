@@ -56,7 +56,7 @@ The relationships:
 1. **基因匹配与映射**:var_names 为 TAIR locus ID 时,`--gene-key` 默认用 `name_map4Arabidopsis_thaliana_symbol.json`(10,963 条)映射为 symbol 后查询;也可传 JSON 文件路径或 `none`(用原始 ID)。映射失败/物种特异基因不在 KG 时,n_markers_hit 会低(见 traps.md 陷阱参考与 kg_match 决策点)。
 2. **过滤条件**:
    - `--organ`(默认 root):对应 Ontology 的 `o.Organ`,与数据来源 organ 必须对齐;`--strict-organ` 打开时严格过滤(默认不区分大小写)。
-   - `--species` / `--species-type`:对应 Gene 的 `g.Species` / `g.Species_type`,作为信息过滤参与查询。
+   - `--species` / `--species-type`:对应 Gene 的 `g.Species` / `g.Species_type`。**默认不传 `--species`**——TAIR locus ID 是物种特有命名,不同物种的基因 ID 无交集,不传即天然物种隔离;且避免物种名格式不匹配(见下)。若确实要传,必须用 KG 存储格式(小写+下划线,如 `arabidopsis_thaliana`),不要用人类可读名(如 `Arabidopsis thaliana`),否则精确匹配 0 命中。`--species-type` 默认 `Plant` 保留。
    - `--min-confidence`:`marker_of.relation_confidence` 下限,默认 0(不滤)。
 3. **候选聚合**:per cluster 按 marker_count → mean_confidence 排名,产出 `candidates`(cell_type / supporting_markers / marker_count / mean_confidence / min_confidence / sources)。
 4. **层级查询**:`--max-ancestor-hops`(默认 3)沿 `ontology_relation` 查祖先写入 kg_hits.json 的 ancestors map;`--max-ancestor-hops 0` 表示跳过层级查询(ancestors 为空)。
@@ -75,9 +75,15 @@ The relationships:
 
 | 取值 | 行为 |
 |---|---|
-| `name_map`(默认) | 用 `name_map4Arabidopsis_thaliana_symbol.json` 做 TAIR→symbol 映射后查询 |
+| `name_map`(默认) | 用 `name_map4Arabidopsis_thaliana_symbol.json` 做 TAIR→symbol 映射后查询(同时保留原始 ID 双查) |
 | JSON 文件路径 | 用自定义映射文件 |
-| `none` | 用原始 var_names 直接查询 |
+| `none` | 用原始 var_names 直接查询——TAIR ID 物种特异,推荐用于避免跨物种 symbol 同名污染(如 MAPK 等通用名) |
+
+## 物种过滤与命名(重要)
+
+- **默认不传 `--species`**:基因 ID(TAIR locus)本身物种特异,不传 species 过滤即天然隔离,也避免物种名格式不匹配导致 0 命中。
+- 若传 `--species`,必须用 KG 存储格式:**小写 + 下划线**(如 `arabidopsis_thaliana`),不是人类可读名(`Arabidopsis thaliana`)。KG 中 `g.Species` 为精确字符串,带空格的常见名会精确匹配失败。
+- 当前数据集(SRP171040 拟南芥根)对应的 KG 物种值为 `arabidopsis_thaliana`。
 
 ## 使用注意
 

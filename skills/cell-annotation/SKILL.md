@@ -237,5 +237,6 @@ write_judgment__session-end(project_dir="<project-dir>",
 
 使用注意:
 - step3_kg__query 的 `--gene-key` 默认用 name_map 做 TAIR→symbol 映射,查询语义见 references/kg-schema.md。
+- **调用 step3_kg__query 时不要传 `--species`**:基因 ID(TAIR locus)物种特异,不传即天然物种隔离;传物种名需用 KG 格式(小写+下划线 `arabidopsis_thaliana`),人类可读名(如 `Arabidopsis thaliana`)会精确匹配失败导致 0 命中(见 references/kg-schema.md 物种过滤章节)。
 - 每步执行后注意 stdout 中的 run_id,judgment 记录需要引用它。
 - 工具返回 error 时,根据错误信息决定重试或换一种方式,不要原样重复同一失败调用。
