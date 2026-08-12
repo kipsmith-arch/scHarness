@@ -18,6 +18,11 @@ import os
 import re
 import sys
 
+SCRIPT_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "cell-annotation", "scripts"))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from trajectory_schema import REQUIRED_SCOPE  # noqa: E402
+
 # trajectory_design.md §3.2 decision 枚举词汇表
 DECISION_ENUMS: dict[str, set[str]] = {
     "qc_threshold": {"threshold_set", "threshold_default"},
@@ -37,24 +42,8 @@ DECISION_ENUMS: dict[str, set[str]] = {
 VALID_TYPES = {"session_start", "exec", "judgment", "session_end"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 
-# 决策点→scope 类型硬映射(trajectory_design §3.1 事实源;与 write_judgment.py
-# 的 REQUIRED_SCOPE 同源拷贝,跨目录不引共享模块,注释互指防漂移)。
+# 决策点→scope 类型由 skills/cell-annotation/scripts/trajectory_schema.py 提供。
 # 9 session 级 + 4 cluster 级;粒度违规报 ERROR。
-REQUIRED_SCOPE: dict[str, str] = {
-    "qc_threshold": "session",
-    "resolution_select": "session",
-    "clustering_quality": "session",
-    "batch_effect": "session",
-    "de_method": "session",
-    "marker_quality": "session",
-    "kg_match": "session",
-    "unknown_cluster": "session",
-    "global_quality": "session",
-    "candidate_gap": "cluster",
-    "candidate_disambiguate": "cluster",
-    "refine_effect": "cluster",
-    "label_confirm": "cluster",
-}
 
 ERROR, WARNING = "error", "warning"
 

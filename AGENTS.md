@@ -1,8 +1,8 @@
 # AGENTS.md
 
 ## Repo status
-- **Design-stage.** Only `dataset/init.py` is real code. The loop, dispatcher, skill, and `stepN_*.py` pipeline scripts described in `design/` do NOT exist yet — treat the design docs as the spec when implementing.
-- No build/test/lint/typecheck tooling exists (no root `package.json`, `pyproject.toml`, `requirements.txt`, test runner). Don't assume `npm test` / `pytest` work. `.opencode/package.json` only pins the opencode plugin and that dir is gitignored.
+- **Partially implemented.** The loop layer (`harness/`) is real code with a passing test suite; the cell-annotation skill pipeline (`skills/cell-annotation/scripts/`) is also real code. `dataset/init.py` is the ingestion entry. Design docs in `design/` remain the spec for anything not yet built (e.g. the LangGraph loop wiring, cross-species annotation).
+- Test tooling EXISTS: `pytest.ini` (`testpaths = harness/tests`), `harness/tests/conftest.py`, and a suite that runs with `python -m pytest` (57 tests passing). Don't assume tests don't work — run them. `.opencode/package.json` only pins the opencode plugin and that dir is gitignored.
 
 ## Architecture (from design/)
 Single-cell RNA-seq cell-type annotation harness driven by an LLM agent. Three layers:
@@ -15,19 +15,27 @@ Single-cell RNA-seq cell-type annotation harness driven by an LLM agent. Three l
 - `run_log.jsonl` is the SINGLE trajectory file: append-only NDJSON at `<project-dir>/run_log.jsonl`. Don't invent parallel log files.
 - Record types: `session_start` / `exec` / `judgment` / `session_end`. `run_id` = `{step}.{op}#{attempt}`. "Current" value = highest `seq` for that run_id prefix.
 - `exec` records are written automatically by pipeline scripts; `judgment` records are written by the LLM (fields: `decision_point`, `scope`, `run_ref`, `inputs[]`, `output`, `reasoning`). (`design/trajectory_design.md`)
+- **Shared schema module:** `skills/cell-annotation/scripts/trajectory_schema.py` owns `REQUIRED_SCOPE` (decision point → required scope type, 9 session + 4 cluster). Both `write_judgment.py` (skill) and `scripts/validate_log.py` (eval tooling) import it. Don't fork copies — extend the shared module.
 
 ## Data / I/O
 - h5ad files are GB-scale. Central rule: **one subcommand = one h5ad load**; compute every metric needed for that load in-passing. 48% of ops need no h5ad (pure JSON). Sidecars `obs_snapshot.csv` / `var_snapshot.csv` (written alongside `processed.h5ad`) replace many h5ad reads. Don't add casual h5ad loads. (`design/tool_design.md`)
 - Dataset is *Arabidopsis thaliana* root (plant): QC uses **chloroplast** genes (`pct_counts_chloroplast`) alongside mitochondrial; plant-specific filters apply.
 - `dataset/init.py` ingestion conventions: force `adata.X` sparse; rebuild `adata.raw` for old scanpy versions (when `_index` is in `raw.var`); reject numeric `var_names` (must be gene symbols). Ground-truth labels live in `dataset/index/*.csv` (columns `Seurat_clusters`, `Celltype`, pulled out of the h5ad).
 
+## Directory map
+- `harness/` — domain-agnostic loop package (real code: `loop.py`, `dispatcher.py`, `skill_loader.py`, `notebook.py`, `session.py`, `conversation.py`) + `harness/tests/` (pytest suite).
+- `skills/cell-annotation/` — the skill package: `SKILL.md`, `references/`, `assets/`, `evals/`, `scripts/` (`step1_prepare.py`…`step7_diagnose.py`, `common.py`, `write_judgment.py`, `trajectory_schema.py`).
+- `scripts/` — P5 eval-loop tooling, NOT part of the skill package: `validate_log.py` (L-4), `evaluate_annotations.py` (D-4), `build_gt_cells.py` (D-1), `build_label_map.py` (D-2). These import shared schema from `skills/cell-annotation/scripts/`.
+- Tests live in `harness/tests/` and run via `python -m pytest`.
+
 ## External deps
 - Neo4j knowledge graph. Credentials via env: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` (set in `.env`, gitignored). Priority: CLI flags > env vars > hardcoded defaults. Never hardcode passwords. (`design/tool_design.md` §10)
 
 ## Gitignore gotchas
 Root `.gitignore` ignores `*.json`, `*.csv`, `*.h5ad`, `*.png`, `*.ipynb`, `*.xmind`, `*.ai`, `.env`, `.opencode*`. Consequences:
-- Tracked content is essentially only `*.md` (under `design/`, `knowledge/`), `readme.md`, `.gitignore`, `dataset/init.py`.
+- Tracked content is essentially only `*.md` (under `design/`, `knowledge/`), `readme.md`, `.gitignore`, `pytest.ini`, `harness/**/*.py`, `skills/cell-annotation/scripts/*.py`, `scripts/*.py`, `dataset/init.py`, and `_bmad-output/implementation-artifacts/*.md`.
 - `name_map4Arabidopsis_thaliana_symbol.json`, `dataset/h5ad/*.h5ad`, `dataset/index/*.csv`, `output/`, and `.opencode/` all exist locally but are NOT tracked. New `.json`/`.csv` files you create are ignored unless force-added.
+- Note: `evals/evals.json` under the skill is gitignored by `*.json` (evals are test fixtures, not source).
 
 ## Language convention
 - Design docs and knowledge files are in **Simplified Chinese** — match Chinese when editing them. Code identifiers and docstrings are English (see `dataset/init.py`). LLM-facing prompts are expected to be Chinese.
@@ -35,3 +43,4 @@ Root `.gitignore` ignores `*.json`, `*.csv`, `*.h5ad`, `*.png`, `*.ipynb`, `*.xm
 ## Where to look
 - `design/loop_design.md` (RUN — the loop), `design/tool_design.md` (HOW — impl + data deps + subcommand structure), `design/atomic_operations.md` (WHAT — 47 ops + DAG), `design/operations_metrics_catalog.md` (247 metrics per op), `design/trajectory_design.md` (LOG — run_log.jsonl format).
 - `knowledge/` (`cell-annotation-sop.md`, `cross-species-annotation-handbook.md`, `kg_schema.md`, `metrics_interpretation.md`) = source material for the skill's system prompt.
+- Tests: `harness/tests/` — run `python -m pytest`. `harness/tests/conftest.py` documents fixtures (FakeEmbedder replaces the real embedding model).

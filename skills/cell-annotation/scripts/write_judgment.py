@@ -32,6 +32,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
+from trajectory_schema import REQUIRED_SCOPE  # noqa: E402
 
 # decision 枚举词汇表(trajectory_design.md §3.2;与 validate_log.py 保持一致)
 # 校验项:decision 枚举、scope 类型(REQUIRED_SCOPE)、run_ref 格式、inputs JSON、confidence、reasoning
@@ -54,23 +55,8 @@ VALID_SCOPES = {"session", "cluster"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 
-# 决策点→scope 类型硬映射(trajectory_design §3.1 事实源;与 validate_log.py 保持一致)。
+# 决策点→scope 类型硬映射由 trajectory_schema.REQUIRED_SCOPE 提供。
 # 9 session 级 + 4 cluster 级;粒度违规直接拒写入。
-REQUIRED_SCOPE: dict[str, str] = {
-    "qc_threshold": "session",
-    "resolution_select": "session",
-    "clustering_quality": "session",
-    "batch_effect": "session",
-    "de_method": "session",
-    "marker_quality": "session",
-    "kg_match": "session",
-    "unknown_cluster": "session",
-    "global_quality": "session",
-    "candidate_gap": "cluster",
-    "candidate_disambiguate": "cluster",
-    "refine_effect": "cluster",
-    "label_confirm": "cluster",
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
