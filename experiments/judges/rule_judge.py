@@ -175,9 +175,20 @@ def judge_cluster(cid: str, refined_entry: dict, final_entry: dict,
                    candidate_gap_decision, "cluster", cid, "step4_judge.run#1",
                    candidate_gap_reason + f" (cluster={cid})")
 
+    # Map label_confirm decision to the final confidence that overrides the
+    # deterministic _confidence_evidence — so the B1 cell-level evaluator sees
+    # arm-distinct confidence distributions.
+    if label_confirm_decision == "label_downgraded":
+        final_confidence = "low"
+    elif label_confirm_decision == "label_unknown":
+        final_confidence = "low"
+        label = "unknown"
+    else:  # label_confirmed
+        final_confidence = "high" if ratio >= HIGH_CONFIDENCE_RATIO else "medium"
+
     return {
         "label": label,
-        "confidence": label_confidence,
+        "confidence": final_confidence,
         "status": label_status,
         "first_candidate": first,
         "second_candidate": second,

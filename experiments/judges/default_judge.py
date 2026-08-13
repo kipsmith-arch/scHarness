@@ -82,13 +82,16 @@ def judge(project_dir: str) -> dict:
             write_judgment(project_dir, dp, decision, "cluster", cid, ref,
                            reason + f" (cluster={cid})")
         # Rewrite final_annotations entry: take the pipeline's first_candidate
-        # and confirm it as the arm's label.
+        # and confirm it as the arm's label. confidence from judgment
+        # (label_confirmed→high; label_downgraded→low) overrides the
+        # deterministic _confidence_evidence so arm differences surface in
+        # the cell-level evaluation.
         first = r.get("first_candidate") or f.get("first_candidate")
         if first:
             label = first.get("cell_type") or "unknown"
             rewritten[cid] = {
                 "label": label,
-                "confidence": "high",
+                "confidence": "high",  # arm-default: all label_confirmed
                 "status": "decisive" if r.get("status") != "no_candidates" else "unknown",
                 "first_candidate": first,
                 "second_candidate": r.get("second_candidate") or f.get("second_candidate"),
