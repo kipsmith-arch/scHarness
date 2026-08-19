@@ -126,7 +126,7 @@
 | batch_effect | step1 | session | batch_effect / condition_specific / well_mixed |
 | de_method | step2 | session | wilcoxon / pseudobulk_all / pseudobulk_rare |
 | marker_quality | step2 | session | markers_accept / markers_adjust_filter / markers_fail |
-| kg_match | step3 | session | id_match_ok / id_mismatch_gene_key / id_mismatch_organ |
+| kg_match | step3 | session | id_match_ok / id_mismatch_organ |
 | candidate_gap | step4 | cluster | first_decisive / ambiguous_parent_child / ambiguous_synonym / ambiguous_true / unknown |
 | candidate_disambiguate | step4 | cluster | ambiguous_parent_child / ambiguous_synonym / ambiguous_true |
 | refine_effect | step5 | cluster | refine_effective / refine_ineffective / refine_skipped / refine_autocorr_low |
@@ -213,11 +213,11 @@
 - 数据入库:`dataset/h5ad/SRP171040.h5ad`(33,956 细胞 Arabidopsis 根 scRNA-seq)
 - 真值准备:`dataset/index/SRP171040.h5ad.csv`(12 真值类型)
 - Neo4j 知识图谱在线(基因 ID 标记)
-- 基因名映射:`name_map4Arabidopsis_thaliana_symbol.json`(10,963 条)
+- 基因 ID 映射资源(可选上游使用):`name_map4Arabidopsis_thaliana_symbol.json`(10,963 条)——不再被 skill 调用
 
 **Loop 宿主代码**(`harness/`,6 文件)
 - `loop.py` / `dispatcher.py` / `skill_loader.py` / `session.py` / `conversation.py` / `notebook.py`
-- 61 个 pytest 全部通过(`harness/tests/`,含 trajectory_schema 测试)
+- 89 个 pytest 全部通过(`harness/tests/`,含 step3_kg schema-discipline 测试)
 
 **Skill 包**(`skills/cell-annotation/`)
 - SKILL.md(< 500 行,中文,imperative 句式,含 13 决策点 + 6 陷阱 + 日志指导)

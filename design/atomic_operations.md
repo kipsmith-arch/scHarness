@@ -530,7 +530,7 @@ step1_prepare.load_data 加载原始数据
 | 属性 | 值 |
 |---|---|
 | **描述** | 收集所有簇的所有 marker 基因,批量查 KG:对每个基因返回其关联的细胞类型(本体术语)、置信度、来源。过滤:organ, species, species_type, min_confidence |
-| **输入** | marker 基因列表 + KgQueryConfig (organ, gene_key, species, species_type, min_confidence, strict_organ) |
+| **输入** | marker 基因列表 + KgQueryConfig (organ, species, species_type, min_confidence, strict_organ) |
 | **输出** | gene_to_cts: {gene: [{cell_type, organ, ontology_id, species_type, ontology_type, confidence, source}]} |
 | **基础指标** | overall_hit_rate, n_markers_hit per cluster |
 | **候选指标** | 见 catalog step3_kg.query_genes: n_unique_genes_queried, n_genes_with/without_hits, mapping_multiplicity_per_gene, genes_with_no_kg_entry, mean_candidates_per_gene |

@@ -111,17 +111,18 @@ LLM-facing 参数（任务类，生物决策）：
 |---|---|---|---|
 | organ | string | `null` (LLM 必填) | 组织过滤(对应 o.Organ) |
 | species | string | `null` | 物种(对应 g.Species);默认不传(TAIR ID 天然物种隔离) |
+| species_type | string | `"Plant"` | 物种类型(对应 g.Species_type);LLM 跨物种场景需传 |
 | strict_organ | boolean | `false` | 严格按 organ 过滤命中 |
 | project_dir / input | — | — | 同上 |
 
 运维可 CLI 覆盖（但隐藏于 LLM schema）的环境参数：
 
-| CLI flag | env var | 类型 | 默认 | 说明 |
-|---|---|---|---|---|
-| `--species-type` | `KG_SPECIES_TYPE` | string | `Plant` | 对应 `g.Species_type` |
-| `--min-confidence` | `KG_MIN_CONFIDENCE` | number | `0.0` | `marker_of.relation_confidence` 下限 |
-| `--gene-key` | `KG_GENE_MAP_PATH` | string | `name_map4Arabidopsis_thaliana_symbol.json` | 基因映射文件路径；设为 `none` 跳过映射 |
-| `--max-ancestor-hops` | `KG_MAX_ANCESTOR_HOPS` | integer | `3` | ontology_relation 祖先最大跳数 |
+| CLI flag | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `--min-confidence` | number | `0.0` | `marker_of.relation_confidence` 下限 |
+| `--max-ancestor-hops` | integer | `3` | ontology_relation 祖先最大跳数；设为 0 跳过 hierarchy 查询 |
+
+> 注：step3_kg **不做基因 ID 映射**（TAIR locus → symbol 等）。h5ad 的 `var_names` 原样查 KG。ID 转换由用户上游完成（数据处理责任）。
 
 Neo4j 连接 (`skills/cell-annotation/.env`)：
 

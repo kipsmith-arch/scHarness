@@ -183,7 +183,9 @@ CLI flag > env var > hardcoded default
 
 以 cell-annotation 为例，配置在 `skills/cell-annotation/.env`（gitignored；模板在同名的 `.env.example`，跟踪进 git）。加载器由 `common.load_skill_dotenv()` 提供，跳过变量为 `CELL_ANNOTATION_SKIP_DOTENV`。
 
-**配置范围**：只放**环境类**参数（KG 服务 / 映射资源 / Neo4j 连接）——描述“系统怎么连、怎么调”，不描述“任务目标是什么”。任务类参数（`--organ` `--species` `--strict-organ`）是 LLM 调用时决定的生物决策，仍在 argparse 中。详见 `skills/cell-annotation/SKILL.md` 与 `references/kg-schema.md`。
+**配置范围**：只放**环境类**参数（Neo4j 连接）——描述“系统怎么连”，不描述“任务目标是什么”。任务类参数（`--organ` `--species` `--species-type` `--strict-organ`）是 LLM 调用时决定的生物决策，仍在 argparse 中。其它调优参数（`--min-confidence` `--max-ancestor-hops`）目前**没有 env 变量**，仅以代码默认 + CLI 临时覆盖。详见 `skills/cell-annotation/SKILL.md` 与 `references/kg-schema.md`。
+
+> 注：基因名映射（`KG_GENE_MAP_PATH`）从 skill 中移除——该功能属数据处理责任，由用户上游完成。
 
 #### cell-annotation 配置 key 一览
 
@@ -192,12 +194,8 @@ CLI flag > env var > hardcoded default
 | `NEO4J_URI` | str | `"bolt://localhost:7687"` | Neo4j Bolt URI（step3_kg 、build_label_map 使用） |
 | `NEO4J_USER` | str | `"neo4j"` | Neo4j 用户名 |
 | `NEO4J_PASSWORD` | str | **无默认**（必须显式设置） | Neo4j 密码；不设则连接被拒 |
-| `KG_GENE_MAP_PATH` | str | `"name_map4Arabidopsis_thaliana_symbol.json"` | 基因名映射文件路径；设为 `"none"` 跳过映射；文件不存在则 fail-fast |
-| `KG_MAX_ANCESTOR_HOPS` | int (str) | `"3"` | `ontology_relation` 祖先最大跳数；设为 0 跳过层级查询 |
-| `KG_SPECIES_TYPE` | str | `"Plant"` | 对应 `g.Species_type` 过滤（`g.Species` 仍是 argparse 任务参数，不在 env 里） |
-| `KG_MIN_CONFIDENCE` | float (str) | `"0.0"` | `marker_of.relation_confidence` 下限 |
 
-CLI 覆盖（运维临时调试用）：`step3_kg query` 仍然接受隐藏的 `--uri/--user/--password/--species-type/--min-confidence/--gene-key/--max-ancestor-hops` 参数（`--help` 可看；`--dump-schema` 不包含）。任务类参数 `--organ` `--species` `--strict-organ` 仍在 schema 中。
+CLI 覆盖（运维临时调试用）：`step3_kg query` 仍然接受隐藏的 `--uri/--user/--password/--min-confidence/--max-ancestor-hops` 参数（`--help` 可看；`--dump-schema` 不包含）。任务类参数 `--organ` `--species` `--species-type` `--strict-organ` 仍在 schema 中。
 
 #### 未来增加 skill 配置 key 的流程
 
@@ -523,14 +521,9 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `--species-type` | str | `"Plant"` | 物种类型过滤（对应 `g.Species_type`） |
 | `--min-confidence` | float | `0.0` | 关系置信度下限（`r.relation_confidence >= $min_conf`） |
 | `--strict-organ` | flag | `False` | 严格按 organ 过滤命中 |
-| `--gene-key` | str | `"name_map"` | 基因名映射：`"name_map"` / JSON 文件路径 / `"none"` |
 | `--max-ancestor-hops` | int | `3` | ontology_relation 祖先最大跳数；`<=0` 跳过 hierarchy 查询 |
 
-`--gene-key` 解析顺序：
-
-1. `none` / `""` / `None` → 不做映射（identity）
-2. `name_map` → 默认 `name_map4Arabidopsis_thaliana_symbol.json`，依次回退到本地候选路径
-4. 其它 → 作为 JSON 文件路径直接读取；文件不存在则 raise `FileNotFoundError`
+> step3_kg **不做基因 ID 映射**。`adata.var_names` 原样查 KG。TAIR locus → symbol 等 ID 转换需在进入 pipeline 前完成（用户责任）。
 
 #### `test-connection`
 
@@ -540,13 +533,13 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 
 | 项 | 值 | 含义 |
 |---|---|---|
-| `NAME_MAP_DEFAULT` | `"name_map4Arabidopsis_thaliana_symbol.json"` | |
 | `ORGAN_STATUS_PRIORITY` | `root:0, partial:1, unknown:2, mismatch:3` | 候选 organ 排序 |
 | `_organ_status` target 标准化 | `strip().title()` | |
 | query batching | 每 500 个 query name 一批 | 避免 Cypher 单查询过长 |
 | Cypher 缺置信度处理 | 缺失视为 `1.0`（无约束） | |
 | max-ancestor-hops 内部归一化 | `max(int(max_hops), 1)` | `<=0` 时跳过整个 `query_hierarchy` op |
 | `kg_version` 来源 | Neo4j Server (`dbms.components()`) | 代理指标 |
+| 基因 ID 映射 | 无 | `adata.var_names` 原样查询 KG |
 
 ### 4.5 step4_judge.py
 
@@ -711,7 +704,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `batch_effect` | `{batch_effect, condition_specific, well_mixed}` |
 | `de_method` | `{wilcoxon, pseudobulk_all, pseudobulk_rare}` |
 | `marker_quality` | `{markers_accept, markers_adjust_filter, markers_fail}` |
-| `kg_match` | `{id_match_ok, id_mismatch_gene_key, id_mismatch_organ}` |
+| `kg_match` | `{id_match_ok, id_mismatch_organ}` |
 | `candidate_gap` | `{first_decisive, ambiguous_parent_child, ambiguous_synonym, ambiguous_true, unknown}` |
 | `candidate_disambiguate` | `{ambiguous_parent_child, ambiguous_synonym, ambiguous_true}` |
 | `refine_effect` | `{refine_effective, refine_ineffective, refine_skipped, refine_autocorr_low}` |

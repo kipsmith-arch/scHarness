@@ -3,9 +3,10 @@
 The loader is implemented as ``load_skill_dotenv`` inside
 ``skills/cell-annotation/scripts/common.py``. Scope: only Neo4j connection
 credentials (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD). KG query tunables
-(``--species-type``, ``--min-confidence``, ``--gene-key``, ``--max-ancestor-hops``)
+(``--species-type``, ``--min-confidence``, ``--max-ancestor-hops``)
 are LLM-facing argparse parameters; KG_GENE_MAP_PATH-style env vars are
-intentionally NOT part of SKILL_DOTENV_KEYS.
+intentionally NOT part of SKILL_DOTENV_KEYS. Gene ID mapping was removed
+from the skill (it's a data-processing responsibility now).
 """
 
 from __future__ import annotations

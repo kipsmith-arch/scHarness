@@ -75,9 +75,9 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 ### 3.7 kg_match(step3_kg,SOP-3,session 级)
 - 何时:query_genes 之后。
 - 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
-- 判断要点:命中率高说明基因 ID 匹配与 organ 对齐良好;命中率低先查 organ 是否与数据来源对齐,再查 gene_key 映射——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
+- 判断要点:命中率高说明基因 ID 与 KG 中存储格式一致、organ 对齐良好;命中率低先查 organ 是否与数据来源对齐(动物/植物、不同器官名变体如 root/shoot/leaf 都要核实),再查上游预处理是否完成了 ID 转换(TAIR locus -> symbol 等)——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
 - **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
-- decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
+- decision 枚举:`id_match_ok` / `id_mismatch_organ`
 
 ### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
@@ -145,7 +145,7 @@ references 不进系统消息,需要时按需读取(用 read 工具打开对应�
 | 需要 SOP 全文 / 质量检查表 / 决策流程图 / 症状速查 | references/sop.md |
 | 解读某个指标数值的高低(247 个指标的完整解读) | references/metrics.md |
 | 判断前回顾常见误判与反例(按决策点组织) | references/traps.md |
-| 理解 KG 命中结果、ancestors 含义、gene_key 映射 | references/kg-schema.md |
+| 理解 KG 命中结果、ancestors 含义 | references/kg-schema.md |
 
 ## 7. 运行日志(run_log.jsonl)
 
@@ -236,7 +236,8 @@ write_judgment__session-end(project_dir="<project-dir>",
 | `write_judgment__session-end` | 追加 session_end 记录(会话结束,含 final_summary) | 0 |
 
 使用注意:
-- step3_kg__query 的参数分两类：**任务类（生物决策）** `organ`（必填）`species` `strict_organ` LLM 可传；**环境类** `species-type` `min-confidence` `gene-key` `max-ancestor-hops`（LLM 不可见，隐藏在 schema 中，默认从 `skills/cell-annotation/.env` 读），运维可以在 CLI 临时覆盖。
-- Neo4j 连接（`NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`）也在 `skills/cell-annotation/.env` 里。运行前需要 `cp skills/cell-annotation/.env.example skills/cell-annotation/.env` 并填 `NEO4J_PASSWORD`。
+- step3_kg__query 的参数分两类：**任务类（生物决策）** `organ`（必填）`species` `species-type` `strict-organ` LLM 可传；**环境类** `min-confidence` `max-ancestor-hops` + Neo4j 凭据（LLM 不可见，隐藏在 schema 中，默认从代码常量回落），运维可以在 CLI 临时覆盖。
+- Neo4j 连接（`NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`）在 `skills/cell-annotation/.env` 里。运行前需要 `cp skills/cell-annotation/.env.example skills/cell-annotation/.env` 并填 `NEO4J_PASSWORD`。
+- **基因 ID 不做映射**：step3_kg 用 `adata.var_names` 原样查询 KG。若 h5ad 使用 TAIR locus 而 KG 存 symbol,需在进入 pipeline 前完成转换(不属于 skill 责任)。
 - 每步执行后注意 stdout 中的 run_id，judgment 记录需要引用它。
 - 工具返回 error 时，根据错误信息决定重试或换一种方式，不要原样重复同一失败调用。

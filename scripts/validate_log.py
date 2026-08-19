@@ -36,7 +36,7 @@ DECISION_ENUMS: dict[str, set[str]] = {
     "batch_effect": {"batch_effect", "condition_specific", "well_mixed"},
     "de_method": {"wilcoxon", "pseudobulk_all", "pseudobulk_rare"},
     "marker_quality": {"markers_accept", "markers_adjust_filter", "markers_fail"},
-    "kg_match": {"id_match_ok", "id_mismatch_gene_key", "id_mismatch_organ"},
+    "kg_match": {"id_match_ok", "id_mismatch_organ"},
     "candidate_gap": {"first_decisive", "ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true", "unknown"},
     "candidate_disambiguate": {"ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true"},
     "refine_effect": {"refine_effective", "refine_ineffective", "refine_skipped", "refine_autocorr_low"},

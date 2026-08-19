@@ -1,15 +1,14 @@
 # 知识图谱(KG)schema 与查询语义(skill references 版)
 
 > 本文档是 `knowledge/kg_schema.md` 原文 + 查询语义说明的合集。
-> 用途:理解 `step3_kg__query` 的结果(kg_hits.json)、ancestors 字段、gene_key 映射;SKILL.md §3.7 kg_match 与 §3.8/3.9 并列判断依赖本文件。
+> 用途:理解 `step3_kg__query` 的结果(kg_hits.json)、ancestors 字段;SKILL.md §3.7 kg_match 与 §3.8/3.9 并列判断依赖本文件。
 
 ## 目录(TOC)
 
 - [节点与关系 schema](#节点与关系-schema)
 - [查询语义(step3_kg__query)](#查询语义step3_kg__query)
 - [ancestors 与层级判断](#ancestors-与层级判断)
-- [基因名映射 gene_key](#基因名映射-gene_key)
-- [使用注意](#使用注意)
+- [物种过滤与命名](#物种过滤与命名)
 
 ---
 
@@ -53,20 +52,23 @@ The relationships:
 
 `step3_kg__query` 把 marker 基因 → 候选细胞类型(Ontology 节点),过程与过滤:
 
-**参数分类**：
-- **任务参数（LLM 必传/可选）**——生物决策类：`--organ`（必填）、`--species`、`--strict-organ`。
-- **环境参数（隐藏于 LLM schema，从 `skills/cell-annotation/.env` 读取）**——KG 服务/资源调优：`KG_SPECIES_TYPE`、`KG_MIN_CONFIDENCE`、`KG_GENE_MAP_PATH`、`KG_MAX_ANCESTOR_HOPS`；运维可以在 CLI 临时覆盖（`step3_kg query --help` 查看）。
+**参数分类**(遵循 LLM 工具参数 vs skill 配置原则,见 `AGENTS.md`):
+- **任务参数(A 类,LLM 可见)**——生物决策:`--organ`(必填)、`--species`、`--species-type`、`--strict-organ`。
+- **环境参数(B 类,从 LLM schema 隐藏)**——KG 服务调优,CLI/运维临时覆盖:
+  - `--min-confidence`(默认 0):`marker_of.relation_confidence` 下限。
+  - `--max-ancestor-hops`(默认 3):`ontology_relation` 祖先查询上限;设为 0 跳过层级查询(ancestors 为空)。
 
-1. **基因匹配与映射**:var_names 为 TAIR locus ID 时,`KG_GENE_MAP_PATH`（默认 `name_map4Arabidopsis_thaliana_symbol.json`，10,963 条）将 locus 映射为 symbol 后查询；设为 `none` 跳过映射（用原始 ID）。映射失败/物种特异基因不在 KG 时,`n_markers_hit` 会低(见 traps.md 陷阱参考与 kg_match 决策点)。
-2. **过滤条件**：
+**基因 ID 不做映射**——step3_kg 用 `adata.var_names` 原样查 KG。若 h5ad 使用 TAIR locus ID (如 AT1G01010) 而 KG 存 symbol,需在进入 pipeline 前手动转换(可用 `name_map4Arabidopsis_thaliana_symbol.json` 或上游预处理脚本),这是数据处理责任,不在 skill 行为范围内。
+
+1. **过滤条件**:
    - `--organ`(LLM 必填):对应 Ontology 的 `o.Organ`,与数据来源 organ 必须对齐。
-   - `--species`(LLM 可选):对应 Gene 的 `g.Species`。**建议不传**——TAIR locus ID 是物种特有命名，不传即天然物种隔离；若传，必须用 KG 存储格式(小写+下划线,如 `arabidopsis_thaliana`)。
+   - `--species`(LLM 可选):对应 Gene 的 `g.Species`。**建议不传**——TAIR locus ID 是物种特有命名,不传即天然物种隔离;若传,必须用 KG 存储格式(小写+下划线,如 `arabidopsis_thaliana`)。
    - `--strict-organ`(LLM 可选):设为 True 时严格按 organ 过滤命中(默认 false)。
-   - `KG_SPECIES_TYPE`(默认 `Plant`):对应 Gene 的 `g.Species_type`。
-   - `KG_MIN_CONFIDENCE`(默认 0):`marker_of.relation_confidence` 下限。
-3. **候选聚合**:per cluster 按 marker_count → mean_confidence 排名，产出 `candidates`(cell_type / supporting_markers / marker_count / mean_confidence / min_confidence / sources)。
-4. **层级查询**:`KG_MAX_ANCESTOR_HOPS`(默认 3)沿 `ontology_relation` 查祖先写入 kg_hits.json 的 ancestors map；设为 0 跳过层级查询(ancestors 为空)。
-5. **连通性检查**:`step3_kg__test-connection` 只查连通性，不依赖项目目录。
+   - `--species-type`(默认 `Plant`):对应 Gene 的 `g.Species_type`(LLM 可选——不同物种切换场景下需要由 LLM 决定)。
+   - `--min-confidence`(默认 0):`marker_of.relation_confidence` 下限。
+2. **候选聚合**:per cluster 按 marker_count → mean_confidence 排名,产出 `candidates`(cell_type / supporting_markers / marker_count / mean_confidence / min_confidence / sources)。
+3. **层级查询**:`--max-ancestor-hops`(默认 3)沿 `ontology_relation` 查祖先写入 kg_hits.json 的 ancestors map;设为 0 跳过层级查询(ancestors 为空)。
+4. **连通性检查**:`step3_kg__test-connection` 只查连通性,不依赖项目目录。
 
 输出:`step3_kg/kg_hits.json`(每簇候选 + gene_to_cts + ancestors)、`step3_kg/kg_source.txt`(KG 来源)。
 
@@ -76,21 +78,6 @@ The relationships:
 - **空列表不代表该类型没有祖先,只是 KG 本体没收录**——此时父子/同义判断要靠生物学知识,并注明依据来源。
 - `step4_judge` 的 `first_second_ancestor_overlap` 直接基于它:两个候选存在父子关系时,并列是层级而非模糊(见 traps.md 陷阱 2)。
 - 例:"lateral root cap" 的 ancestors 含 "root cap" → 并列时选更具体的 "lateral root cap"。
-
-## 基因名映射（`--gene-key` / `KG_GENE_MAP_PATH`）
-
-默认路径为项目根下的 `name_map4Arabidopsis_thaliana_symbol.json`（10,963 条）。可通过两种方式控制：
-
-1. **CLI（运维临时覆盖，任务无关）**：`--gene-key` 接 JSON 路径或 `none`。
-2. **`skills/cell-annotation/.env`（默认/推荐）**：`KG_GENE_MAP_PATH` 设值，与 `KG_GENE_MAP_PATH` 同语义。
-
-| 值 | 行为 |
-|---|---|
-| 默认 `name_map4Arabidopsis_thaliana_symbol.json` | 用项目根下的 TAIR→symbol 映射文件，同时保留原始 ID 双查 |
-| JSON 文件路径 | 用自定义映射文件 |
-| `none` | 用原始 var_names 直接查询——TAIR ID 物种特异，推荐用于避免跨物种 symbol 同名污染（如 MAPK 等通用名） |
-
-如果指向的文件不存在，工具会 fail-fast——以避免静默退化为 `none`。
 
 ## 物种过滤与命名(重要)
 

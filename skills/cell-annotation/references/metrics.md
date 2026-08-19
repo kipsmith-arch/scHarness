@@ -310,7 +310,7 @@ Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,�
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | `overall_hit_rate` | marker 基因在 KG 中的命中率 | >80%→基因 ID 匹配且 KG 覆盖好;10-30%→可能 ID 不匹配(换 `--gene-key`)或 organ 不对齐;<10%→严重不匹配 |
+| `[核心]` | `overall_hit_rate` | marker 基因在 KG 中的命中率 | >80%→基因 ID 与 KG 中存储格式一致且 organ 对齐良好;10-30%→可能上游未完成 ID 转换(如 TAIR locus→symbol)或 organ 不对齐;可查 `genes_with_no_kg_entry` 区分;<10%→严重不匹配 |
 | `[核心]` | `n_markers_hit` (每簇) | 该簇 marker 命中 KG 的数 | 若 n_markers 充足但 n_markers_hit 很低→基因在 KG 里没对应(物种特异性基因) |
 | `[扩展]` | `n_unique_genes_queried`, `n_genes_with_hits`, `n_genes_without_hits` | 查询规模与命中情况 | 看命中的分母 |
 | `[扩展]` | `mapping_multiplicity_per_gene` (mean, distribution) | 每个 hit gene 映射到多少个 cell type | 高→KG 噪声大(marker 关联很多类型);低→映射干净 |
