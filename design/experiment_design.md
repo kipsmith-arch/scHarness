@@ -96,7 +96,7 @@ LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.m
 |---|---|---|---|---|
 | `clustering_quality` | `leiden_cluster`:silhouette_overall.mean、n_singleton、n_clusters_negative_silhouette、frac_largest_cluster(metrics §leiden_cluster) | accept(永不 recluster) | sil>0.2 AND n_singleton==0 AND n_neg_sil<2 AND frac_largest<0.5 → accept;否则 adjust(降分辨率重跑) | **连续谱 silhouette 天然低**(陷阱5)——发育梯度簇 sil 本就低,② 误判为"需重聚类",反而破坏真实结构 |
 | `marker_quality` | `filter_markers`:n_markers、n_grey_zone、filter_funnel、filter_efficiency(SOP-2、metrics §filter_markers) | accept(永不重过滤) | n_markers∈[10,50] AND grey_zone_rate<0.3 → accept;否则 adjust(调 pct1/pct2 阈值重过滤) | 稀有簇 marker 天然少(<10),规则误判"质量差"反复重过滤;管家基因主导时需类别知识而非阈值 |
-| `kg_match` | `query_genes`:overall_hit_rate、genes_with_no_kg_entry(metrics §query_genes) | id_match_ok(假定匹配) | hit_rate>80%→ok;10-30%→查上游 ID 预处理是否完成;<10%→id_mismatch_organ | 物种特异性基因本就不在 KG(陷阱2)——低命中不总是 organ 错 |
+| `kg_match` | `query_genes`:overall_hit_rate、genes_with_no_kg_entry(metrics §query_genes) | id_match_ok(假定匹配) | hit_rate>80%→ok;10-30%→id_mismatch_gene_key(上游 ID 预处理未完成);<10%→id_mismatch_organ | 物种特异性基因本就不在 KG(陷阱2)——低命中不总是 organ 错 |
 
 **C 组 — 标志/路由型**(不改参不重跑,只设标志或路由;① 固定标志 / ② metric 派生标志)
 

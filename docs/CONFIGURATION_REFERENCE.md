@@ -539,7 +539,6 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | Cypher 缺置信度处理 | 缺失视为 `1.0`（无约束） | |
 | max-ancestor-hops 内部归一化 | `max(int(max_hops), 1)` | `<=0` 时跳过整个 `query_hierarchy` op |
 | `kg_version` 来源 | Neo4j Server (`dbms.components()`) | 代理指标 |
-| 基因 ID 映射 | 无 | `adata.var_names` 原样查询 KG |
 
 ### 4.5 step4_judge.py
 
@@ -704,7 +703,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `batch_effect` | `{batch_effect, condition_specific, well_mixed}` |
 | `de_method` | `{wilcoxon, pseudobulk_all, pseudobulk_rare}` |
 | `marker_quality` | `{markers_accept, markers_adjust_filter, markers_fail}` |
-| `kg_match` | `{id_match_ok, id_mismatch_organ}` |
+| `kg_match` | `{id_match_ok, id_mismatch_gene_key, id_mismatch_organ}` |
 | `candidate_gap` | `{first_decisive, ambiguous_parent_child, ambiguous_synonym, ambiguous_true, unknown}` |
 | `candidate_disambiguate` | `{ambiguous_parent_child, ambiguous_synonym, ambiguous_true}` |
 | `refine_effect` | `{refine_effective, refine_ineffective, refine_skipped, refine_autocorr_low}` |

@@ -77,7 +77,7 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 - 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
 - 判断要点:命中率高说明基因 ID 与 KG 中存储格式一致、organ 对齐良好;命中率低先查 organ 是否与数据来源对齐(动物/植物、不同器官名变体如 root/shoot/leaf 都要核实),再查上游预处理是否完成了 ID 转换(TAIR locus -> symbol 等)——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
 - **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
-- decision 枚举:`id_match_ok` / `id_mismatch_organ`
+- decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
 
 ### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。

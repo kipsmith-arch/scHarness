@@ -126,7 +126,7 @@
 | batch_effect | step1 | session | batch_effect / condition_specific / well_mixed |
 | de_method | step2 | session | wilcoxon / pseudobulk_all / pseudobulk_rare |
 | marker_quality | step2 | session | markers_accept / markers_adjust_filter / markers_fail |
-| kg_match | step3 | session | id_match_ok / id_mismatch_organ |
+| kg_match | step3 | session | id_match_ok / id_mismatch_gene_key / id_mismatch_organ |
 | candidate_gap | step4 | cluster | first_decisive / ambiguous_parent_child / ambiguous_synonym / ambiguous_true / unknown |
 | candidate_disambiguate | step4 | cluster | ambiguous_parent_child / ambiguous_synonym / ambiguous_true |
 | refine_effect | step5 | cluster | refine_effective / refine_ineffective / refine_skipped / refine_autocorr_low |
