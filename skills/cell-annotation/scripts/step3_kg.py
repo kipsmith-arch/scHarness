@@ -94,19 +94,26 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="subcommand")
 
     p_q = sub.add_parser("query", help="查询 KG 并聚合候选")
+    # A 类(任务/生物决策):LLM 可见
     p_q.add_argument("--organ", default=None, help="组织过滤(对应 o.Organ),必填;不提供则 fail")
     p_q.add_argument("--species", default=None, help="物种(信息性,对应 g.Species)")
-    p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type)")
-    p_q.add_argument("--min-confidence", type=float, default=0.0, help="关系置信度下限")
+    p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type,默认 Plant)")
     p_q.add_argument("--strict-organ", action="store_true", help="严格按 organ 过滤命中")
-    p_q.add_argument("--gene-key", default="name_map4Arabidopsis_thaliana_symbol.json",
-                     help="基因名映射 JSON 文件路径;设 'none' 跳过映射")
-    p_q.add_argument("--max-ancestor-hops", type=int, default=3, help="ontology_relation 祖先最大跳数")
-    common.add_common_args(p_q)
+    # B 类(环境/资源):SUPPRESS 隐藏,LLM 不可见,CLI/运维可临时 override
+    p_q.add_argument("--min-confidence", type=float, default=argparse.SUPPRESS,
+                     help=argparse.SUPPRESS)
+    p_q.add_argument("--gene-key", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    p_q.add_argument("--max-ancestor-hops", type=int, default=argparse.SUPPRESS,
+                     help=argparse.SUPPRESS)
+    # step3_kg: --project-dir / --input 都属 B(部署/路径),LLM 不可见。
+    # 不调用 add_common_args,直接以 SUPPRESS 声明。
+    p_q.add_argument("--project-dir", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    p_q.add_argument("--input", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     common.add_neo4j_args(p_q)
 
     p_t = sub.add_parser("test-connection", help="测试 Neo4j 连接与来源信息")
     common.add_neo4j_args(p_t)
+    p_t.add_argument("--project-dir", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return parser
 
 
@@ -401,9 +408,10 @@ def op_write_hits(out_dir, log_path, params, payload) -> dict:
 
 
 def cmd_query(args) -> dict:
-    out_dir = common.step_dir(args.project_dir, "step3_kg")
-    log = common.run_log_path(args.project_dir)
-    step2_dir = common.step_dir(args.project_dir, "step2_markers")
+    project_dir = common.env_or_default(args, "project_dir", (), "output")
+    out_dir = common.step_dir(project_dir, "step3_kg")
+    log = common.run_log_path(project_dir)
+    step2_dir = common.step_dir(project_dir, "step2_markers")
     markers = common.read_json(os.path.join(step2_dir, "markers.json"))
     if not markers:
         return common.fail("缺少 step2_markers/markers.json,请先运行 step2_markers run")
@@ -411,20 +419,27 @@ def cmd_query(args) -> dict:
     if not args.organ or not str(args.organ).strip():
         return common.fail("--organ 必填:目标 organ 名称(如 root / brain / leaf);默认不提供任何 organ")
 
+    # B 类参数:CLI 未传时从 SUPPRESS 落到代码默认(env 不接管,运维仅靠 CLI 临时改)
+    min_confidence = common.env_or_default(args, "min_confidence", (), 0.0, cast=float)
+    gene_key = common.env_or_default(args, "gene_key", (),
+                                     "name_map4Arabidopsis_thaliana_symbol.json")
+    max_ancestor_hops = common.env_or_default(args, "max_ancestor_hops", (), 3, cast=int)
+    species_type = common.env_or_default(args, "species_type", (), "Plant")
+
     cfg = common.neo4j_config(args)
-    p = {"organ": args.organ, "species": args.species, "species_type": args.species_type,
-         "min_confidence": args.min_confidence, "strict_organ": args.strict_organ,
-         "gene_key": args.gene_key, "max_ancestor_hops": args.max_ancestor_hops}
+    p = {"organ": args.organ, "species": args.species, "species_type": species_type,
+         "min_confidence": min_confidence, "strict_organ": args.strict_organ,
+         "gene_key": gene_key, "max_ancestor_hops": max_ancestor_hops}
 
     driver, conn = op_connect(cfg, log, p)
     try:
         genes = sorted({g for v in markers["per_cluster"].values() for g in v["marker_genes"]})
         config = {"organ": args.organ, "species": args.species,
-                  "species_type": args.species_type, "min_confidence": args.min_confidence,
-                  "strict_organ": args.strict_organ, "gene_key": args.gene_key}
+                  "species_type": species_type, "min_confidence": min_confidence,
+                  "strict_organ": args.strict_organ, "gene_key": gene_key}
         gene_to_cts, qstats = op_query_genes(driver, genes, config, log, p)
         cell_types = sorted({h["cell_type"] for hits in gene_to_cts.values() for h in hits})
-        ancestors, hstats = op_query_hierarchy(driver, cell_types, args.max_ancestor_hops, log, p)
+        ancestors, hstats = op_query_hierarchy(driver, cell_types, max_ancestor_hops, log, p)
         per_cluster, candidate_stats, astats = op_aggregate_candidates(markers, gene_to_cts, log, p, args.organ)
         payload = {
             "kg_source": "neo4j",
@@ -451,7 +466,8 @@ def cmd_query(args) -> dict:
 
 
 def cmd_test_connection(args) -> dict:
-    log = common.run_log_path(args.project_dir)
+    project_dir = common.env_or_default(args, "project_dir", (), "output")
+    log = common.run_log_path(project_dir)
     cfg = common.neo4j_config(args)
     p = {}
     try:

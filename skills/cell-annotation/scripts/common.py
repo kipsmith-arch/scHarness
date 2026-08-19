@@ -727,8 +727,18 @@ _TYPE_MAP = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
 
 def arg_spec(action: argparse.Action) -> Optional[dict]:
-    """Introspect one argparse action into the loader's arg declaration."""
+    """Introspect one argparse action into the loader's arg declaration.
+
+    Returns ``None`` (i.e. drop the arg from the schema) when the action
+    declares itself hidden via ``argparse.SUPPRESS`` as either default or help.
+    This is how skill scripts signal "B-class / environment arg — don't show
+    to the LLM". Loader sees no entry, so the LLM has no way to set it; the
+    runtime layer (``env_or_default``) still resolves CLI override > env > default.
+    """
     if action.dest == "help":
+        return None
+    # SUPPRESS on default OR help means "hide from tool schema entirely".
+    if action.default is argparse.SUPPRESS or action.help is argparse.SUPPRESS:
         return None
     opt = action.option_strings
     name = opt[0].lstrip("-").replace("-", "_") if opt else action.dest
@@ -794,16 +804,60 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_neo4j_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--uri", default=None, help="Neo4j URI(默认取 NEO4J_URI 环境变量)")
-    parser.add_argument("--user", default=None, help="Neo4j 用户名(默认取 NEO4J_USER)")
-    parser.add_argument("--password", default=None, help="Neo4j 密码(默认取 NEO4J_PASSWORD)")
+    """Declare the three Neo4j CLI flags.
+
+    Flags default to ``argparse.SUPPRESS`` so they are omitted from the
+    ``--dump-schema`` tool declaration (loader does not see them, hence the
+    LLM is not nudged to set them). At runtime, ``neo4j_config`` resolves
+    CLI value > env var > built-in default via ``env_or_default``.
+
+    Note: add_neo4j_args is currently called only by step3_kg. If other
+    skills start needing Neo4j, keep this in common.py (skill-agnostic).
+    """
+    parser.add_argument("--uri", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    parser.add_argument("--user", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    parser.add_argument("--password", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+
+def env_or_default(args, name: str, env_keys: tuple = (), default=None, cast=None):
+    """Read a CLI arg that may use ``argparse.SUPPRESS`` with env > fallback.
+
+    Resolution order (first non-SUPPRESS wins):
+        1. ``getattr(args, name, SUPPRESS)`` — the CLI flag, if the LLM/operator passed it
+        2. ``os.environ[k]`` for each k in ``env_keys`` (in order) — if set and non-empty
+        3. ``default`` — the code-level fallback
+
+    Args:
+        args:        argparse.Namespace from parse_args().
+        name:        attribute name (e.g. "min_confidence", matches the dest of --min-confidence).
+        env_keys:    tuple of environment variable names to try (in order). Pass () to skip env.
+        default:     value returned when CLI and env both yield SUPPRESS / unset.
+        cast:        optional callable (e.g. int, float) applied to the resolved value
+                     **except** when the value came from CLI (already typed by argparse).
+
+    Returns:
+        The resolved value. Never returns argparse.SUPPRESS.
+
+    Use case: an arg declared as ``default=argparse.SUPPRESS, help=argparse.SUPPRESS``
+    is hidden from the tool schema (so it doesn't clutter the LLM's tool
+    description), but operators can still override on the CLI or via env.
+    """
+    raw = getattr(args, name, argparse.SUPPRESS)
+    if raw is not argparse.SUPPRESS:
+        # argparse already typed the CLI value; respect it as-is.
+        return raw
+    for k in env_keys:
+        v = os.environ.get(k)
+        if v is not None and v != "":
+            return cast(v) if cast is not None else v
+    return cast(default) if (cast is not None and default is not None) else default
 
 
 def neo4j_config(args) -> dict:
     """Resolve Neo4j credentials: CLI flags > env vars > defaults. Never hardcode passwords."""
-    uri = args.uri or os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-    user = args.user or os.environ.get("NEO4J_USER", "neo4j")
-    password = args.password or os.environ.get("NEO4J_PASSWORD")
+    uri = env_or_default(args, "uri", ("NEO4J_URI",), "bolt://localhost:7687")
+    user = env_or_default(args, "user", ("NEO4J_USER",), "neo4j")
+    password = env_or_default(args, "password", ("NEO4J_PASSWORD",), None)
     return {"uri": uri, "user": user, "password": password}
 
 
