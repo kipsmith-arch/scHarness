@@ -65,7 +65,6 @@ def test_query_A_class_visible(name: str):
     "name",
     [
         "min_confidence",   # KG service tuning
-        "gene_key",         # file path = deployment
         "max_ancestor_hops",  # KG query tuning
         "uri", "user", "password",  # Neo4j credentials
         "project_dir", "input",  # I/O paths = deployment

@@ -6,9 +6,10 @@ Subcommands:
     test-connection — connect only, report provenance.
 
 Credentials: CLI flags > NEO4J_URI/USER/PASSWORD env > defaults (password never
-hardcoded). Gene names are mapped to symbols via the JSON file pointed to by
-``--gene-key`` (default: ``name_map4Arabidopsis_thaliana_symbol.json`` at
-project root); set to ``"none"`` to skip mapping.
+hardcoded). Genes are queried under whatever IDs the user's ``adata.var_names``
+hold — the skill performs **no** ID normalization. If your h5ad uses TAIR locus
+IDs (e.g. AT1G01010) but the KG stores symbols (e.g. NAC001), convert
+``adata.var_names`` upstream of this pipeline (e.g. via ``name_map4Arabidopsis_thaliana_symbol.json``).
 """
 
 from __future__ import annotations
@@ -102,7 +103,6 @@ def build_parser() -> argparse.ArgumentParser:
     # B 类(环境/资源):SUPPRESS 隐藏,LLM 不可见,CLI/运维可临时 override
     p_q.add_argument("--min-confidence", type=float, default=argparse.SUPPRESS,
                      help=argparse.SUPPRESS)
-    p_q.add_argument("--gene-key", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     p_q.add_argument("--max-ancestor-hops", type=int, default=argparse.SUPPRESS,
                      help=argparse.SUPPRESS)
     # step3_kg: --project-dir / --input 都属 B(部署/路径),LLM 不可见。
@@ -153,30 +153,6 @@ def kg_provenance(driver) -> dict:
     return prov
 
 
-def _load_gene_map(path: str) -> dict:
-    """Load a gene {raw_name: query_name} mapping from a JSON file at ``path``.
-
-    ``path`` semantics:
-        - "none" / "" / None : no mapping (identity transform; raw names queried)
-        - any other string    : filesystem path to a JSON dict; the dict must
-                                map raw gene IDs to query-side names
-                                (typically TAIR locus → symbol).
-
-    File-not-found fails loudly — silently falling back to no mapping would
-    hide a real misconfiguration from the operator.
-    """
-    if path in (None, "", "none"):
-        return {}
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"基因名映射文件不存在:{path}（设 'none' 跳过映射）"
-        )
-    mapping = json.load(open(path, encoding="utf-8"))
-    if not isinstance(mapping, dict):
-        raise TypeError(f"基因名映射文件必须是 dict(当前 {type(mapping).__name__})")
-    return mapping
-
-
 # ---------------------------------------------------------------------------
 # ops
 # ---------------------------------------------------------------------------
@@ -204,10 +180,11 @@ def op_connect(cfg, log_path, params) -> dict:
 
 
 def op_query_genes(driver, genes, config, log_path, params) -> dict:
-    gene_map = _load_gene_map(config["gene_key"])
-    query_names = [gene_map.get(g, g) for g in genes]  # mapped symbol or raw
-    # also query raw names to catch KG entries stored under locus ids
-    query_names = list(dict.fromkeys([g for pair in zip(query_names, genes) for g in pair]))
+    # No gene-ID normalization happens here. Whatever IDs ``adata.var_names``
+    # holds are sent to the KG verbatim — if the dataset uses TAIR locus IDs
+    # but the KG stores symbols, conversion must happen upstream of the
+    # pipeline (outside the cell-annotation skill).
+    query_names = list(dict.fromkeys(genes))
 
     where = ["g.Name IN $names"]
     if config["species_type"]:
@@ -241,11 +218,9 @@ def op_query_genes(driver, genes, config, log_path, params) -> dict:
             continue
         if config["strict_organ"] and (r["organ"] or "").lower() != str(config["organ"]).lower():
             continue
-        # attach to EVERY raw gene whose query name matched (duplicated symbols
-        # must not lose hits — no break)
+        # attach the hit to every input gene whose ID matches the KG row
         for g in genes:
-            mapped = gene_map.get(g, g)
-            if mapped == r["gene"] or g == r["gene"]:
+            if g == r["gene"]:
                 gene_to_cts.setdefault(g, []).append({
                     "cell_type": r["cell_type"], "organ": r["organ"],
                     "ontology_id": r["ontology_id"], "species_type": r["species_type"],
@@ -421,22 +396,20 @@ def cmd_query(args) -> dict:
 
     # B 类参数:CLI 未传时从 SUPPRESS 落到代码默认(env 不接管,运维仅靠 CLI 临时改)
     min_confidence = common.env_or_default(args, "min_confidence", (), 0.0, cast=float)
-    gene_key = common.env_or_default(args, "gene_key", (),
-                                     "name_map4Arabidopsis_thaliana_symbol.json")
     max_ancestor_hops = common.env_or_default(args, "max_ancestor_hops", (), 3, cast=int)
     species_type = common.env_or_default(args, "species_type", (), "Plant")
 
     cfg = common.neo4j_config(args)
     p = {"organ": args.organ, "species": args.species, "species_type": species_type,
          "min_confidence": min_confidence, "strict_organ": args.strict_organ,
-         "gene_key": gene_key, "max_ancestor_hops": max_ancestor_hops}
+         "max_ancestor_hops": max_ancestor_hops}
 
     driver, conn = op_connect(cfg, log, p)
     try:
         genes = sorted({g for v in markers["per_cluster"].values() for g in v["marker_genes"]})
         config = {"organ": args.organ, "species": args.species,
                   "species_type": species_type, "min_confidence": min_confidence,
-                  "strict_organ": args.strict_organ, "gene_key": gene_key}
+                  "strict_organ": args.strict_organ}
         gene_to_cts, qstats = op_query_genes(driver, genes, config, log, p)
         cell_types = sorted({h["cell_type"] for hits in gene_to_cts.values() for h in hits})
         ancestors, hstats = op_query_hierarchy(driver, cell_types, max_ancestor_hops, log, p)
