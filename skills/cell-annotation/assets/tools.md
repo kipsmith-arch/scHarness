@@ -105,25 +105,38 @@
 
 ### step3_kg__query
 
+LLM-facing 参数（任务类，生物决策）：
+
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| organ | string | `root` | 组织过滤(对应 o.Organ) |
-| species | string | `null` | 物种(信息性,对应 g.Species) |
-| species_type | string | `Plant` | 物种类型过滤(对应 g.Species_type) |
-| min_confidence | number | `0.0` | 关系置信度下限 |
+| organ | string | `null` (LLM 必填) | 组织过滤(对应 o.Organ) |
+| species | string | `null` | 物种(对应 g.Species);默认不传(TAIR ID 天然物种隔离) |
 | strict_organ | boolean | `false` | 严格按 organ 过滤命中 |
-| gene_key | string | `name_map` | 基因名映射:name_map / JSON 文件路径 / none(用原始名) |
-| max_ancestor_hops | integer | `3` | ontology_relation 祖先最大跳数 |
 | project_dir / input | — | — | 同上 |
-| uri | string | `null` | Neo4j URI(默认取 NEO4J_URI 环境变量) |
-| user | string | `null` | Neo4j 用户名(默认取 NEO4J_USER) |
-| password | string | `null` | Neo4j 密码(默认取 NEO4J_PASSWORD) |
+
+运维可 CLI 覆盖（但隐藏于 LLM schema）的环境参数：
+
+| CLI flag | env var | 类型 | 默认 | 说明 |
+|---|---|---|---|---|
+| `--species-type` | `KG_SPECIES_TYPE` | string | `Plant` | 对应 `g.Species_type` |
+| `--min-confidence` | `KG_MIN_CONFIDENCE` | number | `0.0` | `marker_of.relation_confidence` 下限 |
+| `--gene-key` | `KG_GENE_MAP_PATH` | string | `name_map4Arabidopsis_thaliana_symbol.json` | 基因映射文件路径；设为 `none` 跳过映射 |
+| `--max-ancestor-hops` | `KG_MAX_ANCESTOR_HOPS` | integer | `3` | ontology_relation 祖先最大跳数 |
+
+Neo4j 连接 (`skills/cell-annotation/.env`)：
+
+| 变量 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `NEO4J_URI` | string | `bolt://localhost:7687` | Neo4j URI |
+| `NEO4J_USER` | string | `neo4j` | Neo4j 用户 |
+| `NEO4J_PASSWORD` | string | 无（必须设） | Neo4j 密码 |
 
 ### step3_kg__test-connection
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| uri / user / password | — | `null` | 同 query,均取环境变量 |
+| project_dir | string | `output` | 同 query |
+| `uri` / `user` / `password` (SUPPRESS) | string | env / `null` | 运维可 CLI 覆盖（隐藏于 LLM schema），默认从 `skills/cell-annotation/.env` 读 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` |
 
 ### step4_judge__run
 

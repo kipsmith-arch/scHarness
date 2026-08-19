@@ -26,9 +26,22 @@ import json
 import math
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
+
+# Skill scripts run as subprocesses from harness/dispatcher.py. The parent
+# loop process has already imported ``harness.config`` (via the package
+# ``__init__``), which populated ``os.environ`` with every key from the
+# project-root ``.env``; subprocesses inherit that environment automatically.
+#
+# This module therefore does NOT import ``harness.config`` itself — that
+# would couple the skill to the harness package layout (tool_design.md §10:
+# "skill 本身保持环境无关"). When invoked directly outside the loop (e.g.
+# ``python skills/cell-annotation/scripts/step1_prepare.py metrics``) the
+# caller is responsible for sourcing ``.env`` first; see docs/CONFIGURATION_REFERENCE.md
+# §2 for the recommended pattern.
 
 # ---------------------------------------------------------------------------
 # I/O helpers
@@ -838,3 +851,115 @@ def resolve_batch_key(obs_columns, batch_key: Optional[str], default: str = "Ori
         f"找不到批次列:未指定 --batch-key,且 obs 中没有 {default!r}/Dataset/sample/batch/Libraries 列。"
         f"可用列:{list(obs_columns)[:20]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Skill-level dotenv loader (mirrors the pattern of harness/config.py but
+# scoped to the cell-annotation skill's own .env file).
+#
+# Why here (and not a separate _skill_dotenv.py): the dotenv loader has
+# exactly one caller (this module) and one consumer (cell-annotation skill
+# scripts). Inlining keeps the file count low and the side-effect visible at
+# the bottom of the same file that downstream readers will already be in.
+#
+# SCOPE: only Neo4j connection credentials live in SKILL_DOTENV_KEYS. The
+# cell-annotation skill owns Neo4j access (it connects from step3_kg and
+# scripts/build_label_map.py); the harness does not know Neo4j exists.
+# ---------------------------------------------------------------------------
+
+SKILL_DIR = Path(__file__).resolve().parent.parent  # .../skills/cell-annotation/
+SKILL_ENV_EXAMPLE = SKILL_DIR / ".env.example"
+SKILL_ENV = SKILL_DIR / ".env"
+SKILL_DOTENV_KEYS: tuple[str, ...] = (
+    "NEO4J_URI",
+    "NEO4J_USER",
+    "NEO4J_PASSWORD",
+)
+SKIP_SKILL_DOTENV_VAR = "CELL_ANNOTATION_SKIP_DOTENV"
+
+
+def load_skill_dotenv(override: bool = False) -> list[str]:
+    """Load the cell-annotation skill's own ``.env`` into ``os.environ``.
+
+    Files read, in increasing priority (later wins):
+        - ``<skill_dir>/.env.example`` (tracked template) — seeds defaults
+        - ``<skill_dir>/.env`` (gitignored, per-user secrets) — overrides
+
+    Within a single file, shell env still wins unless ``override=True``;
+    this mirrors ``harness/config.py:load_dotenv``.
+
+    Returns:
+        List of keys actually populated from disk (only SKILL_DOTENV_KEYS).
+        Unknown keys are still loaded into ``os.environ`` so users can stash
+        extras, but they are not reported.
+
+    Disable loading (tests / CI): set ``CELL_ANNOTATION_SKIP_DOTENV=1`` in
+    the environment *before* importing ``common``.
+    """
+    if os.environ.get(SKIP_SKILL_DOTENV_VAR) == "1":
+        return []
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        return []
+
+    pre_existing: set[str] = set(os.environ)
+    populated: list[str] = []
+
+    # Pass 1: .env.example seeds unset keys.
+    seeded_from_template: set[str] = set()
+    if SKILL_ENV_EXAMPLE.is_file():
+        try:
+            values = dotenv_values(SKILL_ENV_EXAMPLE, interpolate=False)
+        except Exception:
+            values = None
+        if values:
+            for key, value in values.items():
+                if value is None or not value:
+                    continue
+                if key in os.environ:
+                    continue
+                os.environ[key] = value
+                seeded_from_template.add(key)
+                if key in SKILL_DOTENV_KEYS:
+                    populated.append(key)
+
+    # Pass 2: .env overrides template-seeded values; shell env wins.
+    if SKILL_ENV.is_file():
+        try:
+            values = dotenv_values(SKILL_ENV, interpolate=False)
+        except Exception:
+            values = None
+        if values:
+            for key, value in values.items():
+                if value is None or not value:
+                    continue
+                if key in pre_existing:
+                    continue
+                os.environ[key] = value
+                seeded_from_template.discard(key)
+                if key in SKILL_DOTENV_KEYS:
+                    populated.append(key)
+
+    if override:
+        for path in (SKILL_ENV_EXAMPLE, SKILL_ENV):
+            if not path.is_file():
+                continue
+            try:
+                values = dotenv_values(path, interpolate=False)
+            except Exception:
+                continue
+            if not values:
+                continue
+            for key, value in values.items():
+                if value is None or not value:
+                    continue
+                os.environ[key] = value
+                if key in SKILL_DOTENV_KEYS:
+                    populated.append(key)
+    return populated
+
+
+# Eager bootstrap: any script that imports this module gets the skill's
+# environment loaded once, at import time. The load is idempotent.
+load_skill_dotenv()

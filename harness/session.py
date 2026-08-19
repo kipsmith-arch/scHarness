@@ -39,13 +39,12 @@ def generate_session_id() -> str:
 def build_llm(llm_config: Optional[dict] = None) -> ChatOpenAI:
     """Build ChatOpenAI from llm_config, falling back to env vars.
 
-    Priority: llm_config > LOOP_MODEL/OPENAI_MODEL > DEFAULT_MODEL.
+    Priority: llm_config > OPENAI_MODEL > DEFAULT_MODEL.
     API key / base URL fall back to OPENAI_API_KEY / OPENAI_BASE_URL.
     """
     cfg = llm_config or {}
     model = (
         cfg.get("model")
-        or os.environ.get("LOOP_MODEL")
         or os.environ.get("OPENAI_MODEL")
         or DEFAULT_MODEL
     )
@@ -146,7 +145,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--skill", required=True, help="Path to the skill directory")
     parser.add_argument("--project-dir", required=True, help="Output directory for this run")
     parser.add_argument("--task", default="请简单回复:回声测试通过", help="User task message")
-    parser.add_argument("--model", default=None, help="Model name (default: $LOOP_MODEL or gpt-4o-mini)")
+    parser.add_argument("--model", default=None, help="Model name (default: $OPENAI_MODEL or gpt-4o-mini)")
     parser.add_argument("--max-turns", type=int, default=100, help="Recursion limit")
     parser.add_argument("--resume", action="store_true", help="Resume from existing conversation.jsonl")
     parser.add_argument(
@@ -166,7 +165,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(summarize_skill(skill))
         return 0
 
-    print(f"[session] skill={skill.name} model={args.model or os.environ.get('LOOP_MODEL') or os.environ.get('OPENAI_MODEL') or DEFAULT_MODEL}")
+    print(f"[session] skill={skill.name} model={args.model or os.environ.get('OPENAI_MODEL') or DEFAULT_MODEL}")
     llm_config = {"model": args.model} if args.model else None
     final_state = run_session(
         skill,

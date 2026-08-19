@@ -17,6 +17,13 @@ import json
 import os
 import sys
 
+# Configuration (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD) is loaded from the
+# project-root ``.env`` by ``harness/config.py``. When this script is invoked
+# via the loop's ``scripted_driver.py`` or from a session, the parent process
+# has already populated ``os.environ`` from .env. When invoked standalone
+# (e.g. ``python scripts/build_label_map.py``) the caller must source
+# ``.env`` first; see docs/CONFIGURATION_REFERENCE.md §2.
+
 # 12 个真值标签(experiment_implementation.md §1.1)
 TRUE_LABELS = [
     "Columella root cap", "Root cortex", "Root hair", "Non-hair",

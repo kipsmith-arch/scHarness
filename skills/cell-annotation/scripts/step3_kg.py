@@ -6,8 +6,9 @@ Subcommands:
     test-connection — connect only, report provenance.
 
 Credentials: CLI flags > NEO4J_URI/USER/PASSWORD env > defaults (password never
-hardcoded). Gene names are mapped to symbols via name_map4Arabidopsis_thaliana
-_symbol.json before querying (--gene-key).
+hardcoded). Gene names are mapped to symbols via the JSON file pointed to by
+``--gene-key`` (default: ``name_map4Arabidopsis_thaliana_symbol.json`` at
+project root); set to ``"none"`` to skip mapping.
 """
 
 from __future__ import annotations
@@ -20,9 +21,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import common  # noqa: E402
-
-NAME_MAP_DEFAULT = "name_map4Arabidopsis_thaliana_symbol.json"
+import common  # noqa: E402  -- also triggers load_skill_dotenv()
 
 # organ_status 分类(语义)
 #   root     — 候选 organ 字段包含目标 target organ(由 --organ 透传,代码中无 organ 字面量)
@@ -100,8 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type)")
     p_q.add_argument("--min-confidence", type=float, default=0.0, help="关系置信度下限")
     p_q.add_argument("--strict-organ", action="store_true", help="严格按 organ 过滤命中")
-    p_q.add_argument("--gene-key", default="name_map",
-                     help="基因名映射:name_map / JSON 文件路径 / none(用原始名)")
+    p_q.add_argument("--gene-key", default="name_map4Arabidopsis_thaliana_symbol.json",
+                     help="基因名映射 JSON 文件路径;设 'none' 跳过映射")
     p_q.add_argument("--max-ancestor-hops", type=int, default=3, help="ontology_relation 祖先最大跳数")
     common.add_common_args(p_q)
     common.add_neo4j_args(p_q)
@@ -147,20 +146,24 @@ def kg_provenance(driver) -> dict:
     return prov
 
 
-def _load_gene_map(gene_key: str) -> dict:
-    """Resolve --gene-key to {raw_name: query_name} mapping (identity by default)."""
-    if gene_key in (None, "none", ""):
+def _load_gene_map(path: str) -> dict:
+    """Load a gene {raw_name: query_name} mapping from a JSON file at ``path``.
+
+    ``path`` semantics:
+        - "none" / "" / None : no mapping (identity transform; raw names queried)
+        - any other string    : filesystem path to a JSON dict; the dict must
+                                map raw gene IDs to query-side names
+                                (typically TAIR locus → symbol).
+
+    File-not-found fails loudly — silently falling back to no mapping would
+    hide a real misconfiguration from the operator.
+    """
+    if path in (None, "", "none"):
         return {}
-    path = gene_key if gene_key != "name_map" else NAME_MAP_DEFAULT
     if not os.path.exists(path):
-        for cand in ("name_map4Arabidopsis_thaliana_symbol.json",
-                     os.path.join("..", "..", "..", NAME_MAP_DEFAULT),
-                     os.path.join(os.path.expanduser("~"), NAME_MAP_DEFAULT)):
-            if os.path.exists(cand):
-                path = cand
-                break
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"基因名映射文件不存在:{path}(可用 --gene-key none 跳过映射)")
+        raise FileNotFoundError(
+            f"基因名映射文件不存在:{path}（设 'none' 跳过映射）"
+        )
     mapping = json.load(open(path, encoding="utf-8"))
     if not isinstance(mapping, dict):
         raise TypeError(f"基因名映射文件必须是 dict(当前 {type(mapping).__name__})")
