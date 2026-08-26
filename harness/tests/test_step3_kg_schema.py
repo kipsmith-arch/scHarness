@@ -1,15 +1,18 @@
-"""Tests for the B-class / SUPPRESS arg discipline in step3_kg.
+"""Tests for the A-class / B-class arg discipline in step3_kg.
 
 The cell-annotation skill classifies CLI args into:
 
-    A. Task / biological-decision args — LLM-visible in the tool schema.
-    B. Environment / deployment args  — hidden via argparse.SUPPRESS so the
-       LLM is not nudged to set them; CLI / env still overrides at runtime
+    A. Task / biological-decision args — LLM-visible in the tool schema
+       (organ, species, etc.). I/O paths (--project-dir, --input) are also
+       A-class because decision-point loops may need to override them
+       (e.g. qc_threshold → re-run step1 with new threshold in a fresh dir).
+    B. KG-resource / Neo4j-credential args — hidden via argparse.SUPPRESS so
+       the LLM is not nudged to set them; CLI / env still overrides at runtime
        via ``common.env_or_default``.
 
 step3_kg is the reference implementation of this split. These tests pin
 the contract so future refactors don't regress (e.g. re-exposing --password
-to the LLM, or breaking the SUPPRESS default that the loader relies on).
+to the LLM, or hiding --organ from the LLM).
 """
 
 from __future__ import annotations
@@ -46,7 +49,13 @@ def _by_subcommand(payload: dict) -> dict:
 # A-class contract: these MUST remain visible to the LLM
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", ["organ", "species", "species_type", "strict_organ"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "organ", "species", "species_type", "strict_organ",  # biological decision
+        "project_dir", "input",  # I/O paths exposed to LLM (decision-point-driven overrides)
+    ],
+)
 def test_query_A_class_visible(name: str):
     payload = _dump_schema()
     query = _by_subcommand(payload)["query"]
@@ -58,7 +67,9 @@ def test_query_A_class_visible(name: str):
 
 
 # ---------------------------------------------------------------------------
-# B-class contract: these MUST be hidden from the LLM via argparse.SUPPRESS
+# B-class contract: only KG-resource / Neo4j-credential flags are hidden.
+# --project-dir / --input are A-class (LLM-visible) since they may be overridden
+# by decision points (e.g. qc_threshold loop → re-run step1 with new threshold).
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -67,7 +78,6 @@ def test_query_A_class_visible(name: str):
         "min_confidence",   # KG service tuning
         "max_ancestor_hops",  # KG query tuning
         "uri", "user", "password",  # Neo4j credentials
-        "project_dir", "input",  # I/O paths = deployment
     ],
 )
 def test_query_B_class_hidden(name: str):
@@ -75,8 +85,8 @@ def test_query_B_class_hidden(name: str):
     query = _by_subcommand(payload)["query"]
     arg_names = {a["name"] for a in query["args"]}
     assert name not in arg_names, (
-        f"--{name.replace('_', '-')} is B-class (environment/deployment) and must "
-        f"NOT appear in the LLM-facing tool schema; got args={arg_names}"
+        f"--{name.replace('_', '-')} is B-class (KG-resource / Neo4j credential) and "
+        f"must NOT appear in the LLM-facing tool schema; got args={arg_names}"
     )
 
 

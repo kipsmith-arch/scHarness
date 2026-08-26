@@ -48,8 +48,13 @@ def read_h5ad(path:str) -> sc.AnnData:
 for h5ad_file in glob('h5ad/*.h5ad'):
     print(h5ad_file)
     adata = read_h5ad(h5ad_file)
-    adata.obs[['Seurat_clusters','Celltype']].to_csv('index/'+os.path.basename(h5ad_file)+'.csv')
-    del adata.obs['Seurat_clusters']
-    del adata.obs['Celltype']
+    if 'Seurat_clusters' in adata.obs.columns:
+        adata.obs[['Seurat_clusters','Celltype']].to_csv('index/'+os.path.basename(h5ad_file)+'.csv')
+        del adata.obs['Seurat_clusters']
+        del adata.obs['Celltype']
+    elif 'seurat_clusters' in adata.obs.columns:
+        adata.obs[['seurat_clusters','celltype_after']].to_csv('index/'+os.path.basename(h5ad_file)+'.csv')
+        del adata.obs['seurat_clusters']
+        del adata.obs['celltype_after']
     adata.write(h5ad_file)
 

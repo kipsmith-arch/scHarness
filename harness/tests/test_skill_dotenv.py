@@ -84,12 +84,21 @@ def _isolate_skill_env(monkeypatch):
 
 
 def test_load_skill_dotenv_seeds_from_env_example(monkeypatch):
-    """.env.example seeds Neo4j defaults that are not already set."""
-    _drop_skill_modules()
-    import common  # noqa: F401  -- triggers load_skill_dotenv()
-    import os
-    assert os.environ.get("NEO4J_URI") == "bolt://localhost:7687"
-    assert os.environ.get("NEO4J_USER") == "neo4j"
+    """.env.example seeds Neo4j defaults when no ``.env`` is present.
+
+    We temporarily hide any user ``.env`` (the autouse ``_isolate_skill_env``
+    fixture only wipes the shell env, not the on-disk file) so the loader is
+    forced to read ``.env.example``. ``_restore_skill_env`` puts it back.
+    """
+    env_path, env_backup, ex_path, ex_backup = _write_skill_env("")  # empty .env
+    try:
+        _drop_skill_modules()
+        import common  # noqa: F401  -- triggers load_skill_dotenv()
+        import os
+        assert os.environ.get("NEO4J_URI") == "bolt://localhost:7687"
+        assert os.environ.get("NEO4J_USER") == "neo4j"
+    finally:
+        _restore_skill_env(env_backup, ex_backup)
 
 
 def test_load_skill_dotenv_does_not_overwrite_shell_env(monkeypatch):

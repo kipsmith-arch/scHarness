@@ -105,15 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
                      help=argparse.SUPPRESS)
     p_q.add_argument("--max-ancestor-hops", type=int, default=argparse.SUPPRESS,
                      help=argparse.SUPPRESS)
-    # step3_kg: --project-dir / --input 都属 B(部署/路径),LLM 不可见。
-    # 不调用 add_common_args,直接以 SUPPRESS 声明。
-    p_q.add_argument("--project-dir", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
-    p_q.add_argument("--input", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    # --project-dir / --input 与 task 类参数一同暴露给 LLM(决策点调参入口);
+    # CLI 仍可手动临时覆盖。SUPPRESS 化只针对 B 类(KG 服务/资源参数)。
+    common.add_common_args(p_q)
     common.add_neo4j_args(p_q)
 
     p_t = sub.add_parser("test-connection", help="测试 Neo4j 连接与来源信息")
     common.add_neo4j_args(p_t)
-    p_t.add_argument("--project-dir", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    common.add_common_args(p_t)
     return parser
 
 
