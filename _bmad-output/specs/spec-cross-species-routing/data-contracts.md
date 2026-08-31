@@ -1,6 +1,7 @@
 # Data Contracts — 新工具 I/O schema
 
-> SPEC cross-species-routing 的数据契约伴侣。定义 `step3_kg_precheck` / `step2_ortholog` / `step3_kg --ortholog-map` 的输入输出 JSON schema;供 loader、tests、evals、validate_log 引用。
+> SPEC cross-species-routing 的数据契约伴侣。定义 `step3_kg_precheck` / `step2_cross_species_map` / `step3_kg --ortholog-map` 的输入输出 JSON schema;供 loader、tests、evals、validate_log 引用。
+> Refactored 2026-08-24: CAP-2 renamed `step2_ortholog` → `step2_cross_species_map` with provider abstraction. Field renames: `ortholog_map` → `cross_species_map`, `ortholog_type` → `mapping_type`, `min-identity` → `min-score`, `Ensembl REST`-specific fields generalized.
 
 ---
 
@@ -75,101 +76,110 @@
 
 ---
 
-## 2. step2_ortholog — ortholog_map.json
+## 2. step2_cross_species_map — cross_species_map.json
 
 ### 2.1 输入参数
 
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
+| `--provider` | string | 否 | `ensembl_compara` | provider name;argparse `choices` from registry |
 | `--target-species` | string | 是 | — | 小写下划线格式 |
-| `--reference-species` | string[] | 是(可重复) | — | 至少 1 个;同样小写下划线;可重复传多个 |
-| `--species-type` | string | 否 | `Plant` | 用于路由端点 |
+| `--reference-species` | string[] | 是(可重复) | — | 至少 1 个;可重复传多个 |
+| `--species-type` | string | 否 | `Plant` | 用于路由端点(Ensembl provider);其他 provider 可选忽略 |
 | `--input` | path | 是 | — | `step2_markers/markers.json` 路径 |
 | `--project-dir` | string | 否 | `output` | |
-| `--min-identity` | float | 否 | 30.0 | 过滤 identity < 此值的 ortholog 对 |
-| `--max-hits-per-gene` | int | 否 | 3 | 限制一对多(取 perc_id 最高的 N 个) |
-| `--force-refresh` | flag | 否 | False | 忽略 cache 重打 Ensembl |
-| `--ensembl-rest-host` | string | 否 | 自动路由 | 可手动 override |
-| `--ensembl-timeout` | int | 否 | 10 | 单个请求超时(秒) |
-| `--ensembl-max-retries` | int | 否 | 4 | |
+| `--min-score` | float | 否 | 30.0 | 过滤 score < 此值的 mapping(provider-neutral 0~100) |
+| `--max-hits-per-gene` | int | 否 | 3 | 限制一对多(取 score 最高的 N 个) |
+| `--force-refresh` | flag | 否 | False | 忽略 cache 重打 provider |
+| `--provider-timeout` | int | 否 | 10 | 单个请求超时(秒);传给 provider |
+| `--provider-max-retries` | int | 否 | 4 | 最大重试次数;传给 provider |
+| `--provider-concurrency` | int | 否 | 8 | 并发 workers |
+| `--max-genes` | int | 否 | 0 | 限样本基因数(0=不限),smoke test 用 |
+| `--ensembl-rest-host` | string | 否 | 自动路由 | legacy alias,仅 Ensembl provider 读 |
 
 ### 2.2 输出 JSON
 
 ```json
 {
-  "status": "ok",
-  "data": {
-    "target_species": "arabidopsis_thaliana",
-    "reference_species": ["oryza_sativa"],
-    "species_type": "Plant",
-    "ensembl_host_used": "https://rest.plants.ensembl.org",
-    "computed_at": "2026-08-24T15:30:00",
-    "cache_hit": false,
-    "ortholog_map": {
-      "AT1G31340": [
-        {
-          "ref_species": "oryza_sativa",
-          "ref_gene_id": "Os06g0650100",
-          "identity": 99.34,
-          "coverage": 100.0,
-          "ortholog_type": "ortholog_one2one",
-          "source": "ensembl_compara"
-        }
-      ],
-      "AT2G39730": [
-        {
-          "ref_species": "oryza_sativa",
-          "ref_gene_id": "Os02g0168800",
-          "identity": 92.5,
-          "coverage": 98.0,
-          "ortholog_type": "ortholog_one2one",
-          "source": "ensembl_compara"
-        }
-      ]
-    },
-    "unmapped_genes": ["AT5G12345"],
-    "summary": {
-      "n_input_genes": 234,
-      "n_mapped": 198,
-      "n_unmapped": 36,
-      "hit_rate": 0.846,
-      "identity_distribution": {
-        "min": 35.2,
-        "median": 78.4,
-        "max": 99.9,
-        "p10": 42.1,
-        "p90": 95.3
-      },
-      "type_distribution": {
-        "ortholog_one2one": 180,
-        "ortholog_one2many": 18
-      },
-      "n_ref_genes_per_target_mean": 1.1,
-      "ensembl_request_count": 12,
-      "ensembl_elapsed_seconds": 8.4
-    },
-    "warnings": []
-  }
+  "provider": "ensembl_compara",
+  "target_species": "arabidopsis_thaliana",
+  "reference_species": ["oryza_sativa"],
+  "species_type": "Plant",
+  "host_used": "https://rest.plants.ensembl.org",
+  "computed_at": "2026-08-24T15:30:00",
+  "cache_hit": false,
+  "cross_species_map": {
+    "AT1G31340": [
+      {
+        "ref_species": "oryza_sativa",
+        "ref_gene_id": "Os06g0650100",
+        "score": 99.34,
+        "score_type": "percent_identity",
+        "mapping_type": "ensembl_one2one",
+        "confidence": null,
+        "raw": {"ensembl_type": "ortholog_one2one", "perc_pos": 100.0, "protein_id": "...", "cigar_line": "...", "dn_ds": null, "taxonomy_level": "..."}
+      }
+    ]
+  },
+  "unmapped_genes": ["AT5G12345"],
+  "summary": {
+    "n_input_genes": 234,
+    "n_mapped": 198,
+    "n_unmapped": 36,
+    "hit_rate": 0.846,
+    "score_distribution": {...},
+    "score_type_distribution": {"percent_identity": 198},
+    "mapping_type_distribution": {"ensembl_one2one": 180, "ensembl_one2many": 18},
+    "n_ref_genes_per_target_mean": 1.1,
+    "provider_request_count": 12,
+    "provider_elapsed_seconds": 8.4,
+    "provider_errors": {"total": 0, "400": 0, "404": 0, "429": 0, "other": 0},
+    "min_score_applied": 30.0,
+    "max_hits_per_gene_applied": 3,
+    "max_genes_applied": 0,
+    "concurrency_applied": 8
+  },
+  "warnings": []
 }
 ```
 
-### 2.3 缓存文件
+### 2.3 Field mapping: provider-native → neutral MappingRecord
+
+| Provider | Native field | Neutral field | Notes |
+|---|---|---|---|
+| Ensembl Compara | `target.perc_id` | `score` | Already 0~100 percent identity |
+| Ensembl Compara | `target.perc_pos` | (in `raw.perc_pos`) | Audit only |
+| Ensembl Compara | homology `type` (`ortholog_one2one`) | `mapping_type` prefixed `ensembl_*` | `ensembl_one2one`, `ensembl_one2many`, `ensembl_many2many` |
+| Ensembl Compara | (none exposed) | `score_type="percent_identity"` | Set as class attribute |
+| BLAST (future) | `pident` | `score` | percent identity |
+| BLAST (future) | `evalue` | (in `raw.evalue`) |  |
+| BLAST (future) | `bitscore` | (in `raw.bitscore`) | Provider-native filter if needed |
+| OMA (future) | `distance` | `score = 100 - distance` | Inverse mapping |
+
+### 2.4 缓存文件
 
 ```
-<project-dir>/step2_ortholog/cache/
-  ortholog_map__{target_species}__{ref_species_comma_joined}__{md5(markers.json)[0:8]}.json
+<project-dir>/step2_cross_species_map/cache/
+  cross_species_map__{target_species}__{ref_species_comma_joined}__{provider_name}__{md5(markers.json)[0:8]}.json
 ```
 
-`ref_species_comma_joined` 排序后拼接(如 `oryza_sativa,zea_mays`)。`md5(markers.json)` 防 marker 集合变化导致旧映射误导。
+Cache key **includes provider name** — different providers cache independently (refactor over the old `ortholog_map_*{target}_*{ref}_*md5*` key).
 
 `--force-refresh` 时跳过 cache 读,跑完仍写 cache。
 
-### 2.4 边缘 case
+### 2.5 边缘 case
 
-- Ensembl 完全不可达: `cache_hit=false, ortholog_map={}, summary={hit_rate: 0, ensembl_request_count: 0, ensembl_elapsed_seconds: 0}, warnings: ["Ensembl REST 不可达: <error>"]`。**不视为 error**,LLM 看 warning 决定是否走单物种路径。
-- Ensembl 返回空(目标物种无 Compara 收录): `ortholog_map={}, unmapped_genes=<全部>, warnings: ["<target_species> 不在 Ensembl Compara"]`
-- 单个 marker Ensembl 报错: 记入 `unmapped_genes`,不阻断
-- 一对多超过 `--max-hits-per-gene`: 按 `identity` 降序截断,记 `n_truncated_by_max_hits` 到 summary
+- provider 完全不可达: `cache_hit=false, cross_species_map={}, summary={hit_rate: 0, provider_request_count: N, provider_elapsed_seconds: T}, warnings: ["<provider> REST 不可达: <error>"]`。**不视为 error**,LLM 看 warning 决定是否走单物种路径。
+- provider 返回空(目标物种不在该 backend 收录): `cross_species_map={}, unmapped_genes=<全部>, warnings: ["<target_species> 不在 <provider>"]`
+- 单个 marker 报错: 记入 `unmapped_genes`,不阻断
+- 一对多超过 `--max-hits-per-gene`: 按 `score` 降序截断
+
+### 2.6 Adding a new provider
+
+1. Create `skills/cell-annotation/scripts/step2_xmap_providers/<name>.py`
+2. Subclass `BaseCrossSpeciesProvider`, implement `available(species_type) -> bool` and `lookup(target_species, ref_species, gene, *, timeout, max_retries, host=None) -> tuple[list[MappingRecord] | None, str | None]`
+3. Decorate with `@register_provider`
+4. No CLI / LLM-facing / step3_kg changes needed
 
 ---
 

@@ -38,9 +38,10 @@ sources:
 - **CAP-1 precheck**
   - **intent:** skill 可在 step3_kg 之前对目标物种在 KG 中的 cell type 覆盖率做快速诊断,返回推荐策略与推荐参考物种列表。
   - **success:** 新工具 `step3_kg_precheck__run` 在 0 h5ad 加载下输出 `coverage_report.json`,含 `target_species_genes_with_ct` / `target_species_unique_ct` / `coverage_tier ∈ {high, medium, low}` / `recommended_strategy ∈ {single_species, mixed, cross_species_only}` / `recommended_reference_species[]`(按 species_type 内 cell type 覆盖度 + 亲缘距离加权重排序)。覆盖率阈值(>=500/50-500/<50)与推荐排序算法有 pytest 覆盖。
-- **CAP-2 ortholog_map**
-  - **intent:** skill 可把目标物种 marker 基因映射到一个或多个参考物种的 ortholog,无需用户提供蛋白序列。
-  - **success:** 新工具 `step2_ortholog__run` 在 0 h5ad 加载下输出 `ortholog_map.json`,含每个目标 marker → 参考物种 ortholog 列表(identity / coverage / type=one2one|one2many)+ 全局统计(命中率 / identity 分布 / type 分布)。支持 Ensembl Compara REST(POST 批量为主,GET 单个兜底)、按 species_type 自动路由端点(Plant→`rest.plants.ensembl.org`、其它→`rest.ensembl.org`)、`--min-identity` / `--max-hits-per-gene` 过滤、species-level 缓存(同 target+reference 组合复用历史)、`--force-refresh` 强制重打、Ensembl 不可达时降级为 warn + 单物种路径。
+- **CAP-2 cross-species map(provider abstraction)**
+  - **intent:** skill 可把目标物种 marker 映射到一个或多个参考物种的等价基因,无需用户提供蛋白序列;背后使用 **pluggable provider** (默认 `ensembl_compara`,未来可加 `blast` / `diamond` / `oma` / `eggnog`),调用方不需关心 provider 实现。
+  - **success:** 新工具 `step2_cross_species_map__run` 在 0 h5ad 加载下输出 `cross_species_map.json`,含每个目标 marker → 中性 `MappingRecord` 列表 (`ref_species` / `ref_gene_id` / `score` 0~100 / `score_type` / `mapping_type` / `confidence` / `raw`)。CLI 参数 `--provider` (默认 `ensembl_compara`,argparse `choices` 来自 registry)。全局统计 (命中率 / score 分布 / score_type 分布 / mapping_type 分布)。支持 `species-level 缓存` (key 含 provider name)、`--force-refresh`、`--min-score`、`--max-hits-per-gene`、Ensembl 不可达时降级为 warn + 不阻断。Adding a new provider = 1 file + 1 line in `PROVIDERS` dict; call sites (LLM-facing args, step3_kg, SKILL.md) do not change.
+  - **refactor note (2026-08-24):** Was `step2_ortholog.py` (Ensembl-Compara-hardcoded). Provider abstraction introduced per user requirement that cross-species mapping must be pluggable (BLAST/DIAMOND/OMA/eggnog are plausible future additions). Provider interface: `BaseCrossSpeciesProvider` ABC + `MappingRecord` dataclass + `PROVIDERS` registry + `@register_provider` decorator. Default provider `ensembl_compara` is the first shipped implementation; lives in subpackage `step2_xmap_providers/` (renamed from `step2_cross_species_map/` to avoid Python module/subpackage name collision with the CLI script).
 - **CAP-3 step3_kg 跨物种融合**
   - **intent:** skill 可在 step3_kg query 时并行跑"marker 直接命中"与"marker→ortholog→参考物种命中"两条路径,候选聚合时保留 source_species 与 source_path,LLM 决策视图区分两条路径的命中数。
   - **success:** `step3_kg.py query` 新增 `--ortholog-map` 选项。`kg_hits.json` 的 `gene_to_cts` 结构扩展为带 `source_path ∈ {direct, ortholog}` 与 `ortholog_ref_gene / ortholog_ref_species` 字段;`per_cluster` 新增 `n_direct_hits` / `n_ortholog_hits` / `n_mixed_hits` 计数。Ensembl 不可达时回退单路径,run_log.jsonl 记 warning 而非 error。现有 B1 default arm 的 strict=0.9236 不退化(parallel path 在 KG 覆盖高的物种上不应改变主导候选)。
@@ -82,7 +83,7 @@ sources:
 
 | 维度 | 内容 |
 |---|---|
-| 范围 | CAP-1 (`step3_kg_precheck`) + CAP-2 (`step2_ortholog`) |
+| 范围 | CAP-1 (`step3_kg_precheck`) + CAP-2 (`step2_cross_species_map`) |
 | 新增文件 | `skills/cell-annotation/scripts/step3_kg_precheck.py`、`step2_ortholog.py`、`harness/tests/test_step3_kg_precheck.py`、`test_step2_ortholog.py` |
 | 修改文件 | `skills/cell-annotation/scripts/common.py`(新增 `SPECIES_NAME_ALIASES` / `normalize_species_name` / `ensembl_rest_host`) |
 | 不动文件 | `SKILL.md`、`references/*`、`scripts/step3_kg.py`、`scripts/trajectory_schema.py`、`scripts/write_judgment.py` |
@@ -155,4 +156,4 @@ sources:
 - **OQ-2** [已决断,2026-08-24] P5 evals 跨物种场景采用方案 A — 新增 E-6 (SRP171040 覆盖高对照,验证 `routing_accept single_species` 不改变现有行为) + E-7 (PRJNA935359 sorghum_bicolor,验证 `routing_accept cross_species_only` + 跨物种路径给出候选)。E-1~E-5 不动。`evals.json` 加 2 条;E-7 用真实 sorghum 数据, 不造 mock。详见 Success signal。
 - **OQ-3** [已决断,2026-08-24] 多参考物种融合采用方案 A — 候选简单 union, LLM 在 candidate_gap 读 `source_species_set` / `source_path_set` 区分优先级(优先级规则:含目标物种名 > 同 species_type ref > 远缘 ref; `direct` > `ortholog` > `mixed`)。不去重, 不加权排序。算法升级 (B/C 方案) 留作批 3 优化, 批 2 evals E-7 跑完看 LLM 实际行为再决定。
 - **OQ-2** P5 evals 跨物种场景是新增 E-6 / E-7 还是扩展现有 E-1~E-5?新增会让 `evals.json` 体量增长但更聚焦;扩展更省但需重设计 `expected_decision`。
-- **OQ-3** 多参考物种融合的优先级算法细节。CAP-2 输出 per-reference 的 ortholog_map;CAP-3 在聚合多个参考物种的候选时,按"亲缘距离"还是"cell type 覆盖度"还是两者加权排序?默认采用 `亲缘近 > 覆盖广`(同科 > 同 species_type > 远缘),是否合理?
+- **OQ-3** 多参考物种融合的优先级算法细节。CAP-2 输出 per-reference 的 cross_species_map;CAP-3 在聚合多个参考物种的候选时,按"亲缘距离"还是"cell type 覆盖度"还是两者加权排序?默认采用 `亲缘近 > 覆盖广`(同科 > 同 species_type > 远缘),是否合理?

@@ -36,9 +36,9 @@
         │                                           │     (session 级)
         │                                           │     decision: accept / force_single / force_cross / multi_ref
         │                                           ▼
-        │                                  ┌─ (conditional) step2_ortholog run  ← NEW (0 h5ad)
-        │                                           │     调 Ensembl Compara REST
-        │                                           │     输出 ortholog_map.json
+        │                                  ┌─ (conditional) step2_cross_species_map run  ← NEW (0 h5ad)
+        │                                           │     调 provider (default Ensembl Compara REST)
+        │                                           │     输出 cross_species_map.json
         │                                           │     species-level 缓存 + --force-refresh
         ▼                                           ▼
    step3_kg query   ← CAP-3 扩展 (0 h5ad)         ──┘
@@ -67,7 +67,7 @@
 | 工具名 | 加载次数 | 输入 | 输出 | 用途 |
 |---|---|---|---|---|
 | `step3_kg_precheck__run` | 0 h5ad | `--target-species` `--organ` `--species-type` `--project-dir` | `step3_kg_precheck/coverage_report.json` | 目标物种在 KG 中的 cell type 覆盖率评估 + 参考物种推荐 |
-| `step2_ortholog__run` | 0 h5ad | `--target-species` `--reference-species[]` `--species-type` `--input markers.json` `--project-dir` `--min-identity` `--max-hits-per-gene` `--force-refresh` `--ensembl-rest-host`(可选) | `step2_ortholog/ortholog_map.json` | Ensembl Compara REST 同源映射,species-level 缓存 |
+| `step2_cross_species_map__run` | 0 h5ad | `--provider`(默认 `ensembl_compara`)+ `--target-species` + `--reference-species[]` + `--species-type` + `--input markers.json` + `--project-dir` + `--min-score` + `--max-hits-per-gene` + `--force-refresh` + provider tuning (`--provider-timeout/--provider-max-retries/--provider-concurrency`) | `step2_cross_species_map/cross_species_map.json` | Cross-species gene mapping via pluggable provider (Ensembl Compara default; future BLAST/DIAMOND/OMA/eggnog) |
 
 `step3_kg__query` 增 `--ortholog-map` 选项(默认 None)。
 
@@ -85,9 +85,9 @@
 ## 4. 模块边界
 
 - **`step3_kg_precheck__run` 是 step3_kg 的前置诊断,不是替代。** 它不查 cell type,只查目标物种的"基因覆盖度"。
-- **`step2_ortholog__run` 是 step2_markers 的下游、step3_kg 的上游。** 它消费 markers.json,产出 ortholog_map.json;不进 h5ad。
-- **`step3_kg` 不直接调 Ensembl REST。** 同源映射是独立工具(单一职责、便于单独缓存 / 测试 / 降级)。
-- **降级策略**: `step2_ortholog` Ensembl 不可达时(超时 / 429 / DNS 失败)返回 `{"status": "ok", "data": {"ortholog_map": {}, "warnings": [...]}}`,而非 error;`step3_kg` 看到空 ortholog_map 自动回退单路径。
+- **`step2_cross_species_map__run` 是 step2_markers 的下游、step3_kg 的上游。** 它消费 markers.json,产出 `cross_species_map.json`;不进 h5ad。Provider 是 pluggable(默认 Ensembl Compara);CLI 通过 `--provider` 参数 dispatch,argparse `choices` 从 `step2_xmap_providers.PROVIDERS` registry 读取。新增 provider = 新建 `step2_xmap_providers/<name>.py` 实现 `BaseCrossSpeciesProvider` 接口 + `@register_provider` 装饰器;无需改 CLI / LLM-facing / step3_kg。
+- **`step3_kg` 不直接调 provider。** Cross-species mapping 是独立工具(单一职责、便于单独缓存 / 测试 / 降级 / 切换 provider)。
+- **降级策略**: `step2_cross_species_map` provider 不可达时(超时 / 429 / DNS 失败 / unavailable division)返回 `{"status": "ok", "data": {"cross_species_map": {}, "warnings": [...]}}`,而非 error;`step3_kg` 看到空 cross_species_map 自动回退单路径。
 
 ## 5. 与现有决策点的接口
 
@@ -103,14 +103,14 @@
 
 按既有约定,新工具通过 `--dump-schema` 自动派生 `tool_schemas` / `tool_runtime`(见 `skills/cell-annotation/scripts/common.py:dump_schema`)。`step3_kg.py` 改 `--ortholog-map` 不需要手动维护 schema。
 
-`step3_kg_precheck.py` 与 `step2_ortholog.py` 同样实现 `--dump-schema`,loader 在 `harness/skill_loader.py` 自动识别。
+`step3_kg_precheck.py` 与 `step2_cross_species_map.py` 同样实现 `--dump-schema`,loader 在 `harness/skill_loader.py` 自动识别。
 
 ## 7. 凭据与环境
 
 - **Neo4j 凭据**: `step3_kg_precheck` 复用现有 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`(从 `skills/cell-annotation/.env` 读)。
 - **Ensembl REST**: 无凭据。环境变量新增 `ENSEMBL_REST_HOST`(默认根据 species_type 路由),可在 `.env` 覆盖(默认 `https://rest.ensembl.org`)。
 - **超时**: `--ensembl-timeout`(默认 10s),`--ensembl-max-retries`(默认 4)。
-- **缓存目录**: `step2_ortholog/cache/ortholog_map__{target}__{ref}__{md5(markers.json)}.json`(species-level;`md5(markers.json)` 防止不同 marker 集合复用旧映射)。
+- **缓存目录**: `step2_cross_species_map/cache/cross_species_map__{target}__{ref}___{provider}__{md5(markers.json)}.json`(species-level;`md5(markers.json)` 防止不同 marker 集合复用旧映射;cache key 含 provider name 让不同 provider 独立缓存)。
 
 ## 8. 失败模式
 
@@ -122,4 +122,5 @@
 | Ensembl 返回 200 但 body 无 homologies | `data[0].homologies == []` | 视为该 marker 无 ortholog,记入 `unmapped_genes[]` |
 | 目标物种不在 Ensembl Compara | Ensembl 404 | 跳过该 marker,记 unmapped,继续 |
 | 物种名规范化失败 | KG 中查不到 normalized name | 跳过该 reference 的候选,在 run_log 记 warn |
-| ortholog_map 文件损坏 | JSON parse fail | 重跑(不读 cache,`--force-refresh` 自动) |
+| cross_species_map.json 文件损坏 | JSON parse fail | 重跑(不读 cache,`--force-refresh` 自动) |
+| Provider crash (Exception in __init__) | get_provider() raises | CLI 返回 `status: error`,而不是 graceful degrade(这是 init-time error,不能安全忽略) |
