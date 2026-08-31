@@ -32,47 +32,122 @@ import common  # noqa: E402  -- also triggers load_skill_dotenv()
 # _priority 把这些 category 映射成排序优先级(root/含 target 排最前),与 target 无关。
 ORGAN_STATUS_PRIORITY = {"root": 0, "partial": 1, "unknown": 2, "mismatch": 3}
 
+# KG organ field separator: "Stem|Root|Leaf" means the candidate applies to
+# all three organs (multi-organ cell type). Single-organ fields have no
+# separator ("Root"). "Unknown" is a sentinel for missing organ info.
+_ORGAN_FIELD_SEP = "|"
+_ORGAN_SENTINEL_UNKNOWN = "Unknown"
+
+
+def _iter_organ_tokens(organ_field) -> list[str]:
+    """Normalize one KG organ field into a list of trimmed non-empty tokens.
+
+    Handles pipe-separated fields ("Stem|Root|Leaf" -> ["Stem", "Root", "Leaf"])
+    and the "Unknown" sentinel (excluded at both the field and token level:
+    ``"Unknown"`` -> [], ``"Root|Unknown"`` -> ["Root"], ``"Root|Unknown|Stem"``
+    -> ["Root", "Stem"]). Other empty / None / whitespace inputs yield [].
+    Whitespace around tokens is stripped.
+    """
+    if organ_field is None:
+        return []
+    s = str(organ_field).strip()
+    if not s:
+        return []
+    tokens = []
+    for raw in s.split(_ORGAN_FIELD_SEP):
+        t = raw.strip()
+        if not t or t == _ORGAN_SENTINEL_UNKNOWN:
+            continue
+        tokens.append(t)
+    return tokens
+
+
+def _field_matches_target(field: str, target_norm: str) -> bool:
+    """Boundary-aware match: does a single KG organ field contain the target?
+
+    Splits the field on the pipe separator and checks each non-Unknown token
+    against the target as a whole word (case-insensitive). This prevents the
+    substring false positive: target "Root" does NOT match the token
+    "Rootstock". Returns True iff at least one token equals the target.
+
+    Compare to the pre-fix substring logic which would have returned True
+    for field "Rootstock" with target "Root" (deferred-work D-2 bug).
+    """
+    tokens = _iter_organ_tokens(field)
+    if not tokens or not target_norm:
+        return False
+    target_lower = target_norm.strip().lower()
+    return any(t.lower() == target_lower for t in tokens)
+
 
 def _organ_status(organs, target):
     """Classify candidate by organ consistency with the target organ.
 
-    ``target`` is the dataset's target organ name, passed through from ``--organ``
-    on the step3_kg query subcommand. **No default value** — callers must pass it
-    explicitly so no organ name is hardcoded in this function. KG Organ strings
-    are normalised via ``target.strip().title()`` to match the title-case
-    convention used in the KG (e.g. ``"root" → "Root"``).
+    ``target`` is the dataset's target organ name, passed through from
+    ``--organ`` on the step3_kg query subcommand. **No default value** —
+    callers must pass it explicitly so no organ name is hardcoded here.
+    KG Organ strings are normalised via ``target.strip().title()`` to
+    match the title-case convention used in the KG (e.g. ``"root" → "Root"``).
 
     Returned categories are organ-agnostic:
-      - ``"root"``: candidate organs contain the target organ (category name is
-        historical; the semantic is "matches target organ")
+      - ``"root"``: candidate organs contain the target organ (category
+        name is historical; the semantic is "matches target organ")
       - ``"partial"``: candidate organs include both target and non-target
       - ``"unknown"``: no organ label or only "Unknown"
       - ``"mismatch"``: candidate organs are all non-target
 
+    Semantic model
+    --------------
+    KG organ fields are pipe-separated lists of organ names (e.g.
+    ``"Stem|Root|Leaf"`` means the candidate applies to Stem AND Root AND Leaf
+    as a single multi-organ cell type). Each *field* is evaluated as a whole:
+    a field is "target-matching" iff ANY of its tokens equals the target.
+    Classification is then per-field, not per-token:
+      - root: at least one field is target-matching AND no field is
+        non-target-matching (i.e. all non-Unknown fields match target)
+      - partial: at least one field is target-matching AND at least one
+        field is non-target-matching
+      - mismatch: all non-Unknown fields are non-target-matching
+      - unknown: no non-Unknown fields exist
+
+    Boundary match (deferred-work D-2 fix): a field "Rootstock" with target
+    "Root" is NOT classified as root (substring false positive). See
+    ``deferred-work.md``.
+
     Caveats:
-      - ``target`` must be a non-empty string; non-string/empty raises ValueError
-        (callers are responsible for fail-fast at the CLI layer; this function
-        defends against accidental None propagation).
-      - ``target`` is normalised via ``strip().title()``; KG organ strings use
-        pipe-or-space-separated titles ("Stem|Root|Leaf"), so single-word
-        targets work, but multi-word or hyphenated targets may need explicit
-        casing. Round-2 scope accepts this limitation.
+      - ``target`` must be a non-empty string; non-string/empty raises
+        ValueError (callers are responsible for fail-fast at the CLI layer;
+        this function defends against accidental None propagation).
+      - ``target`` is normalised via ``strip().title()``; KG organ strings
+        use pipe-separated tokens ("Stem|Root|Leaf"). Multi-word or
+        hyphenated targets may need explicit casing — D-1 deferred.
     """
     if not isinstance(target, str) or not target.strip():
         raise ValueError(f"_organ_status: target must be a non-empty string, got {target!r}")
     target_norm = target.strip().title()
-    orgs = {str(o).strip() for o in organs if o is not None and str(o).strip()}
-    if not orgs:
+
+    # Per-field classification. A field with no real tokens (empty / None /
+    # all-Unknown) is "unknown" and does not contribute to the has_target /
+    # has_other decision. We track counts to classify the candidate.
+    has_target = False  # at least one field contains target
+    has_other = False   # at least one field is all non-target
+
+    for field in organs:
+        # Empty / None / Unknown-only field -> contributes nothing
+        tokens = _iter_organ_tokens(field)
+        if not tokens:
+            continue
+        if _field_matches_target(field, target_norm):
+            has_target = True
+        else:
+            has_other = True
+
+    if not has_target and not has_other:
         return "unknown"
-    known = {o for o in orgs if o != "Unknown"}
-    if not known:
-        return "unknown"
-    has_target = any(target_norm in o for o in known)
-    has_other = any(target_norm not in o for o in known)
+    if has_target and not has_other:
+        return "root"
     if has_target and has_other:
         return "partial"
-    if has_target:
-        return "root"
     return "mismatch"
 
 

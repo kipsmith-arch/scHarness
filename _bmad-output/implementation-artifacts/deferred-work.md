@@ -38,8 +38,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
   summary: _organ_status 的 substring 匹配 `target_norm in o` 存在 false positive("Rootstock" 含 "Root" 会误判为 root status)
   evidence: 评审发现;原始代码即有该问题,本轮未修;未来可改 anchor 匹配(如按 "Root" 或 "|Root|" 等边界)
-  status: deferred
-  next_action: 确定 organ 字段的边界/词法契约后改为边界匹配并增加回归测试
+  status: resolved
+  resolved: '2026-08-31'
+  resolution: |
+    Reworked _organ_status with boundary-aware field matching. New helpers:
+    - `_iter_organ_tokens(field)`: splits a KG organ field on `|`, drops the
+      "Unknown" sentinel at both the field and token level, returns trimmed
+      non-empty tokens.
+    - `_field_matches_target(field, target_norm)`: returns True iff any token
+      equals target as a whole word (case-insensitive). Substring matches
+      like "Root" in "Rootstock" no longer pass.
+    - `_organ_status`: now classifies per-field (not per-token) because a
+      field like "Stem|Root|Leaf" is a single multi-organ cell type that
+      applies to all three organs.
+    Added harness/tests/test_step3_kg_organ_status.py with 42 tests pinning
+    the new boundary contract, including the D-2 regression case
+    (target="root", organ="Rootstock" -> "mismatch", was "root" pre-fix).
+  next_action: 无
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
   summary: validate_log 覆盖度检查仅查 candidate_gap/label_confirm;refine_effect/candidate_disambiguate 覆盖率未校验
