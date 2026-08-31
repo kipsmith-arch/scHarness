@@ -1017,3 +1017,73 @@ def load_skill_dotenv(override: bool = False) -> list[str]:
 # Eager bootstrap: any script that imports this module gets the skill's
 # environment loaded once, at import time. The load is idempotent.
 load_skill_dotenv()
+
+
+# ---------------------------------------------------------------------------
+# Cross-species species name normalization (SPEC cross-species-routing CAP-2)
+# ---------------------------------------------------------------------------
+# Ensembl Compara REST returns target.species in Ensembl's namespace
+# (Plant: lower_underscore like ``arabidopsis_thaliana``; Vertebrate:
+# lower_underscore like ``homo_sapiens``). Neo4j KG stores Species in a
+# mix of formats: Plant uses lower_underscore; Animal uses TitleCase with
+# spaces (``Human``, ``Mus musculus``). When an ortholog from Ensembl needs
+# to be looked up in the KG, normalize via the alias table below.
+#
+# Verified 2026-08 via Neo4j live query; Plant entries not listed because
+# they already match Ensembl format.
+
+SPECIES_NAME_ALIASES: dict[tuple[str, str], str] = {
+    # (Ensembl name, species_type) -> KG Species string
+    ("homo_sapiens", "Animal"): "Human",
+    ("mus_musculus", "Animal"): "Mus musculus",
+    ("danio_rerio", "Animal"): "Danio rerio",
+    ("monopterus_albus", "Animal"): "Monopterus albus",
+    ("oreochromis_niloticus", "Animal"): "Oreochromis niloticus",
+    ("gasterosteus_aculeatus", "Animal"): "Gasterosteus aculeatus",
+    ("astyanax_mexicanus", "Animal"): "Astyanax mexicanus",
+    ("nothobranchius_furzeri", "Animal"): "Nothobranchius furzeri",
+    ("oncorhynchus_mykiss", "Animal"): "Oncorhynchus mykiss",
+    ("mastacembelus_armatus", "Animal"): "Mastacembelus armatus",
+    ("oryzias_latipes", "Animal"): "Oryzias latipes",
+}
+
+
+def normalize_species_name(name: str, species_type: str) -> str:
+    """Translate Ensembl-formatted species name to KG Species string.
+
+    ``name`` is whatever the Ensembl endpoint returned in ``target.species``
+    (lower_underscore, e.g. ``homo_sapiens``). ``species_type`` is one of
+    ``Plant`` / ``Animal`` / ``Fungi`` / ``Metazoa`` / ``Protists`` / ``Bacteria``
+    (defaults to ``Plant`` if unknown — Plant names match Ensembl verbatim).
+
+    Returns the KG string to use in Cypher queries (``WHERE g.Species = ...``).
+    Falls back to ``name`` unchanged if no alias is registered, assuming the
+    KG and Ensembl naming conventions already match (true for Plant).
+    """
+    if not name:
+        return name
+    return SPECIES_NAME_ALIASES.get((name, species_type), name)
+
+
+# Ensembl REST base hosts per species division. Plant has its own deployment
+# (rest.plants.ensembl.org); vertebrates share rest.ensembl.org. step2_ortholog
+# routes by species_type; this is the single source of truth.
+ENSEMBL_REST_HOSTS: dict[str, str] = {
+    "Plant": "https://rest.plants.ensembl.org",
+    "Animal": "https://rest.ensembl.org",
+    "Fungi": "https://rest.fungi.ensembl.org",
+    "Metazoa": "https://rest.metazoa.ensembl.org",
+    "Protists": "https://rest.protists.ensembl.org",
+    "Bacteria": "https://rest.bacteria.ensembl.org",
+}
+
+
+def ensembl_rest_host(species_type: str) -> str:
+    """Return the Ensembl REST base host for the given species division.
+
+    Defaults to ``https://rest.ensembl.org`` (vertebrates) when species_type
+    is unknown — safer than failing, because a wrong host typically 404s on
+    the first marker which the caller can then handle as ``unmapped``.
+    """
+    return ENSEMBL_REST_HOSTS.get(species_type, "https://rest.ensembl.org")
+
