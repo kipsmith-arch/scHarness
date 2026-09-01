@@ -1,0 +1,163 @@
+# generated: 2026-09-01 (auto)
+# last_updated: 2026-09-01 (auto)
+# project: scHarness
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: "_bmad-output/implementation-artifacts"
+# epics_location: "_bmad-output/planning-artifacts"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+#
+# PROJECT NOTES:
+# ==============
+# - Epics here mirror design/implementation_plan.md P1–P7 milestones (see epics.md)
+# - Story statuses reflect AGENTS.md 2026-08 verification + on-disk evidence under
+#   experiments/, output/, _bmad-output/implementation-artifacts/:
+#   * Epic 1–5: code-complete AND run end-to-end on real data → all stories done
+#   * Epic 6:    B1 r1 main eval done (6.1–6.6); supplementary (6.7) next up;
+#               B3-B4 + rule_judge calibration (6.8 / 6.9) backlog
+#   * Epic 7:    .skill packaging + iteration pending → backlog
+# - Story file detection: drop <story-key>.md into implementation_artifacts/ to upgrade
+#   status to at least ready-for-dev on the next sprint-status run.
+
+generated: 2026-09-01
+last_updated: 2026-09-01
+project: scHarness
+project_key: NOKEY
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+epics_location: "_bmad-output/planning-artifacts"
+
+development_status:
+  # Epic 1 — P1 — Loop 宿主 + 标准 skill 加载器  (status: done)
+  epic-1: done
+  1-1-harness-loop-py-dispatcher-py-通用循环: done
+  1-2-harness-skill-loader-py-标准-skill-包加载器: done
+  1-3-harness-session-py-conversation-py-会话入口与对话落盘: done
+  1-4-skills-echo-冒烟-加载器与三型分发验证: done
+  1-5-harness-notebook-py-笔记本-bm25-兜底: done
+  1-6-loop-design-md-文档同步: done
+  epic-1-retrospective: optional
+
+  # Epic 2 — P2 — Pipeline 实现(skill 的 scripts/)  (status: done)
+  epic-2: done
+  2-1-common-py-通用函数库: done
+  2-2-step1-prepare-py-qc-预处理: done
+  2-3-step2-markers-py-marker-计算: done
+  2-4-step3-kg-py-知识图谱查询: done
+  2-5-step4-judge-py-候选排序-纯-json: done
+  2-6-step5-refine-py-模糊簇细化解构: done
+  2-7-step6-validate-py-验证-最终标注: done
+  2-8-step7-diagnose-py-诊断-0-h5ad-load: done
+  2-9-trajectory-schema-py-write-judgment-py-日志契约: done
+  epic-2-retrospective: optional
+
+  # Epic 3 — P3 — SKILL.md + references + description  (status: done)
+  epic-3: done
+  3-1-skills-cell-annotation-标准包骨架: done
+  3-2-skill-md-body: done
+  3-3-references-分块-按决策点组织: done
+  3-4-frontmatter-description-触发机制: done
+  3-5-红线自检: done
+  3-6-assets-报告模板-tools-清单: done
+  epic-3-retrospective: optional
+
+  # Epic 4 — P4 — 实验数据底座  (status: done)
+  epic-4: done
+  4-1-build-gt-cells-py-真值标签抽取: done
+  4-2-build-label-map-py-kg-术语映射: done
+  4-3-build-marker-dict-py-静态-marker-字典-c2-a3-用: done
+  4-4-build-scenarios-py-s1-纯簇验证-可延后到-p6-前: done
+  epic-4-retrospective: optional
+
+  # Epic 5 — P5 — Skill 测试循环  (status: done)
+  epic-5: done
+  5-1-evals-evals-json-测试用例草稿: done
+  5-2-r1-跑测-评估: done
+  5-3-r1-r2-修复-kg-物种过滤知识缺口: done
+  5-4-closure-报告-p5-evals-round1-closure-md: done
+  epic-5-retrospective: optional
+
+  # Epic 6 — P6 — 方法学实验(B1 三臂等)  (status: in-progress)
+  epic-6: in-progress
+  6-1-scripted-driver-py-确定性-dag-driver: done
+  6-2-judges-default-judge-py-rule-judge-py-common-py: done
+  6-3-evaluate-cell-level-py-细胞级评估: done
+  6-4-bootstrap-test-py-cluster-aware-bootstrap: done
+  6-5-analyze-traps-py-陷阱-oracle-比较: done
+  6-6-b1-r1-主评估-report: done
+  6-7-b1-6-辅助实验-s1-合成-a-e-n-c: in-progress
+  6-8-b3-b4-轨迹分析: backlog
+  6-9-b1-r2-closure-rule-judge-阈值校准: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7 — P7 — Skill 持续迭代与交付  (status: backlog)
+  epic-7: backlog
+  7-1-扩大测试集-evals-v2: backlog
+  7-2-b3-反哺-skill-md-常驻指标精简: backlog
+  7-3-b4-反哺-决策指导强化: backlog
+  7-4-description-优化: backlog
+  7-5-package-skill-skill-打包交付: backlog
+  7-6-跨数据集复现-x-8-skill-泛化测试-可选: backlog
+  epic-7-retrospective: optional
+
+# Action items — committed during retrospectives / surfaced from AGENTS.md "Next steps".
+# Status reflects current open work, ordered roughly by impact × blocking dependency.
+action_items:
+  - epic: 6
+    action: "Tighten rule_judge thresholds (B1 §3.1 oracle calibration). DIFF_THRESH_FOR_DECISIVE / GAP_RATIO_TIED / pct1≈pct2 → label_downgraded; target arm2 strict ≥ 0.6 with macroF1 delta vs arm1 inconclusive (R3 still holds). Re-run B1 arm2 + arm1."
+    owner: "Kip"
+    status: open
+  - epic: 6
+    action: "Run B1 §6 supplementary experiments (S1 synthetic traps; A/E/N from experiment_design.md) on existing arm1/arm2/arm3 outputs. No new pipeline run required — uses existing run_log.jsonl + final_annotations.json. See experiment_implementation.md §6."
+    owner: "Kip"
+    status: open
+  - epic: 6
+    action: "B3 / B4 trajectory analysis on output/B1/arm3_llm/run_log.jsonl — inputs[].path frequency → minimal sufficient set (B3); same-decision-point multi-judgment → self-correction pairs (B4). Outputs feed Epic 7 SKILL.md iteration."
+    owner: "Kip"
+    status: open
+  - epic: 7
+    action: "SKILL.md / references iteration driven by B1 + S1 + N findings; tighten description to match real user phrasings seen in arm3 judgments."
+    owner: "Kip"
+    status: open
+  - epic: 7
+    action: ".skill packaging (P7 / M7) — final delivery artifact for cell-annotation skill."
+    owner: "Kip"
+    status: open
+  - epic: 7
+    action: "Deferred-work clean-up (only when cross-organ / cross-dataset scenario actually arrives): organ substring boundary matching; _organ_status.title() normalization; validate_log cluster-coverage on refine_effect / candidate_disambiguate; organ_status category rename root/partial/unknown/mismatch. Non-blocking for root dataset."
+    owner: "Kip"
+    status: open
