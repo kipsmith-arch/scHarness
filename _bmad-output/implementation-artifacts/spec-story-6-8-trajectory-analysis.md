@@ -2,7 +2,7 @@
 title: 'Story 6.8 — B3 / B4 轨迹分析'
 type: feature
 created: 2026-09-01
-status: in-review
+status: done
 review_loop_iteration: 1
 context: []
 baseline_commit: 2f79ba53dcff6489c509d78905b1da27954278b0
@@ -185,3 +185,60 @@ raw 口径(不过滤)与 folded 口径(折叠)在 closure 报告中并列报告,
 - 打开 `experiments/B3_report.md` 与 `experiments/B4_report.md`,核对每个数字与对应 JSON 一致
 - 打开 `story-6-8-closure.md` §4,确认判定线对照表 4 行(B3 raw/B3 folded/B4 改善率/B4 决策点分布)每行有标签
 - 打开 `experiments/B3/minimal_sufficient_set.json`,确认 folded 列表里的路径已把 `cluster{N}` 替换为 `<CLUSTER_ID>`
+
+## Suggested Review Order
+
+**Design intent (入口)**
+
+- Spec 冻结块(Intent / Boundaries & Constraints / I/O 矩阵),领阅意图与范围。
+  [`spec-story-6-8-trajectory-analysis.md:11`](spec-story-6-8-trajectory-analysis.md#L11)
+
+- Closure 报告 §1 摘要:B3 FAIL 边界 vs B4 PASS,以及两者互补覆盖。
+  [`story-6-8-closure.md:12`](story-6-8-closure.md#L12)
+
+**B3 指标引用频次(核心逻辑)**
+
+- 扫 3 个 run 的 judgment 记录,产出 per-dp × path 计数与全量频次降序。
+  [`B3_metric_usage.py:48`](../../experiments/B3_metric_usage.py#L48)
+
+- per-cluster 折叠 + 核心子集提取(raw vs folded 双口径),含 data-driven `is_per_cluster_heavy` 阈值。
+  [`B3_minimal_set.py:44`](../../experiments/B3_minimal_set.py#L44)
+
+- Design Notes §“B3 per-cluster 折叠的口径选择”补充"已知语义局限"段(折叠后不是 247 原子指标的严格子集)。
+  [`spec-story-6-8-trajectory-analysis.md:152`](spec-story-6-8-trajectory-analysis.md#L152)
+
+- B3 report §1 表(per-dp raw/folded/expansion_ratio)+ §3 判定线对照。
+  [`B3_report.md:11`](../../experiments/B3_report.md#L11)
+
+**B4 自我纠正有效性(核心逻辑)**
+
+- 扫 judgment 按 (dp, scope) 分组、取 v_first / v_last 末两端、容错 scope JSON 序列化。
+  [`B4_self_correction.py:59`](../../experiments/B4_self_correction.py#L59)
+
+- 改善判据三层架构:ranking_based(候选表) + metric_based(exec 字段) + oracle_heuristic(脚本内 tier 表)。
+  [`B4_improvement.py:259`](../../experiments/B4_improvement.py#L259)
+
+- Per-decision-point tier 表(0/1/2 三档),决定 v_last > v_first 才计改善。
+  [`B4_improvement.py:153`](../../experiments/B4_improvement.py#L153)
+
+- Design Notes §“B4 改善判据的脚本内 tier 表”说明为什么不直接 import rule_judge.py。
+  [`spec-story-6-8-trajectory-analysis.md:172`](spec-story-6-8-trajectory-analysis.md#L172)
+
+- B4 report §3 判定线对照 + §4 候选表 明细 + unconditional vs conditional 双口径说明。
+  [`B4_report.md:50`](../../experiments/B4_report.md#L50)
+
+**Closure 输出与反哺 Epic 7**
+
+- Closure §4 判定线对照表(4 行: B3 raw / B3 folded / B4 conditional / B4 unconditional)+ 4 状态标签。
+  [`story-6-8-closure.md:71`](story-6-8-closure.md#L71)
+
+- Closure §5 反哺 Epic 7 建议(Story 7.2 / 7.3 / 7.5 三个故事的可执行项)。
+  [`story-6-8-closure.md:82`](story-6-8-closure.md#L82)
+
+- Closure §6 已知局限(F5: multi-version 100% 跨 session 是本次的关键发现)。
+  [`story-6-8-closure.md:109`](story-6-8-closure.md#L109)
+
+**Review 处理记录**
+
+- Spec Change Log: review iteration 1 的 bad_spec 修复 + 17 个 patch 的提示。
+  [`spec-story-6-8-trajectory-analysis.md:117`](spec-story-6-8-trajectory-analysis.md#L117)

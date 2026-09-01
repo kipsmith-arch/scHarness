@@ -1,11 +1,11 @@
 # Story 6.8 Closure — B3 / B4 轨迹分析
 
-**Status**: review
+**Status**: done
 **Owner**: Kip
 **Created**: 2026-09-01
 **Spec**: `_bmad-output/implementation-artifacts/spec-story-6-8-trajectory-analysis.md`
 **Baseline commit**: `2f79ba53dcff6489c509d78905b1da27954278b0`
-**Sprint-status**: `6-8-b3-b4-轨迹分析: in-progress` (set by this story; ready for review → done promotion)
+**Sprint-status**: `6-8-b3-b4-轨迹分析: done` (review iteration 1 完成;17 个 patch + 2 个 bad_spec 修复已提交)
 
 ---
 
