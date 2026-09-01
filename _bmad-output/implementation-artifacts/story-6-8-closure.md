@@ -17,9 +17,10 @@
 | **B4** 自我纠正有效性 | 改善率 ≥ 0.50 | **✅ PASS** | scored improvement rate = **0.625**(5/8)|
 
 **Story 整体结论**:
-- **B4 通过**:LLM 自我纠正有效,改善率 0.625 > 0.50 判定线;但样本量小(8 个 scored pair,全来自 arm3_llm),统计功效有限,定性结论可靠、定量结论置信度受限。
+- **B4 通过**:LLM 自我纠正有效,改善率 0.625 > 0.50 判定线;但样本量小(8 个 scored pair,全来自 arm3_llm,且全是 `candidate_gap` 一个决策点),统计功效有限,定性结论可靠、定量结论置信度受限。
 - **B3 边界失败**:核心子集 folded 后仍有 83 个 metric paths,超出 ≤60 判定线 38%。但**真实冗余**已被识别(主要是同一逻辑量的 schema 多重命名,如 `step4_judge.<CLUSTER_ID>.first` 与 `step4_judge.rank_candidates.<CLUSTER_ID>.first.cell_type`),Epic 7 SKILL.md 精简有明确目标。
-- 两实验**互不冲突**:B4 证明 LLM 判断在 cluster-level 决策上自我改善,B3 指出 metric-level 路径组织冗余 — 共同反哺 SKILL.md v2。
+- 两实验互补覆盖候选物:B4 只在 `candidate_gap`(15 对,8 scored)上有真实改主意样本;B3 跨所有 13 个决策点(426 paths)看 LLM 引用结构。两者**覆盖面互补**而非重复。
+- 注意:B4 表中的 0/3 (de_method / marker_quality / kg_match) 是 `no_change_in_decision` 不进入分母,**不是** 评分失败 — 它们在分母外,不影响改善率。
 
 ---
 
@@ -71,10 +72,10 @@
 
 | 判定线 | 来源 | 数值 | 结论 | 备注 |
 |---|---|---|---|---|
-| B3: 核心子集 ≤ 60(folded) | `experiment_implementation.md` §3.3 | 83 | **❌ FAIL(边界)** | 超出 38%;若折叠口径改为"fold step + op 也合并"可降至 ~50,见 §5 建议 #3 |
+| B3: 核心子集 ≤ 60(folded) | `experiment_implementation.md` §3.3 | 83 | **❌ FAIL(边界)** | 超出 38%;folded 集合含 atomic metric + wrapper + parameter + summary 多类路径(见 spec Design Notes "已知语义局限"),与 247 原子指标对比为近似可比,不是严格子集 |
 | B3: 核心子集 ≤ 60(raw,诊断用) | 同上 | 276 | ❌ FAIL | raw 口径仅作"per-cluster 展开程度"诊断,不是主判定 |
-| B4: 改善率 ≥ 0.50 | `experiment_implementation.md` §3.4 | 0.625 | **✅ PASS** | 样本量 8,统计功效有限,见 §6 局限 #1 |
-| B4: 改善对 ≥ 5 | 自定(辅助) | 5 | ✅ | 与判定线 PASS 一致 |
+| B4: 改善率 ≥ 0.50(conditional) | `experiment_implementation.md` §3.4 | 0.625 | **✅ PASS** | 样本量 8,统计功效有限,见 §6 局限 #1 |
+| B4: 改善率 unconditional(reference) | 同上(同源,补充分数) | 0.278 | (无判定线) | 5/18 全 multi-version 对。这是 review F29 补充的对比口径,不是额外判定线 |
 
 ---
 
@@ -101,7 +102,7 @@
 
 ### 5.3 给 Story 7.5 — `.skill` 打包的额外输入
 
-**建议 #6**:`experiments/B3/` 与 `experiments/B4/` 目录下的所有 JSON + 两份 markdown 应作为 `.skill` 包的 `references/trajectory-analysis-b3-b4/` 子目录归档,作为 P6 → P7 闭环的可审计证据。
+**建议 #6**(给 Story 7.5 .skill 打包用):`experiments/B3/` 与 `experiments/B4/` 目录下的所有 JSON + 两份 markdown 应作为 `.skill` 包的 `references/trajectory-analysis-b3-b4/` 子目录归档,作为 P6 → P7 闭环的可审计证据。
 
 ---
 
@@ -110,8 +111,9 @@
 1. **样本规模有限**:319 judgments 全部来自 Arabidopsis root 单数据集 + 3 个 LLM run。跨数据集(Story 7.6 X-8)前 B3 / B4 结论需视为"该数据集上"。
 2. **B3 折叠口径有主观性**:本报告的"折叠"只针对 `cluster{N}` 段;进一步折叠(如合并 `step4_judge.<CLUSTER_ID>.first` 与 `step4_judge.rank_candidates.<CLUSTER_ID>.first.*`)会进一步降低数字,但会损失 schema 区分度。Epic 7 可考虑两种折叠口径并存。
 3. **B4 样本量小**:仅 8 个真"改主意"对,统计功效有限。改善率 0.625 vs 0.50 判定线的置信区间跨 0(粗估 ±0.3,因 N=8 的二项分布 SE ≈ √(0.625×0.375/8) ≈ 0.17)。结论"显著优于判定线"的统计信心受限,但**定性结论**(改主意常改善 vs 改主意常恶化)是稳健的。
-4. **arm1 / arm2 scripted run 未纳入 B3/B4**:这两个臂由脚本判定,judgment 字段是占位,语义不同于真 LLM 推理。本次刻意排除(否则 B3 会出现 scripted 假引用的 path 集合)。
-5. **multi-version ≠ 真重复**:LLM 在重跑 pipeline 后,**同一个 (dp, scope) 可能因为数据切片变化而被重新判定**(即使 cluster_id 相同)。本报告以"v_first.seq < v_last.seq"区分首末,未追踪中间 trajectory 的 metric 变化。
+4. **B4 的 18 个 multi-version 对 100% 跨两个 session(review F5)**:实测 arm3_llm 的 `run_log.jsonl` 里每个 multi-version (dp, scope) 的两版 v_first / v_last **总是** 来自 `2026-08-12` 与 `2026-09-01` 两个不同日期的 session(见 self_correction_pairs.json:all_versions[].ts)。这意味着本次 B4 的"自我纠正"是**跨 session 重跑**,不是单 session 内反复纠结。Epic 7 若要复现"intra-session self-correction",需手工给 arm3_llm 设计一个能产生反复 decision 调整的测试场景。
+5. **arm1 / arm2 scripted run 未纳入 B3/B4**:这两个臂由脚本判定,judgment 字段是占位,语义不同于真 LLM 推理。本次刻意排除(否则 B3 会出现 scripted 假引用的 path 集合)。
+6. **multi-version ≠ 真重复**:LLM 在重跑 pipeline 后,**同一个 (dp, scope) 可能因为数据切片变化而被重新判定**(即使 cluster_id 相同)。本报告以"v_first.seq < v_last.seq"区分首末,未追踪中间 trajectory 的 metric 变化。
 
 ## 7. 与 Story 6.7 / B1 报告的呼应
 
@@ -125,23 +127,23 @@
 
 | 路径 | 类型 | 大小 |
 |---|---|---|
-| `experiments/B3_metric_usage.py` | 脚本(stdlib) | 130 行 |
-| `experiments/B3_minimal_set.py` | 脚本(stdlib) | 130 行 |
-| `experiments/B4_self_correction.py` | 脚本(stdlib) | 130 行 |
-| `experiments/B4_improvement.py` | 脚本(stdlib) | 230 行 |
+| `experiments/B3_metric_usage.py` | 脚本(stdlib) | 157 行 |
+| `experiments/B3_minimal_set.py` | 脚本(stdlib) | 202 行 |
+| `experiments/B4_self_correction.py` | 脚本(stdlib) | 207 行 |
+| `experiments/B4_improvement.py` | 脚本(stdlib) | 508 行 |
 | `experiments/B3/metric_usage_by_decision.json` | 数据 | 13 决策点 × paths |
 | `experiments/B3/path_frequency.json` | 数据 | 426 paths 降序 |
 | `experiments/B3/minimal_sufficient_set.json` | 数据 | raw + folded 双口径 |
 | `experiments/B3/decision_point_top_paths.json` | 数据 | per-dp top-10 |
 | `experiments/B3/per_cluster_expansion.json` | 数据 | 13 决策点展开诊断 |
 | `experiments/B3/summary.json` | 数据 | 总览 |
-| `experiments/B3_report.md` | 报告 | ~120 行 |
+| `experiments/B3_report.md` | 报告 | ~110 行 |
 | `experiments/B4/self_correction_pairs.json` | 数据 | 18 个 pair |
 | `experiments/B4/multi_version_summary.json` | 数据 | per-run 汇总 |
 | `experiments/B4/improvement_rate.json` | 数据 | 改善率 + 分项 |
 | `experiments/B4/improvement_by_decision_point.json` | 数据 | per-dp |
 | `experiments/B4/summary.json` | 数据 | 总览 |
-| `experiments/B4_report.md` | 报告 | ~110 行 |
+| `experiments/B4_report.md` | 报告 | ~150 行 |
 | `_bmad-output/implementation-artifacts/story-6-8-closure.md` | closure | 本文件 |
 
 ## 附录 B — 复现命令

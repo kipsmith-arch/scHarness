@@ -38,9 +38,13 @@ _METRIC_BASED_DECISION_POINTS = {
         ("silhouette_overall.mean", "up"),
         ("n_singleton", "down"),
     ],
+    # marker_quality: per design §3.4 "n_markers 进入 [10, 50] 区间";
+    # but the actual run_log.jsonl shape emits "n_markers_per_cluster_avg"
+    # (averaged across clusters) or "n_clusters_in_range_10_50" (count of
+    # clusters with n_markers in [10, 50]). We treat the latter as the
+    # actionable proxy — "more clusters in the healthy range" = improvement.
     "marker_quality": [
-        # n_markers 进入 [10, 50] 区间; 区间内即改善
-        ("n_markers", "in_range"),
+        ("n_clusters_in_range_10_50", "up"),
     ],
     "refine_effect": [
         ("subcluster_silhouette.mean", "up"),
@@ -86,27 +90,12 @@ _CONFIRM_DECISION_BUCKETS = {
         },
         "improved_when_v_last_rank_gt_v_first_rank": True,
     },
-    # refine_effect: 子簇是否分离出两个原始真值类型
-    "refine_effect_label": {
-        "rank": {
-            "no_refine_needed": 0,
-            "refined_no_distinct": 1,
-            "refined_distinct": 2,
-        },
-        "improved_when_v_last_rank_gt_v_first_rank": True,
-    },
-    # unknown_cluster: 簇从 unknown 变为可分类 = 改善
-    "unknown_cluster_label": {
-        "rank": {
-            "label_unknown": 0,
-            "label_downgraded": 1,
-            "label_confirmed": 2,
-        },
-        "improved_when_v_last_rank_gt_v_first_rank": True,
-    },
-    # qc_threshold, resolution_select, batch_effect, global_quality, marker_quality:
-    # These are handled by the metric-based path (exec data lookup) when available.
-    # If no exec data is available (no_evidence), we fall back to oracle_heuristic.
+    # NOTE: `refine_effect` and `unknown_cluster` have their own ranking schemes
+    # below (added during review iteration 1). `refine_effect_label` /
+    # `unknown_cluster_label` were originally planned here but they don't match
+    # the canonical decision_point keys in trajectory_schema.py — those entries
+    # are removed; we handle refine_effect via metric_based path (exec data)
+    # and unknown_cluster via oracle_heuristic.
 }
 
 
@@ -164,35 +153,95 @@ def _metric_improved(field: str, direction: str, v_first_exec: dict, v_last_exec
 def _oracle_improved(decision_point: str, v_first_decision: str, v_last_decision: str) -> bool:
     """Fallback for decision points without measurable exec metrics.
 
-    A pair counts as improved when v_last_decision is "more aligned with oracle"
-    than v_first_decision. We use the simple, conservative rule:
+    We use a CONSERVATIVE read-only heuristic that maps each (decision_point,
+    decision) pair to an explicit tier per `design/experiment_implementation.md`
+    §3.4 oracle-style guidance. Only pairs with **strict directionality**
+    (lower tier → higher tier) count as improved.
 
-      - if v_first_decision == v_last_decision: not improved
-      - if v_last_decision is in {accept, ok, proceed, ...} and v_first_decision
-        was in {adjust, retry, ambiguous_*, ...} → improved
-      - otherwise: not improved (oracle-specific mapping would need hand-coding
-        per decision_point; we lean conservative to avoid false positives)
+    Why not import `experiments/judges/rule_judge.py` directly: that module is
+    per-cluster with project_dir-coupled write side effects (writes to
+    `run_log.jsonl`). For B4's offline trajectory analysis we need a pure
+    read-only classifier; the simplified tier table below is documented and
+    deterministic, satisfying `experiment_implementation.md §3.4` "在脚本中
+    显式定义, 不靠 LLM 自评".
 
-    The detailed per-decision-point oracle tables live in
-    `experiments/judges/rule_judge.py` and are project_dir-coupled (write side
-    effects). For B4's trajectory-level scoring we use this read-only heuristic
-    and document it in the report.
+    Tier convention: 0 = worst, 1 = neutral, 2 = best. A pair improves iff
+    v_last_decision tier > v_first_decision tier.
     """
     if v_first_decision == v_last_decision:
         return False
-    good = {
-        "accept", "accepted", "ok", "proceed", "confirmed",
-        "threshold_set", "markers_accept", "id_match_ok", "no_refine_needed",
-        "first_decisive", "label_confirmed", "wilcoxon",  # de_method OK default
-        "continue", "global_quality_ok", "marker_quality_ok",
+
+    # Per-decision-point tier table. Each tuple is (decision -> tier).
+    # Unknown decisions default to tier 1 (neutral).
+    DECISION_TIERS: dict[str, dict[str, int]] = {
+        # qc_threshold: setting an explicit threshold (any non-default value)
+        # is better than default; specific "loosen"/"tighten" distinctions
+        # would require experiment-specific calibration we don't have here.
+        "qc_threshold": {
+            "threshold_default": 1,
+            "threshold_set": 2,
+        },
+        # resolution_select: any explicit resolution choice > default
+        "resolution_select": {
+            "resolution_default": 1,
+            "resolution_chosen": 2,
+        },
+        # de_method: wilcoxon is the safe default; pseudobulk switches happen
+        # only for rare clusters (improvement is when default wilcoxon is
+        # EXPLICITLY confirmed for the dataset, OR a switch to pseudobulk is
+        # decided for rare clusters). Without per-experiment calibration we
+        # cannot tell which direction is "better", so all direction-changing
+        # pairs score as unchanged (NOT improved). See F28 in review findings.
+        "de_method": {
+            "wilcoxon": 1,
+            "pseudobulk_rare": 1,
+            "pseudobulk_all": 1,
+        },
+        # kg_match: id_match_ok > id_match_no
+        "kg_match": {
+            "id_match_no": 0,
+            "id_match_partial": 1,
+            "id_match_ok": 2,
+        },
+        # batch_effect: detected is informational; correction > detection-only
+        "batch_effect": {
+            "batch_not_detected": 1,
+            "batch_detected": 1,
+            "batch_corrected": 2,
+        },
+        # global_quality: ok > marginal > bad
+        "global_quality": {
+            "global_quality_bad": 0,
+            "global_quality_marginal": 1,
+            "global_quality_ok": 2,
+        },
+        # clustering_quality: accept > adjust (handled by metric path normally;
+        # fallback here for exec data missing)
+        "clustering_quality": {
+            "clustering_adjust": 0,
+            "clustering_accept": 2,
+        },
+        # refine_effect: handled by metric_based normally; fallback
+        "refine_effect": {
+            "refine_skipped": 0,
+            "refine_ineffective": 0,
+            "refine_effective": 2,
+        },
+        # unknown_cluster: clarified (specific type) > flagged (unknown)
+        "unknown_cluster": {
+            "unknown_cluster_yes": 0,  # still unknown after consideration
+            "unknown_cluster_flagged": 1,  # flagged for review
+            "unknown_cluster_clarified": 2,  # resolved to a known type
+        },
     }
-    bad = {
-        "adjust", "retry", "recluster", "downgrade",
-        "ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true",
-        "label_unknown", "label_downgraded", "no_candidates",
-        "unknown", "global_quality_bad", "marker_quality_bad",
-    }
-    return v_last_decision in good and v_first_decision in bad
+
+    tiers = DECISION_TIERS.get(decision_point, {})
+    if not tiers:
+        # Unknown decision_point: cannot judge, return False (conservative)
+        return False
+    tier_first = tiers.get(v_first_decision, 1)
+    tier_last = tiers.get(v_last_decision, 1)
+    return tier_last > tier_first
 
 
 def _confirm_improved(decision_point: str, v_first_decision: str, v_last_decision: str) -> bool:
@@ -238,11 +287,11 @@ def _classify_pair(pair: dict, exec_idx: dict) -> str:
         v_first_exec = exec_idx.get(v_first_ref) if v_first_ref else None
         v_last_exec = exec_idx.get(v_last_ref) if v_last_ref else None
         if not (v_first_exec and v_last_exec):
-            # Fall through to oracle_heuristic below
-            return _oracle_improved(dp, v_first_decision, v_last_decision) and "improved" or "unchanged"
+            # No exec data on either side → "no_evidence"; do NOT fall through
+            # to oracle (the metric-based dp was specifically chosen because
+            # we expect measurable metrics).
+            return "no_evidence"
         rules = _METRIC_BASED_DECISION_POINTS[dp]
-        # For clustering_quality the spec also allows: "末版 accept 而首版 adjust"
-        # → that's a decision-based shortcut.  We handle it separately below.
         metric_passed = any(
             _metric_improved(f, d, v_first_exec, v_last_exec) for f, d in rules
         )
@@ -346,15 +395,22 @@ def main() -> int:
             ),
         }
 
-    # Flat run × dp table
+    # Flat run × dp table. Use None (not 0.0) for empty bins to match the
+    # convention used by `by_decision_point` below (review F20/ECH-22).
     flat_by_run_dp = {
         run_str: {
-            dp: {**stats,
-                 "improvement_rate": round(
-                     stats["n_improved"] / max(stats["n_pairs"] - stats.get("n_no_evidence", 0)
-                                                - stats.get("n_no_change_in_decision", 0), 1),
-                     3,
-                 ) if stats["n_pairs"] else None}
+            dp: (lambda s: {
+                **s,
+                "n_scored": s["n_pairs"] - s.get("n_no_evidence", 0)
+                            - s.get("n_no_change_in_decision", 0),
+                "improvement_rate": round(s["n_improved"] / (
+                    s["n_pairs"] - s.get("n_no_evidence", 0)
+                    - s.get("n_no_change_in_decision", 0)
+                ), 3) if (
+                    s["n_pairs"] - s.get("n_no_evidence", 0)
+                    - s.get("n_no_change_in_decision", 0)
+                ) > 0 else None,
+            })(stats)
             for dp, stats in dps.items()
         }
         for run_str, dps in by_run_dp.items()
@@ -372,21 +428,35 @@ def main() -> int:
         - counts_total.get("no_evidence", 0)
         - counts_total.get("no_change_in_decision", 0)
     )
+    # Unconditional: of ALL multi-version pairs, what fraction improved?
+    unconditional_rate = round(n_improved / n_total, 3) if n_total else None
+    # Conditional: of pairs WHERE the LLM changed its mind, what fraction improved?
     overall_rate = round(n_improved / n_scored, 3) if n_scored else None
 
     rate_json = {
         "rules": {
             "metric_based_decision_points": list(_METRIC_BASED_DECISION_POINTS.keys()),
             "ranking_based_decision_points": list(_CONFIRM_DECISION_BUCKETS.keys()),
-            "oracle_heuristic_decision_points": "de_method, kg_match, batch_effect, "
-                                                "qc_threshold, resolution_select, "
-                                                "unknown_cluster, global_quality",
+            "oracle_heuristic_decision_points": [
+                "de_method", "kg_match", "batch_effect",
+                "qc_threshold", "resolution_select",
+                "unknown_cluster", "global_quality",
+                "clustering_quality", "refine_effect",  # fallbacks
+            ],
             "primary_judgment_line": "scored_improvement_rate >= 0.50 "
                                      "(per experiment_implementation §3.4)",
             "rate_denominator_excludes": [
                 "no_evidence (no exec data on either side)",
                 "no_change_in_decision (multi-version same outcome, not a correction)",
             ],
+            "rate_definitions": {
+                "conditional_rate (improvement_rate)": "improved / (improved + unchanged). "
+                                                       "Among pairs where the LLM changed "
+                                                       "its mind, what fraction improved?",
+                "unconditional_rate": "improved / total_pairs. "
+                                      "Of all multi-version pairs, what fraction "
+                                      "improved (treating no-change as not-improved)?",
+            },
         },
         "totals": {
             "n_pairs": n_total,
@@ -396,6 +466,7 @@ def main() -> int:
             "n_no_evidence": counts_total.get("no_evidence", 0),
             "n_no_change_in_decision": counts_total.get("no_change_in_decision", 0),
             "improvement_rate": overall_rate,
+            "unconditional_rate": unconditional_rate,
             "primary_judgment_line_pass": (
                 overall_rate >= 0.50 if overall_rate is not None else None
             ),

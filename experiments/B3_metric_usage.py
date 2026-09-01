@@ -85,11 +85,13 @@ def main() -> int:
                 continue
             n += 1
             dp = rec.get("decision_point")
-            if not dp:
+            if dp is None or dp == "":
                 continue
             for inp in rec.get("inputs", []) or []:
+                if not isinstance(inp, dict):
+                    continue
                 p = inp.get("path")
-                if not p:
+                if p is None or p == "":
                     continue
                 per_decision_point[dp][p] += 1
                 path_frequency[p] += 1
@@ -102,6 +104,13 @@ def main() -> int:
     if not used_runs:
         print("ERROR: no usable run_logs (all skipped)", file=sys.stderr)
         return 1
+    if total_judgments == 0:
+        print(
+            f"WARN: 0 judgment records across {len(used_runs)} run(s) — check that "
+            f"run_log.jsonl files contain 'judgment' records. Outputs will be "
+            f"empty skeletons; downstream B3/B4 will have no data.",
+            file=sys.stderr,
+        )
 
     # Sort & dump
     metric_usage = {

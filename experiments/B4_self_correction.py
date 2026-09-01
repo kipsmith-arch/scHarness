@@ -25,6 +25,22 @@ DEFAULT_RUNS = [
 ]
 
 
+def _safe_get_decision(rec: dict) -> str:
+    """Return rec['output']['decision'] or "" if shape is unexpected.
+
+    Tolerates:
+      - output missing
+      - output is null
+      - output is a list (not dict) — review ECH-11
+      - decision field absent
+    """
+    out = rec.get("output")
+    if isinstance(out, dict):
+        d = out.get("decision", "")
+        return d if isinstance(d, str) else str(d)
+    return ""
+
+
 def _iter_judgments(path: Path):
     with path.open(encoding="utf-8") as f:
         for line_no, raw in enumerate(f, start=1):
@@ -69,7 +85,13 @@ def main() -> int:
             n_judgments += 1
             dp = rec.get("decision_point", "")
             scope = rec.get("scope", {}) or {}
-            key = (dp, json.dumps(scope, sort_keys=True, ensure_ascii=False))
+            try:
+                key = (dp, json.dumps(scope, sort_keys=True, ensure_ascii=False))
+            except TypeError:
+                # scope contains non-JSON-serializable values (e.g., datetime);
+                # fall back to repr-based key so we don't lose the record entirely
+                bad_json_total += 1
+                key = (dp, repr(scope))
             groups[key].append(rec)
 
         multi_count = 0
@@ -84,17 +106,17 @@ def main() -> int:
             )
             v_first = versions_sorted[0]
             v_last = versions_sorted[-1]
-            d_first = (v_first.get("output", {}) or {}).get("decision", "")
-            d_last = (v_last.get("output", {}) or {}).get("decision", "")
+            d_first = _safe_get_decision(v_first)
+            d_last = _safe_get_decision(v_last)
             decision_changed = d_first != d_last
             if decision_changed:
                 decision_changed_count += 1
 
-            intervening = [
+            all_versions = [
                 {
                     "run_ref": v.get("run_ref"),
                     "seq": v.get("seq"),
-                    "decision": (v.get("output", {}) or {}).get("decision"),
+                    "decision": _safe_get_decision(v),
                     "ts": v.get("ts"),
                 }
                 for v in versions_sorted
@@ -103,7 +125,7 @@ def main() -> int:
                 {
                     "run": run_str,
                     "decision_point": dp,
-                    "scope": json.loads(scope_str),
+                    "scope": json.loads(scope_str) if scope_str.startswith("{") or scope_str.startswith("[") else {},
                     "n_versions": len(versions_sorted),
                     "v_first": {
                         "seq": v_first.get("seq"),
@@ -118,7 +140,7 @@ def main() -> int:
                         "ts": v_last.get("ts"),
                     },
                     "decision_changed": decision_changed,
-                    "intervening_versions": intervening,
+                    "all_versions": all_versions,
                 }
             )
 
@@ -141,6 +163,18 @@ def main() -> int:
         ),
         "per_run": per_run_summary,
     }
+
+    if not summary["runs_used"]:
+        print("ERROR: no usable run_logs (all skipped) — B4 has no data", file=sys.stderr)
+        # Still write the JSONs so downstream consumers see empty stats
+        (out_dir / "self_correction_pairs.json").write_text("[]", encoding="utf-8")
+        (out_dir / "multi_version_summary.json").write_text(
+            json.dumps(per_run_summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (out_dir / "summary.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return 1
 
     (out_dir / "self_correction_pairs.json").write_text(
         json.dumps(all_pairs, ensure_ascii=False, indent=2), encoding="utf-8"

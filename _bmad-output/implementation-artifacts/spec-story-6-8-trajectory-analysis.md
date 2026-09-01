@@ -3,7 +3,7 @@ title: 'Story 6.8 — B3 / B4 轨迹分析'
 type: feature
 created: 2026-09-01
 status: in-review
-review_loop_iteration: 0
+review_loop_iteration: 1
 context: []
 baseline_commit: 2f79ba53dcff6489c509d78905b1da27954278b0
 ---
@@ -77,11 +77,11 @@ baseline_commit: 2f79ba53dcff6489c509d78905b1da27954278b0
 
 - [x] `experiments/B4_improvement.py` — **新建** — 读上一步 `self_correction_pairs.json`,逐决策点套用 `design/experiment_implementation.md` §3.4 表格里的"改善判据":
   - `clustering_quality`:取 v_first_run_ref 与 v_last_run_ref 对应 exec 记录的 `silhouette_overall.mean` 与 `n_singleton` 字段对比;
-  - `marker_quality`:取对应 exec 的 `n_markers` 字段是否落入 [10,50];
+  - `marker_quality`:取对应 exec 的 `n_clusters_in_range_10_50` 字段(代理"n_markers 进入 [10, 50] 区间的簇数")对比 — review iteration 1 修正:原 spec 写 `n_markers` 但实际 run_log 产出的是后者,改为后者;
   - `refine_effect`:取子簇 silhouette 或 n_subclusters_with_distinct_type;
   - `label_confirm`:末版 decision 是否相对首版更明确(unknown→confirmed 视为改善);
-  - 其他决策点(无对应 exec 指标):用 decision_changed ∧ v_last_decision 命中 oracle 规则表(`experiments/judges/rule_judge.py` 的 if-then 表)算改善。
-  - 输出 `experiments/B4/improvement_rate.json`(`{run: {decision_point: {n_pairs, n_improved, rate, mean_amplitude}, ...}, ...}` + 总计行)。
+  - **其他决策点**(无对应 exec 指标):使用**脚本内显式定义的 per-decision-point tier 表**(0/1/2 三档)算改善,仅在 v_last tier > v_first tier 时算改善 — review iteration 1 修正:原 spec 写 "import `experiments/judges/rule_judge.py`",但该脚本是 project_dir-coupled 且有写副作用,不适合离线只读分析;改为脚本内显式 tier 表,仍满足 `experiment_implementation.md §3.4` "在脚本中显式定义, 不靠 LLM 自评"约束。
+  - 输出 `experiments/B4/improvement_rate.json`(`{run: {decision_point: {n_pairs, n_improved, rate, ...}, ...}, ...}` + 总计行 + conditional_rate(默认)+ unconditional_rate(补充)+ both-by_run_x_decision_point 与 by_decision_point 的 improvement_rate 用 None 表示空 bin(不混 0.0))。
 
 - [x] `experiments/B4_report.md` — **新建** — §1 摘要表(每个 run 的 multi-version 总数 / decision-changed / 改善率)+ §2 决策点级诊断表(每个决策点配对数 / 改善率 / 典型案例)+ §3 判定线"改善率 ≥50%"对照(全 run 汇总 + per-run)+ §4 已知局限(单数据集 / 无控制组 / 部分决策点无可量化 exec 指标时仅靠 oracle 判定)。
 
@@ -116,7 +116,28 @@ baseline_commit: 2f79ba53dcff6489c509d78905b1da27954278b0
 
 ## Spec Change Log
 
-<!-- Empty until first bad_spec loopback. -->
+### Review iteration 1 (2026-09-01) — bad_spec fixes + patches
+
+**Triggering findings**: F1 (B4_improvement oracle deviation from spec wording) + F3 (B3 folded-set framing claim too strong vs actual output).
+
+**What was amended**:
+
+1. **B4_improvement task** (§Tasks & Acceptance): replaced "import `experiments/judges/rule_judge.py`" with "脚本内显式 tier 表(0/1/2)"。Rationale: rule_judge.py is project_dir-coupled + has write side effects (writes to run_log.jsonl); importing it for offline read-only analysis is inappropriate. Script-internal tier table satisfies the same `experiment_implementation.md §3.4` constraint ("在脚本中显式定义, 不靠 LLM 自评") while being deterministic and side-effect-free.
+
+2. **B3 Design Notes**: added "已知语义局限 (F3 / F15)" paragraph clarifying that folded 83 mixes atomic metrics + cluster-level wrappers + parameter paths + summary paths; NOT a strict subset of `operations_metrics_catalog.md`'s 247 atomic metrics. Closure report must acknowledge this approximation.
+
+3. **B4 Design Notes**: replaced "B4 改善判据的 oracle 复用" with "B4 改善判据的脚本内 tier 表 (F1)" describing the per-decision-point tier scheme.
+
+**Known-bad state avoided**:
+- F1: implementing B4 with direct rule_judge.py import would have caused offline analysis to write to run_log.jsonl (corrupting the input). The script-internal tier table keeps analysis strictly read-only.
+- F3: claiming "folded 83 = subset of 247 atomic metrics" would have overreached the spec. The closure now correctly says the comparison is approximate, not exact.
+
+**KEEP instructions** (what survived review and must not be re-derived away):
+- B3 + B4 stay stdlib-only (no pandas/numpy).
+- B3 path-folding stays in B3_minimal_set.py (not split into a 3rd file).
+- B4 improvement classification keeps 5 result categories: improved / unchanged / no_change_in_decision / no_evidence / unscored. Excluding `no_change_in_decision` from rate denominator is a deliberate analytic choice (review F29 surfaced both conditional and unconditional rates).
+- closure §4 judgment line table stays 4 rows (B3 raw / B3 folded / B4 improvement_rate / B4 decision-point breakdown), each with one of 4-state labels (成立/不成立/无结论/边界).
+- The 3 LLM run paths stay hard-coded in DEFAULT_RUNS (per spec A3).
 
 ## Design Notes
 
@@ -128,11 +149,27 @@ baseline_commit: 2f79ba53dcff6489c509d78905b1da27954278b0
 - `step4_judge.rank_candidates.cluster3.first_count` → `step4_judge.rank_candidates.<CLUSTER_ID>.first_count`
 - `step4_judge.rank_candidates.cluster3.first.cell_type` → `step4_judge.rank_candidates.<CLUSTER_ID>.first.cell_type`
 
-折叠后得到的 unique paths 才是"247 个原子指标的引用频次"真正可比的口径。raw 口径(不过滤)与 folded 口径(折叠)在 closure 报告中并列报告,但**判定线对照以 folded 为准**,raw 只作"per-cluster 展开程度"的诊断。
+**已知语义局限(review iteration 1, F3 / F15)**:折叠后的 unique paths 集合**不严格等同于** "247 个原子指标"。folded 集合同时包含:
+- 原子 metric 路径(如 `step4_judge.rank_candidates.<CLUSTER_ID>.first_count`)
+- 簇级 wrapper 路径(如 `step4_judge.<CLUSTER_ID>.first` 是另一条 schema 路径,不与上面折叠合并)
+- 参数路径(如 `step1_prepare.run.params.max_mt_pct`、`step1_prepare.run.n_cells_raw`)
+- summary 路径(如 `step5_refine.summary.n_decisive`)
 
-### B4 改善判据的 oracle 复用
+把 folded 集合与 `operations_metrics_catalog.md` 的 247 原子指标对比时,这种对比是**近似可比**,不是严格子集。closure 报告需明示这一点。Epic 7 SKILL.md 精简时应优先合并 schema 多重命名(见 closure §5 建议 #2),这能让 folded 集合更接近严格的 247 子集。
 
-`experiments/B4_improvement.py` 对"无 exec 指标可比"的决策点(如 `de_method`、`kg_match`、`batch_effect`)复用 `experiments/judges/rule_judge.py` 的 oracle 规则:若 v_last_decision 命中 oracle "good" 表(且 v_first_decision 命中 "bad"/"neutral" 表),算改善。这避免了"LLM 自评"的主观偏差,符合 `design/experiment_implementation.md` §3.4"在脚本中显式定义,不靠 LLM 自评"的约束。
+raw 口径(不过滤)与 folded 口径(折叠)在 closure 报告中并列报告,但**判定线对照以 folded 为准**,raw 只作"per-cluster 展开程度"的诊断。
+
+### B4 改善判据的脚本内 tier 表(review iteration 1, F1)
+
+`experiments/B4_improvement.py` 对"无 exec 指标可比"的决策点(如 `de_method`、`kg_match`、`batch_effect`)使用**脚本内显式定义的 per-decision-point tier 表**(0/1/2 三档):
+
+- `de_method`: `wilcoxon` / `pseudobulk_rare` / `pseudobulk_all` 全部归为 tier 1(无方向性,因为脱实验校准无法判断哪个更好)
+- `kg_match`: `id_match_no (0) < id_match_partial (1) < id_match_ok (2)`
+- 其他决策点:见 `_oracle_improved()` 内 `DECISION_TIERS` 字典
+
+仅在 v_last tier > v_first tier 时算改善。这避免了"LLM 自评"的主观偏差,符合 `design/experiment_implementation.md` §3.4"在脚本中显式定义,不靠 LLM 自评"的约束。
+
+**为什么不直接 import `experiments/judges/rule_judge.py`**:该脚本是 per-cluster 调用 + project_dir-coupled + 有写副作用(写 run_log.jsonl)。不适合离线只读轨迹分析。脚本内 tier 表是显式的、确定的,满足同一约束。
 
 ## Verification
 

@@ -30,25 +30,27 @@
 按 §3.4 三层判据:
 1. **ranking_based**(decision 自带 3 档好坏):`label_confirm` / `candidate_gap` / `candidate_disambiguate`
 2. **metric_based**(对比 exec 记录的 metric 值):`clustering_quality` / `marker_quality` / `refine_effect`
-3. **oracle_heuristic**(decision 在 good/bad 集合中的成员资格):其余决策点
+3. **oracle_heuristic**(脚本内 tier 表 0/1/2):其余决策点
 
 **总分**:
 
 | 指标 | 数值 |
 |---|---|
-| 总对数 | 18 |
+| 总对数(multi-version) | 18 |
 | 进入改善率分母(已评分) | **8** |
 | 改善对 | **5** |
-| 不变对 | 3 |
+| 不变对(改主意但 tier 不升) | 3 |
 | no_evidence | 0 |
 | no_change_in_decision(不进入分母) | 10 |
-| **改善率** | **0.625** |
+| **conditional 改善率(LLM 改主意后改善的概率)** | **0.625** |
+| unconditional 改善率(全 multi-version 对中改善占比) | 0.278 |
 
 ## 3. 判定线对照
 
 | 判定线 | 数值 | 状态 |
 |---|---|---|
-| **改善率 ≥ 0.50**(`experiment_implementation.md` §3.4) | scored = **0.625** | **✅ PASS** |
+| **改善率 ≥ 0.50**(conditional,`experiment_implementation.md` §3.4) | scored = **0.625** | **✅ PASS** |
+| (参考)unconditional 改善率 | 0.278 | (无判定线) |
 
 ## 4. 决策点级诊断
 
@@ -79,7 +81,11 @@
 
 ### 其他 3 个决策点的样本量问题
 
-`de_method` / `marker_quality` / `kg_match` 各自只有 1 个 multi-version,且首末 decision 相同(no_change_in_decision),**无法得出有效结论**。这反映 LLM 在这些决策点很少反复纠结 — 它们是"一次定"型决策(LLM 跑一遍就足够),不需要自我纠正机制。
+`de_method` / `marker_quality` / `kg_match` 各自只有 1 个 multi-version,且首末 decision 相同(no_change_in_decision),**无法得出有效结论**。这反映 LLM 在这些决策点很少反复纠结 — 它们是"一次定"型决策(LLM 跑一遍就足够),不需要自我纠正机制。这是 review iteration 1 #27 强调的"不反复"是一个值得反哺 SKILL.md 的稳定信号。
+
+### 关于 10 个 no_change_in_decision
+
+`candidate_gap` 15 个 multi-version 对中,**7 个**首末 decision 相同(no_change_in_decision)。它们的 v_first 与 v_last 来自同一 (decision_point, scope) 但输出相同 — 这是 LLM 重跑 pipeline 后**保持原判的稳定性**,不是失败的纠错。建议 Epic 7 把"稳定不反复"也作为 SKILL.md 的正向指标(LLM 没说"改主意"= "不必要改")。
 
 ## 5. 已知局限
 

@@ -35,7 +35,9 @@
 | marker_quality | 5 | 5 | 1.0× | session 级 |
 | resolution_select | 5 | 5 | 1.0× | session 级 |
 | batch_effect | 2 | 2 | 1.0× | session 级 |
-| **总计** | **426** | **128** | **3.3×** | — |
+| **总计(unique)** | **426** | **128** | **3.3×** | — |
+
+**注**:"总计"行的 426 / 128 是**跨决策点 union**(同一 path 可能出现在多个决策点下),不是逐决策点的 sum;逐决策点 raw_unique 求和 = 747(带重复)vs union 426(去重)。详见 review iteration 1 F8 修正。
 
 观察:只有 4 个决策点有 per-cluster 展开,且都集中在 step4/step5 簇级判断。session 级决策点(qc / resolution / marker_quality / de_method 等)的引用集稳定在 2-10 个。
 
