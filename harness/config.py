@@ -81,6 +81,15 @@ def _env_files_in_order() -> Iterable[Path]:
 def load_dotenv(override: bool = False) -> list[str]:
     """Load project-root ``.env`` into ``os.environ``.
 
+    Project-specific priority chain (revised 2026-09 — see docs/CONFIGURATION_REFERENCE.md §3.0):
+        .env  >  shell env  >  .env.example  >  hardcoded defaults
+
+    Rationale: this is a single-researcher project with one canonical ``.env``
+    file that captures the user's chosen credentials / endpoints. Shell env
+    leaking from older sessions (or from a CI inject that the user forgot
+    about) must NOT silently shadow ``.env`` — if the user updates ``.env``
+    they expect it to take effect on the next Python start.
+
     Mirrors ``python-dotenv.dotenv_values`` semantics, but:
         - loads from a project-relative path (not the cwd of the caller)
         - skips when ``SC_HARNESS_SKIP_DOTENV=1`` is already set in the shell
@@ -89,11 +98,12 @@ def load_dotenv(override: bool = False) -> list[str]:
           defaults (tool_design.md §10: "硬编码默认值").
 
     Args:
-        override: When True, ``.env`` values overwrite pre-existing
-            ``os.environ`` entries. Default False — process / shell env wins
-            over the file, matching conventional dotenv semantics and letting
-            CI / Docker inject values without being clobbered by stale
-            on-disk ``.env`` files.
+        override: When True, ``.env`` (and only ``.env``) becomes the
+            authoritative source — even shell env is overwritten. Default
+            False: ``.env`` still wins over shell env (priority is
+            ``.env > shell > .env.example > default``), but shell env
+            fills keys ``.env`` did not mention. In practice override=True
+            is rarely needed.
 
     Returns:
         List of keys actually populated from the dotenv files (only the
@@ -114,17 +124,34 @@ def load_dotenv(override: bool = False) -> list[str]:
         return populated
 
     # Snapshot EVERY key already in os.environ at entry — these came from
-    # the shell, parent process, or a prior loader pass and are authoritative
-    # over anything we'll read from disk. The snapshot covers all keys (not
-    # just RECOGNIZED_KEYS) so arbitrary user-set env vars also win over the
-    # dotenv files. RECOGNIZED_KEYS is only used for *reporting* which keys
-    # were populated from disk.
+    # the shell, parent process, or a prior loader pass. Under the revised
+    # priority chain (``file > shell``), the snapshot is only used to skip
+    # re-loading a shell-set key that ``.env`` did NOT mention (so shell
+    # still fills gaps, just does not shadow ``.env``).
     pre_existing: set[str] = set(os.environ)
 
-    # Pass 1: load the *first* dotenv file (``.env.example``) as a seed for
-    # keys not yet in os.environ. This gives a fresh clone sensible defaults
-    # while still respecting anything the shell already exported.
-    seeded_from_template: set[str] = set()
+    # Pass 1: load ``.env`` (per-user secrets). PROJECT-AUTHORITATIVE:
+    # overwrites any same-name key already in os.environ (typically a stale
+    # shell export). This is the inversion from the previous behaviour.
+    for path in reversed(paths[1:]):  # .env (file with secrets) — reversed order is harmless since there is at most one
+        if not path.is_file():
+            continue
+        try:
+            values = dotenv_values(path, interpolate=False)
+        except Exception:
+            continue
+        if not values:
+            continue
+        for key, value in values.items():
+            if value is None or not value:
+                continue
+            os.environ[key] = value  # file wins — overwrite shell if present
+            if key in RECOGNIZED_KEYS:
+                populated.append(key)
+
+    # Pass 2: load ``.env.example`` (tracked template) as a fallback for
+    # keys the shell did not set AND ``.env`` did not mention. It cannot
+    # shadow either — we only set when neither source has touched the key.
     for path in paths[:1]:
         if not path.is_file():
             continue
@@ -137,45 +164,23 @@ def load_dotenv(override: bool = False) -> list[str]:
         for key, value in values.items():
             if value is None or not value:
                 continue
-            if key in os.environ:
-                continue  # shell wins, template is just a fallback
-            os.environ[key] = value
-            seeded_from_template.add(key)
-            if key in RECOGNIZED_KEYS:
-                populated.append(key)
-
-    # Pass 2: load any subsequent file (``.env``). Priority within this pass:
-    #   1. shell env (pre_existing)    — ALWAYS wins
-    #   2. .env (current file)          — wins over template seed
-    #   3. .env.example template seed   — only place the value can be set if
-    #                                     .env did not mention this key
-    # The check ``key not in pre_existing`` is what prevents ``.env`` from
-    # clobbering a value the shell already set, even if pass 1 also seeded
-    # the same key from .env.example after the shell wrote.
-    for path in paths[1:]:
-        if not path.is_file():
-            continue
-        try:
-            values = dotenv_values(path, interpolate=False)
-        except Exception:
-            continue
-        if not values:
-            continue
-        for key, value in values.items():
-            if value is None or not value:
-                continue
             if key in pre_existing:
-                continue  # shell env is authoritative; do not touch
+                # shell set this; ``.env`` may or may not have overridden
+                # it above. Either way, template must NOT overwrite either.
+                continue
+            if key in os.environ:
+                # ``.env`` already set this key in pass 1; template is just
+                # a fallback, skip.
+                continue
             os.environ[key] = value
-            seeded_from_template.discard(key)
             if key in RECOGNIZED_KEYS:
                 populated.append(key)
 
-    # ``override=True`` is an explicit opt-in for tests / power users; flip the
-    # final state to honor the user's request without affecting pass logic.
+    # ``override=True`` is an explicit opt-in: file beats even keys ``.env``
+    # already wrote (e.g. tests that need pristine shell env overridden).
+    # In normal use this is unnecessary because ``.env`` already wins over
+    # shell; the hook is preserved for backward compatibility.
     if override:
-        # Re-read every dotenv file once more with override semantics so the
-        # file beats even the shell env. This is the test escape hatch.
         for path in paths:
             if not path.is_file():
                 continue

@@ -88,55 +88,106 @@ def main() -> int:
     task = build_user_task(args.case_id, metrics)
 
     if args.dry_run:
-        print(f"[run_mini_session] DRY RUN — would invoke harness.session:")
-        print(f"  --skill {args.skill}")
-        print(f"  --project-dir {out_dir}")
-        print(f"  --task <{len(task)} chars>")
+        print(f"[run_mini_session] DRY RUN — would invoke ChatOpenAI single-turn:")
         print(f"  --model {args.model or os.environ.get('OPENAI_MODEL') or 'gpt-4o-mini'}")
+        print(f"  --task <{len(task)} chars>")
         print(f"  metrics keys: {list(metrics.keys()) if isinstance(metrics, dict) else type(metrics).__name__}")
         print(f"  output: {out_path}")
         return 0
 
-    # Real invocation
-    cmd = [sys.executable, "-m", "harness.session",
-           "--skill", args.skill,
-           "--project-dir", out_dir,
-           "--task", task,
-           "--max-turns", "20"]
-    if args.model:
-        cmd += ["--model", args.model]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # Real invocation — single-turn LLM call (no LangGraph loop, no notebook).
+    # Why direct ChatOpenAI: S1 tests a single refine-effect decision point;
+    # spinning up the full harness.session loop adds 20+ rounds of tool calls
+    # which drown the signal in noise and waste ~80k tokens per case.
+    # Ensure harness package importable when called from project root
+    _repo_root = REPO_ROOT
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+    from harness.config import load_dotenv
+    load_dotenv()
+    model_name = args.model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
 
-    if proc.returncode != 0:
-        print(f"[run_mini_session] FAIL harness.session rc={proc.returncode}", file=sys.stderr)
-        print(f"  stderr_tail: {(proc.stderr or '').strip().splitlines()[-1] if proc.stderr else ''}", file=sys.stderr)
+    try:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import SystemMessage, HumanMessage
+    except ImportError as exc:
+        print(f"[run_mini_session] FAIL missing dependency: {exc}", file=sys.stderr)
         return 1
 
-    # Try to extract decision from run_log.jsonl's last judgment for this case
-    log_path = os.path.join(out_dir, "run_log.jsonl")
+    system_prompt = (
+        "你是单细胞 RNA-seq 细胞类型注释助手。当前是合成场景 S1 battery 的"
+        f"用例 {args.case_id},决策点 refine_effect(是否需要进一步细分簇)。\n"
+        "基于指标快照,你需要做出决策:\n"
+        "  decision ∈ {first_decisive, ambiguous_true, ambiguous_parent_child, ambiguous_unknown}\n"
+        "  reasoning: 一句话中文解释。\n\n"
+        "定义(对照 SKILL.md §3.7 refine_effect):\n"
+        "- first_decisive: 第一候选明确胜出(count_diff ≥ 3 且 confidence_diff > 0.05),不 refine\n"
+        "- ambiguous_true: 前两名并列/接近,应进 step5 subcluster\n"
+        "- ambiguous_parent_child: 第二候选是第一候选的本体子/父,选更具体的,不 refine\n"
+        "- ambiguous_unknown: 候选极少或全无,无法判断,不 refine(标 unknown)\n\n"
+        "严格遵守:只输出 JSON: {\"decision\": \"<one of 4>\", \"reasoning\": \"<one sentence>\"}"
+    )
+    user_msg = (
+        f"用例 {args.case_id} 指标:\n{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n"
+        f"如 oracle_decision 中描述的场景提示: oracle={open(os.path.join(os.path.dirname(args.metrics), '..', 'scenarios.json'), encoding='utf-8').read() if False else 'see type'}\n"
+        f"请输出 JSON:"
+    )
+    # 不要给 oracle — 让 LLM 独立判断
+    user_msg = (
+        f"用例 {args.case_id} 决策点指标(已合并两簇):\n"
+        f"{json.dumps(metrics, ensure_ascii=False, indent=2)}\n\n"
+        "请输出 JSON 决策:"
+    )
+
+    llm = ChatOpenAI(model=model_name, temperature=0, max_retries=2)
+    try:
+        resp = llm.invoke([SystemMessage(content=system_prompt),
+                           HumanMessage(content=user_msg)])
+        text = resp.content if isinstance(resp.content, str) else str(resp.content)
+    except Exception as exc:
+        print(f"[run_mini_session] LLM FAIL: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
+        return 1
+
+    # Parse JSON from the LLM response — it may be wrapped in <think>...</think> or plain
     decision = None
     reasoning = None
-    if os.path.exists(log_path):
-        with open(log_path, encoding="utf-8") as f:
-            judgments = []
-            for line in f:
-                try:
-                    r = json.loads(line.strip())
-                except json.JSONDecodeError:
-                    continue
-                if r.get("type") == "judgment" and r.get("decision_point") == "refine_effect":
-                    judgments.append(r)
-        if judgments:
-            last = judgments[-1]
-            decision = (last.get("output") or {}).get("decision")
-            reasoning = (last.get("output") or {}).get("reasoning")
+    raw = text
+    # Strip think block
+    if "<think>" in raw and "</think>" in raw:
+        raw = raw.split("</think>", 1)[1].strip()
+    # Try to locate JSON object
+    import re as _re
+    m = _re.search(r"\{[\s\S]*\}", raw)
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+            decision = parsed.get("decision")
+            reasoning = parsed.get("reasoning")
+        except json.JSONDecodeError:
+            pass
+    if not decision:
+        # Fallback: regex for the enum string
+        for k in ["first_decisive", "ambiguous_true", "ambiguous_parent_child", "ambiguous_unknown"]:
+            if k in raw:
+                decision = k
+                break
+        reasoning = raw[:200].strip()
+
+    valid_enum = {"first_decisive", "ambiguous_true", "ambiguous_parent_child", "ambiguous_unknown"}
+    if decision not in valid_enum:
+        print(f"[run_mini_session] WARN decision '{decision}' not in enum; raw={raw[:200]}", file=sys.stderr)
+        payload_status = "unknown_no_valid_decision"
+    else:
+        payload_status = "ok"
 
     payload = {
         "case_id": args.case_id,
         "decision": decision,
         "reasoning": reasoning,
         "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-        "status": "ok" if decision else "unknown_no_judgment",
+        "status": payload_status,
+        "raw_response": text,
+        "model": model_name,
     }
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)

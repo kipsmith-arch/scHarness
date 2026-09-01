@@ -18,7 +18,7 @@
 | **N3** 笔记本通用性 | 注册 + 写入 + 跨 session 检索 | ✅ PASS | echo_test 数据已验证(1 write + 1 retrieve + 4 notes persisted) |
 | **N2** 笔记本使用率 | ≥ 3 calls/session | ❌ **FAIL** | p5_evals_r2 实测仅 2 calls(1 write + 1 retrieve) — 系统提示强度不足 |
 | **N1** 笔记本开关消融 | ⑦ ≥ ⑥−0.02 / ≥⑥+0.03 | ⏸ partial | ⑥ baseline 已抓,⑦ 需 LLM 重跑(脚本骨架就绪) |
-| **S1** 合成场景 battery | S1-1 ③ ≥6/8 / S1-2 反例无误触 / S1-3 ③−② ≥ 2 | ⏸ partial | 5/8 用例已构造;③/② 数据待 LLM 跑出(battery 脚本就绪,llm_skipped mode 默认) |
+| **S1** 合成场景 battery | S1-1 ③ ≥6/8 / S1-2 反例无误触 / S1-3 ③−② ≥ 2 | ✅ ③ 跑通 / ❌ S1-1+S1-2 FAIL | **5/8 可用用例,③ LLM 跑出全部 5;2/5 正确;S1-1 FAIL + S1-2 FAIL**; metrics 为简化 union approximation(非真合成)— 见 §3.5 解读 |
 
 **Story 整体结论**:B1 §6 中**确定性子实验全部完成且有定量结论**(A1/E1/C2/N3);**LLM 子实验(S1/N1 ⑦/N2)的脚本骨架就绪,但实跑产物需 LLM 凭据 + 复跑**——这是设计边界而非任务未完成,因为 S1/N2 判定线本身就需要 LLM 主动行为。
 
@@ -92,15 +92,27 @@
 
 ### 2.5 S1 — 合成场景 battery
 
-**Source**:`experiments/build_scenarios.py` + `experiments/run_mini_session.py` + `experiments/S1_battery.py`
-**Outputs**:`experiments/S1/scenarios.json`(8 用例定义), `experiments/S1/leiden_override.csv`, `experiments/S1/battery_report.json`(llm_skipped mode)
+**Source**:`experiments/build_scenarios.py` + `experiments/run_mini_session.py`(单轮 ChatOpenAI,不调 harness.session)+ `experiments/S1_battery.py`
+**Outputs**:`experiments/S1/scenarios.json`(8 用例), `experiments/S1/leiden_override.csv`, `experiments/S1/case_*/{metrics.json,llm_judgment.json}`, `experiments/S1/battery_report.json`
 
 - **5/8 用例可用**(30 个纯簇≥90% 纯度,部分稀有类型无第二个纯簇):
   - ✅ S-P1 (Xylem + Root hair) | S-P2 (Phloem + Root endodermis) | S-N1 (Pericycle × 2) | S-N2 (Columella + Lateral root cap, parent-child) | S-N3 (Root cortex × 2, single-batch)
-  - ❌ S-P3 (Meristematic + Stem cell niche, 都稀有) | S-H1 (Root cortex + Root hair, 已被其他 case 用光) | S-H2 (3-簇 super-fusion, 同)
-- **③ LLM judgment 未跑**(无凭据 + 8 次单轮需真调用)— `battery_report.json` llm_skipped=True
-- **② rule_judge 未跑**(同 + 阈值待校准,见 story 6.9) — ③−② 比较 N/A
-- **ground_truth.json 未生成**(需要强制 step5 subcluster 真跑,需 h5ad load,被本次窗口 budget 排除)
+  - ❌ S-P3 / S-H1 / S-H2 (稀有类型 + slot 被占满)
+- **③ LLM 已跑全部 5 用例**(MiniMax-M3, temperature=0, 单轮 ChatOpenAI 不走 LangGraph loop)
+
+| Case | Type | Oracle | LLM 决策 | 对错 |
+|---|---|---|---|---|
+| S-P1 | positive_unrelated | ambiguous_true | ambiguous_parent_child | ✗ |
+| S-P2 | positive_unrelated | ambiguous_true | ambiguous_true | ✓ |
+| S-N1 | negative_same_type | first_decisive | ambiguous_parent_child | ✗ (反例误触发) |
+| S-N2 | negative_parent_child | ambiguous_parent_child | ambiguous_true | ✗ |
+| S-N3 | negative_same_type | first_decisive | first_decisive | ✓ |
+
+- **② rule_judge 未跑**(不在本 story 范围,story 6.9 校准后补)
+- **ground_truth.json 未生成**(需要强制 step5 subcluster 真跑,h5ad load 超 budget)
+- **方法学 caveat(关键)**:S1 用的是**简化 metrics**(两个簇的 cell_type 集合 union + 各自 marker_count 加和),**非真合成场景**。理想做法是用 `leiden_override.csv` 把两个簇合成一个新 leiden,重跑 step4_judge 拿真实 gap_metrics。这是 story 6.9 / 7.6 范围
+- **当前数字解读**:`count_diff=0, count_ratio=1.0` 等指标是"两个簇的 cell_type 计数之和",与"合成簇的真 gap_metrics"有偏差——LLM 看到的不是真信号,所以判断偏差大
+- 真实 LLM raw_response 全在 `experiments/S1/case_*/llm_judgment.json` 的 `raw_response` 字段(包含 LLM 推理过程),可人工抽查
 
 ---
 
@@ -110,9 +122,9 @@
 |---|---|---|---|---|
 | B1 R1 | ③ − ② ≥ 0.03 且 CI 不含 0 | (B1 r1 已报告 — 不在本 story 范围) | (引自 `b1-three-arm-eval.md`) | b1-three-arm-eval.md |
 | C2 | fullKG − 无KG ≥ 0.03 (strict) | +0.579 | ✅ **PASS** | output/C2/eval/c2_summary.json |
-| S1-1 | ③ ≥ 6/8 一致 | (③ LLM 未跑) | ⏸ deferred | experiments/S1/battery_report.json |
-| S1-2 | ③ 在反例无误触细分 | (同上) | ⏸ deferred | 同上 |
-| S1-3 | ③ 正确 − ② 正确 ≥ 2 | (同上) | ⏸ deferred | 同上 |
+| S1-1 | ③ ≥ 6/8 一致 | 2/5 (scaled threshold 4) | ❌ **FAIL** | experiments/S1/battery_report.json |
+| S1-2 | ③ 在反例无误触细分 | 1/3 | ❌ **FAIL** (S-N1 误触) | 同上 |
+| S1-3 | ③ 正确 − ② 正确 ≥ 2 | (② 未跑, story 6.9 后补) | ⏸ deferred | — |
 | B3 | 核心子集 ≤ 60 | (story 6.8 范围) | n/a | — |
 | B4 | 改善率 ≥ 50% | (story 6.8 范围) | n/a | — |
 | A3 | harness − Marker硬匹配 ≥ 0.03 | marker_dict 复用 C2;macroF1 差距 = +0.039 | ⚠ ANOMALY — 需 A3 独立报告解读 | output/C2/eval/c2_vs_b1_3.json |

@@ -98,12 +98,14 @@ def test_load_dotenv_picks_up_arbitrary_keys(monkeypatch):
         _restore_env(env_path, backup)
 
 
-def test_load_dotenv_does_not_overwrite_existing_env(monkeypatch):
-    """Shell env wins over .env (standard dotenv semantics).
+def test_load_dotenv_file_wins_over_existing_env(monkeypatch):
+    """.env wins over shell env (revised priority 2026-09).
 
-    The ``pre_existing`` snapshot is taken at the moment ``load_dotenv`` is
-    called — any key present then is treated as authoritative. Here we set
-    the shell value BEFORE invoking the loader so the snapshot includes it.
+    Rationale: this project treats ``.env`` as the canonical configuration;
+    a stale shell export must not silently shadow an updated ``.env`` entry.
+    The ``pre_existing`` snapshot is still used to fill *gaps* — shell env
+    provides a key if and only if neither ``.env`` nor ``.env.example``
+    mentions it. This test verifies that ``.env`` overwrites shell.
     """
     env_path, backup = _write_env(f"{_DUMMY}=from-dotenv\n")
     try:
@@ -111,13 +113,37 @@ def test_load_dotenv_does_not_overwrite_existing_env(monkeypatch):
         monkeypatch.setenv(_DUMMY, "from-shell")
         import harness.config  # noqa: E402  -- bootstrap runs now
         import os
+        assert os.environ[_DUMMY] == "from-dotenv"
+    finally:
+        _restore_env(env_path, backup)
+
+
+def test_load_dotenv_shell_fills_gap_when_file_missing(monkeypatch):
+    """When .env does not mention a key, shell env still provides it.
+
+    The revised priority chain is ``.env > shell > .env.example > default``.
+    Shell does not *shadow* ``.env``; it *fills gaps* that ``.env`` left.
+    """
+    env_path, backup = _write_env("ANOTHER_DUMMY=from-dotenv\n")
+    try:
+        _drop_harness_modules()
+        monkeypatch.delenv("ANOTHER_DUMMY", raising=False)
+        monkeypatch.setenv(_DUMMY, "from-shell")  # not in .env
+        import harness.config  # noqa: E402
+        import os
         assert os.environ[_DUMMY] == "from-shell"
+        assert os.environ["ANOTHER_DUMMY"] == "from-dotenv"
     finally:
         _restore_env(env_path, backup)
 
 
 def test_load_dotenv_override_true_overwrites(monkeypatch):
-    """When override=True, .env wins over shell env (explicit opt-in)."""
+    """When override=True, .env wins over shell env (explicit opt-in).
+
+    Since the default behaviour already has ``.env`` winning, override=True
+    is now mostly a redundant test escape hatch — preserved for callers that
+    want belt-and-suspenders. The contract test stays for compatibility.
+    """
     env_path, backup = _write_env(f"{_DUMMY}=from-dotenv\n")
     try:
         _drop_harness_modules()

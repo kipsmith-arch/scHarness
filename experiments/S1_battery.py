@@ -215,7 +215,7 @@ def main() -> int:
         print(f"  S1-1 (≥6/8 scaled): {'PASS' if s1_1_pass else 'FAIL'}  threshold: ≥{max(3, round(S1_1_HIT_THRESHOLD * n_avail / 8))}")
         if s1_2_pass is not None:
             print(f"  S1-2 (no spurious refine on negatives): {'PASS' if s1_2_pass else 'FAIL'}")
-        print(f"  S1-3 (③−② ≥ 2): N/A (rule_judge output not produced in story 6.7)")
+        print(f"  S1-3 (three minus two >= 2): N/A (rule_judge output not produced in story 6.7)")
     else:
         print(f"  S1-1/S1-2/S1-3 verdicts deferred — re-run with LLM calls completed to compute.")
     print(f"  report: {args.out}")
