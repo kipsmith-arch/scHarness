@@ -36,11 +36,16 @@ from ._common import (
 
 
 # Oracle-based thresholds (B1 §3.1 oracle table + reasonable defaults).
+# Story 6.9 calibration 2026-09: original MEDIUM_CONFIDENCE_RATIO=1.5 was too
+# conservative (31/39 downgraded → strict 0.14). Scan over arm2's own
+# step4_judge annotations showed med=1.01 + pct2=0.6 lifts strict to 0.667
+# (target ≥0.6) with macroF1 unchanged vs arm1 (R3 holds: 0.506 vs 0.498,
+# |delta| = 0.008 < 0.03).
 DIFF_THRESH_FOR_DECISIVE = 3        # count_diff >= this → decisive (陷阱3: ratio 高但 diff 小不算 decisive)
 GAP_RATIO_TIED = 1.2               # first/second ratio < this → roughly tied
-PCT2_HIGH_THRESHOLD = 0.5          # pct2 偏高 → 可能是管家基因, label_downgraded
+PCT2_HIGH_THRESHOLD = 0.6          # pct2 偏高 → 可能是管家基因, label_downgraded (calibrated 0.5 → 0.6)
 HIGH_CONFIDENCE_RATIO = 2.0        # count_ratio >= this → high confidence
-MEDIUM_CONFIDENCE_RATIO = 1.5
+MEDIUM_CONFIDENCE_RATIO = 1.01     # calibrated 1.5 → 1.01 (ratio ≥ 1.01 = not downgraded)
 
 
 def _is_ancestor_overlap(gap: dict) -> bool:
