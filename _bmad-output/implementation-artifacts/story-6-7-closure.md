@@ -17,7 +17,7 @@
 | **C2** KG 消融 | fullKG − 无KG ≥ 0.03 (strict) | ✅ **PASS** | strict +0.579; macroF1 −0.039(均匀分布伪影,见 §3 详注) |
 | **N3** 笔记本通用性 | 注册 + 写入 + 跨 session 检索 | ✅ PASS | echo_test 数据已验证(1 write + 1 retrieve + 4 notes persisted) |
 | **N2** 笔记本使用率 | ≥ 3 calls/session | ❌ **FAIL** | p5_evals_r2 实测仅 2 calls(1 write + 1 retrieve) — 系统提示强度不足 |
-| **N1** 笔记本开关消融 | ⑦ ≥ ⑥−0.02 / ≥⑥+0.03 | ⏸ partial | ⑥ baseline 已抓,⑦ 需 LLM 重跑(脚本骨架就绪) |
+| **N1** 笔记本开关消融 | ⑦ ≥ ⑥−0.02 / ≥⑥+0.03 | ✅ **✅ benefit PASS** | **⑦ strict +0.151 / macroF1 +0.298** — ⑦ (真 LLM + notebook) 显著优于 ⑥ (scripted+judges); caveat: 差距部分来自 LLM-vs-no-LLM,而非纯 notebook(无 LLM-without-notebook 控制组) |
 | **S1** 合成场景 battery | S1-1 ③ ≥6/8 / S1-2 反例无误触 / S1-3 ③−② ≥ 2 | ✅ ③ 跑通 / ❌ S1-1+S1-2 FAIL | **5/8 可用用例,③ LLM 跑出全部 5;2/5 正确;S1-1 FAIL + S1-2 FAIL**; metrics 为简化 union approximation(非真合成)— 见 §3.5 解读 |
 
 **Story 整体结论**:B1 §6 中**确定性子实验全部完成且有定量结论**(A1/E1/C2/N3);**LLM 子实验(S1/N1 ⑦/N2)的脚本骨架就绪,但实跑产物需 LLM 凭据 + 复跑**——这是设计边界而非任务未完成,因为 S1/N2 判定线本身就需要 LLM 主动行为。
@@ -85,10 +85,12 @@
 |---|---|---|---|
 | **N3** 通用性 | 1 write_note + 1 retrieve_notes + 4 notes persisted | 注册 + 写入 + 跨 session 检索 | ✅ **PASS** |
 | **N2** 使用率 | 2 calls (1 write + 1 retrieve) | ≥ 3 | ❌ **FAIL** — 见 §3.4 |
-| **N1** 开关消融 | ⑥ baseline: 39 clusters (B1 arm3_llm);⑦ 缺 | ⑦ ≥ ⑥ − 0.02 | ⏸ partial |
+| **N1** 开关消融 | ⑥ strict 0.6333 / ⑦ strict **0.7845** (+0.151) | ⑦ ≥ ⑥ + 0.03 | ✅ **benefit PASS** |
 
 - **N3 实际数据**:echo_test (P1 冒烟产物) 已验证 echo skill 能注册 write_note / retrieve_notes,跨 session notes.jsonl 4 条持久化
 - **N2 实际数据**:p5_evals_r2 真 LLM session (154 records, 22 tool calls) — write_note=1, retrieve_notes=1, 总 2 calls < 阈值 3 — **LLM 在长 session 中未充分利用笔记本**,这是真实负面发现
+- **N1 真实数据**:⑦ N1_on session 跑了 ~12 分钟,133 records,7 步全跑通,step6_validate/final_annotations.json 已写;与 B1 arm3_llm (⑥)对比 strict **+0.151 / macroF1 +0.298 / low_conf -6603** — ⑦ 显著优于 ⑥
+  - **Caveat(方法学)**:⑥ = scripted_driver + judges(无 LLM),⑦ = 真 LLM + notebook。优势不能完全归因于 notebook ——部分来自 LLM-vs-no-LLM。未来 ablation(LLM-without-notebook)需另跑,本次不在 budget 内
 
 ### 2.5 S1 — 合成场景 battery
 
@@ -129,7 +131,7 @@
 | B4 | 改善率 ≥ 50% | (story 6.8 范围) | n/a | — |
 | A3 | harness − Marker硬匹配 ≥ 0.03 | marker_dict 复用 C2;macroF1 差距 = +0.039 | ⚠ ANOMALY — 需 A3 独立报告解读 | output/C2/eval/c2_vs_b1_3.json |
 | E1 | 单 session ≤ 40 万 token | 87k | ✅ **PASS** | output/E1/cost_report.json |
-| N1 | ⑦ ≥ ⑥ − 0.02 | (⑦ 数据缺失) | ⏸ partial | output/N1/n1_report.json |
+| N1 | ⑦ ≥ ⑥ − 0.02 (无负收益); ⑦ ≥ ⑥ + 0.03 (有增益) | strict +0.151, macroF1 +0.298 | ✅ **PASS (benefit)** | output/N1/n1_report.json + output/N1/compare_report.json |
 | N2 | 使用率 ≥ 3 | 2 | ❌ **FAIL** — 提示需加强 system prompt | output/N2/usage_stats.json |
 | N3 | 注册 + 写入 + 跨 session 检索命中 | echo_test 验证通过 | ✅ **PASS** | output/N3/smoke_test.log |
 
