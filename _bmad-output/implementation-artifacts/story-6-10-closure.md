@@ -17,7 +17,7 @@
 | **实际降量(代码层)** | 0 fields deleted(实测发现 C2 6 paths + C3 12 paths 中**9 个是 phantom path**,根本没 op 产出) |
 | **实测折叠数字** | **83(不变)** — 因 run_log 是旧的,SKILL.md 改动的效果需 LLM 重跑才能验证 |
 | **176 pytest** | 176 passed, 2 skipped(基线不变) |
-| **C4 审计** | 41 n=1 paths → 常驻 0 / 按需 31 / 应急 10 — `experiments/B3/c4_audit.json` 落地 |
+| **C4 审计** | 41 n=1 paths → 常驻 0 / 按需 19 / 应急 22(18 phantom + 4 walked)— `experiments/B3/c4_audit.json` 落地 |
 
 **Story 整体结论**:
 - ✅ **能动的全动了** — SKILL.md / trajectory_design.md / step4_judge.py 注释 / C4 审计全部到位
@@ -64,12 +64,13 @@
 
 ## 4. C4 审计(给 Epic 7 7.2 的清单)
 
-详见 `experiments/B3/c4_audit.json`。摘要:
+详见 `experiments/B3/c4_audit.json`(review iteration 1 修正:按"real / walked / phantom"三档分类,共 41 个 n=1 paths)。摘要:
 
 | 类别 | 数量 | 处置建议 |
 |---|---|---|
-| **应急**(可删)| 10 | 7 个 phantom params(`step1_prepare.run.params.*` / `qc_params` / `n_cells_raw` / `step2_markers.run.params.*` / `filter_params`) + 3 个 phantom summary(`step5_refine.summary.{n_analyzed,n_decisive,n_unknown}`) |
-| **按需**(放 references/)| 31 | 26 个 step1/2/3 real single-dp metrics(`leiden_cluster.n_clusters` / `write_markers.batch_key_used` / `write_hits.species` / `kg_precheck.coverage_tier` 等)+ 5 个 step6 real global_summary 字段(`label_diversity` / `n_clusters` / `n_unique_labels` / `n_unknown` / `unknown_rate`) |
+| **按需**(放 references/)| 19 | step1/2/6 的 real single-dp metrics(`leiden_cluster.n_clusters` / `write_markers.batch_key_used` / `write_output.n_batches` / `global_summary.label_diversity` 等)|
+| **应急 — phantom**(可删,根本没 op 产出)| 18 | 7 个 phantom params + 3 个 phantom step5_refine.summary.* + 4 个 phantom step3_kg.query/precheck + 1 个 phantom batch_mixing.summary + 2 个 phantom filter_summary + 1 个 phantom kg_provenance.organ_Root_count |
+| **应急 — walked**(可改稳定 path,或删)| 4 | 4 个 step3_kg.write_hits.* 字段(species/organ/overall_hit_rate/n_genes_queried)— LLM walked kg_hits.json content,非 metrics 字段,path 不稳定 |
 | **常驻** | 0 | 无 |
 
 **给 Epic 7 7.2 的具体删除清单**:`experiments/B3/c4_audit.json` 的 "应急" 字段 10 个路径。SKILL.md 引导后 LLM 不再引用这些,Epic 7 可考虑从 references/ 移除以减少文档体积。
@@ -96,7 +97,7 @@
 ## 6. 已知残留
 
 1. **folded ≤ 60 实测验收未完成** — 因本 story 不重跑 LLM(N3 + 不接受 h5ad 降级)。Epic 7 7.2 重跑 B1③ + B3 才能给出实测。这是**设计意图**(避免 h5ad 依赖)而非遗漏。
-2. **13 对 schema 多重命名**:本 story 仅加 prompt 引导,**代码 metrics 字段未删**(因多数是 phantom 或 walked-through JSON content,本就不在 metrics dict)。LLM 重跑后预计引用会大幅减少,但**仍会有 5-10 个 phantom 残留**(LLM pattern-match 偶尔会猜错 path)。
+2. **13 对 schema 多重命名**:本 story 仅加 prompt 引导,**代码 metrics 字段未删**(因多数是 phantom 或 walked-through JSON content,本就不在 metrics dict)。LLM 重跑后预计引用会大幅减少,但**仍会有 5-10 个 phantom 残留**(LLM pattern-match 偶尔会猜错 path)。**预期 folded_size 降幅**:83 → ~30-50(若 SKILL.md 引导有效)+ ~5-10 phantom 残留 = 35-60。**验收阈**:Epic 7 7.2 重跑后 folded_size ≤ 60 为 PASS,>60 但 <80 为 BOUNDARY(需进一步精简)。
 3. **C4 应急类 10 个 paths** — 本 story 仅审计分类,未实际删除。Epic 7 7.2 决定删除时机。
 4. **step5_refine.write_refined.n_analyzed vs step5_refine.summary.n_analyzed**:前者是 real metrics(payload.counts),后者是 phantom。SKILL.md "不读 step5_refine.summary.*" 引导后,下次 LLM 重跑不会再引用后者。
 5. **step6_validate.write_final.* vs step6_validate.global_summary.***:前者 metrics 只有 `final_annotations_json` + `n_clusters`(其他字段是 walked-through final_annotations.json),后者是 real op output。SKILL.md "不读 write_final.* 的 label_diversity/unknown_rate/n_unique_labels" 引导后,下次重跑预计 LLM 走 global_summary。

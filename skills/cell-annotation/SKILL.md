@@ -11,11 +11,16 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 
 所有决策点"看什么"段列出的 path 是 LLM 读指标用的 JSON 路径。本规范明确**必读**与**不读**:
 
-- **必读(canonical path)**:L84/L90/L114 已使用 canonical 形式(`step4_judge.rank_candidates.cluster{N}.*` / `step5_refine.*` / `step6_validate.global_summary.*`)。
-- **不读**(常量或副本):
-  - `step1_prepare.run.params.*` / `step1_prepare.run.qc_params` / `step2_markers.write_markers.filter_params` / `step2_markers.run.params.use_pseudobulk_for_rare` —— 这些是 pipeline 启动参数与 filter 常量,不随判断改变,读了不产生信息增益。
-  - `step5_refine.write_refined.n_analyzed` / `step5_refine.write_refined.n_unknown` —— 与 `step5_refine.summary.*` 重复,只读后者。
-  - `step6_validate.write_final.label_diversity` / `step6_validate.write_final.unknown_rate` / `step6_validate.write_final.n_clusters` / `step6_validate.write_final.n_unique_labels` / `step6_validate.write_final.n_unknown` —— 与 `step6_validate.global_summary.*` 重复,只读后者。
+- **必读(canonical path)**:
+  - `step4_judge.rank_candidates.cluster{N}.*` —— cluster 级决策点(candidate_gap §3.8 / candidate_disambiguate §3.9)的标准形式。
+  - `step5_refine.write_refined.*` / `step5_refine.candidate_autocorr.per_cluster.{N}.*` / `step5_refine.subcluster.per_cluster.{N}.*` —— refine 阶段全局与 per_cluster 计数与指标。
+  - `step6_validate.global_summary.*` —— 最终全局统计。
+  - `step6_validate.marker_expression.per_cluster.{N}.*` —— cluster 级 marker 表达指标。
+  - canonical path 以 `design/trajectory_design.md` §5.2 为准。
+- **不读**(常量、phantom 或 walked-through):
+  - `step1_prepare.run.params.*` / `step1_prepare.run.qc_params` / `step1_prepare.run.n_cells_raw` / `step2_markers.write_markers.filter_params` / `step2_markers.run.params.use_pseudobulk_for_rare` —— 这些是 phantom path 或 pipeline 启动参数(常量),不随判断改变,读了不产生信息增益。
+  - `step5_refine.summary.*` —— **phantom path**(代码中无 op_summary op),不要引用。step5 的全局计数应读 `step5_refine.write_refined.n_analyzed` / `step5_refine.write_refined.n_unknown` / `step5_refine.write_refined.n_decisive` / `step5_refine.write_refined.n_skipped`(来自 `op_write_refined` metrics 中的 `payload.counts`)。
+  - `step6_validate.write_final.label_diversity` / `step6_validate.write_final.unknown_rate` / `step6_validate.write_final.n_unique_labels` / `step6_validate.write_final.n_unknown` —— 这些字段 walk 进了 `final_annotations.json` 内部,不属于 metrics;step6 全局统计应读 `step6_validate.global_summary.*`。`step6_validate.write_final.n_clusters` 是 real,允许读。
 
 canonical path 表与 trajectory_design.md §5.2 一致。
 
@@ -93,31 +98,37 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 
 ### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
-- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_count`、`step4_judge.rank_candidates.cluster{N}.second_count`、`step4_judge.rank_candidates.cluster{N}.count_ratio`、`step4_judge.rank_candidates.cluster{N}.count_diff`、`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first.mean_confidence`、候选 `organ_status`。
+- 看什么(canonical path,Story 6.10):
+  - `step4_judge.rank_candidates.cluster{N}.first_count` / `.second_count` / `.count_ratio` / `.count_diff`
+  - `step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`
+  - `step4_judge.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`
+  - `step4_judge.rank_candidates.cluster{N}.first_supporting_markers` / `.second_supporting_markers`(list,取前 5 个)
+  - `step4_judge.rank_candidates.cluster{N}.first_candidate.cell_type` / `.second_candidate.cell_type`
+  - 候选 `organ_status` / `organ` / `marker_count`
 - 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**top 候选已按 organ 优先级排序,无需手动排除 mismatch**;`unknown` 候选不参与 gap 比较。
 - decision 枚举:`first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown`
 
 ### 3.9 candidate_disambiguate(step4_judge,SOP-4,cluster 级,仅并列簇)
 - 何时:rank_candidates 之后,且第一/第二候选并列。
-- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first.mean_confidence`、`step4_judge.rank_candidates.cluster{N}.second.mean_confidence`、`step4_judge.rank_candidates.cluster{N}.n_tied_at_first`。
+- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.n_shared_ancestors` / `.shared_ancestors`、`step4_judge.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`、`step4_judge.rank_candidates.cluster{N}.n_tied_at_first`。
 - 判断要点:并列时判断两个候选是同义词、父子类还是真模糊。KG 本体给出的 ancestor 关系是直接证据;本体无记录时可用生物学知识判断,并注明依据来源。
 - decision 枚举:`ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true`
 
 ### 3.10 refine_effect(step5_refine,SOP-5,cluster 级,仅 analyzed 簇)
 - 何时:candidate_autocorr、subcluster、marker_overlap 之后。
-- 看什么:`step5_refine.candidate_autocorr.morans_i` 与 `score_distribution`(双峰性)、`subcluster.n_subclusters_with_distinct_type`、`marker_overlap.Jaccard_index`、`type_membership.types_in_parent_candidates`。
+- 看什么(canonical path,Story 6.10):`step5_refine.candidate_autocorr.per_cluster.{N}.morans_i` / `score_distribution`(双峰性)、`step5_refine.subcluster.per_cluster.{N}.n_subclusters` / `step5_refine.marker_overlap.per_cluster.{N}.Jaccard_index`、`step5_refine.type_membership.per_subcluster.<sub_id>.types_in_parent_candidates`。
 - 判断要点:morans_i 高且倾向分数双峰 → 存在子群体结构,细分有基础;子簇间 Jaccard 高 → 没有真正分开,细化无效;子簇类型与父候选完全无关 → 可能是批次/质量驱动的假分裂,退回父级标签。细胞数 <100 的簇直接标"细胞数不足,未细分"(SOP-5A)。
 - decision 枚举:`refine_effective` / `refine_ineffective` / `refine_skipped` / `refine_autocorr_low`
 
 ### 3.11 unknown_cluster(step5_refine,SOP-5,session 级)
 - 何时:unknown_overlap 之后。
-- 看什么:`step5_refine.unknown_overlap.avg_overlap`、`Jaccard`、`n_unknown_clusters`、`frac_unknown`。
+- 看什么(canonical path,Story 6.10):`step5_refine.unknown_overlap.unknown_overlap_summary.avg_overlap`、`step5_refine.unknown_overlap.unknown_overlap_summary.jaccard_per_pair`、`step5_refine.unknown_overlap.unknown_overlap_summary.n_unknown_clusters`、`step5_refine.unknown_overlap.unknown_overlap_summary.frac_unknown`。
 - 判断要点:unknown 簇之间 marker 重叠高 → 是同一个未知类型,重叠低 → 各自独立的新类型;不硬贴标签。unknown 比例高先查 organ 对齐与 KG 覆盖,不要直接判定数据有问题。
 - decision 枚举:`single_unknown_type` / `multiple_unknown_types`
 
 ### 3.12 label_confirm(step6_validate,SOP-6,cluster 级)
 - 何时:marker_expression 之后(每簇各一条)。
-- 看什么:`step6_validate.marker_expression.pct1`、`pct2`、`cohen_d`(Cohen's d,即指标的 effect_size 命名)、`auc`、`fold_change`。
+- 看什么(canonical path,Story 6.10):`step6_validate.marker_expression.per_cluster.{N}.top_markers_expression[<i>].pct1` / `pct2` / `cohen_d`(Cohen's d,即指标的 effect_size 命名)/ `auc` / `fold_change`、`step6_validate.marker_expression.per_cluster.{N}.mean_top3_pct1` / `mean_top3_specificity` / `marker_gene_overlap_score`。
 - 判断要点:top-3 marker 在本簇高表达、在其他簇低表达,标签有支撑;pct1 高但 pct2 也高 → 管家基因型 marker,标签存疑(陷阱 4);canonical marker 在该簇不表达 → 标签错了,重查 SOP-3/SOP-4。证据型 confidence 字段是快照,你可用更多证据覆盖它,覆盖时在 reasoning 说明。
 - decision 枚举:`label_confirmed` / `label_downgraded` / `label_unknown`
 

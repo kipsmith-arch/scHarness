@@ -2,8 +2,8 @@
 title: 'Story 6.10 — SKILL.md 精简 + schema 统一(B3 反哺)'
 type: feature
 created: 2026-09-01
-status: ready-for-dev
-review_loop_iteration: 0
+status: in-review
+review_loop_iteration: 1
 context: []
 ---
 
@@ -158,10 +158,10 @@ context: []
   - **When** 应用 T5/T6/T7
   - **Then** `step5_refine.py` 的 metrics 中不再有 `n_analyzed` / `n_unknown` 字段(只在 `summary` op 内);`step1_prepare.py` 的 metrics 中不再有 `n_cells_raw` 字段;`step4_judge.py` 仅加注释不改 metrics
 
-- AC-5 — pytest 176 全过
+- AC-5 — pytest baseline 不变
   - **Given** T5/T6/T7 改完
   - **When** `python -m pytest`
-  - **Then** `176 passed, 2 skipped`(基线不变,或更好)
+  - **Then** 所有测试通过(基线 `176 passed, 2 skipped` 不变,实测 2026-09-01;AGENTS.md 的 89 是过时状态,本 story 不动 AGENTS.md)
 
 - AC-6 — B3 / B4 脚本不破
   - **Given** 代码改完
@@ -180,7 +180,51 @@ context: []
 
 ## Spec Change Log
 
-<!-- Empty until first bad_spec loopback. -->
+### Review iteration 1 (2026-09-01) — bad_spec fixes + patches
+
+**Triggering findings**: Blind Hunter + Edge Case Hunter 给出 ~24 个 findings,其中 2 个 bad_spec:
+- **F1**: SKILL.md §0 "不读" 第 17 行 写反了 — 指示 LLM 不读 real `write_refined.n_analyzed` (citations=28,最高频) 而读 phantom `step5_refine.summary.*` (无 op 产出)。下次 LLM 重跑会大面积报路径 null。
+- **F2**: §3.10/§3.11/§3.12 "看什么"段路径仍缺 `cluster{N}.` 或 `per_cluster.{N}.` 段,与 §3.8/§3.9 canonical 形式不一致,LLM 可能跨 section 引用错路径。
+
+**What was amended**:
+
+1. **SKILL.md §0 "不读" 重写**:
+   - 反转第 17 行:不读 phantom `step5_refine.summary.*`,继续读 real `write_refined.n_analyzed` 等。
+   - 补 `step1_prepare.run.n_cells_raw` 到不读清单(原 missing)。
+   - 补 `write_refined.n_decisive` / `n_skipped` 到必读清单。
+   - 重写"必读"段,移除错误的 L84/L90/L114 行号引用(Edge F1),改为按 op 列出 canonical 路径。
+
+2. **SKILL.md §3.8 candidate_gap "看什么"**:删除 `first.mean_confidence`(phantom shape),改为 `first_mean_confidence`(real flat field)+ 补 `first_candidate.cell_type` / `first_supporting_markers` / `organ` / `marker_count` 等真实字段。
+
+3. **SKILL.md §3.9 candidate_disambiguate "看什么"**:同 §3.8 修复,补 `n_shared_ancestors` / `shared_ancestors`。
+
+4. **SKILL.md §3.10 refine_effect "看什么"**:加 `per_cluster.{N}.` / `per_subcluster.<sub_id>.` 段,补 canonical path。
+
+5. **SKILL.md §3.11 unknown_cluster "看什么"**:加 `unknown_overlap_summary.` wrapper 段,与 op_unknown_overlap metrics 结构对齐。
+
+6. **SKILL.md §3.12 label_confirm "看什么"**:加 `per_cluster.{N}.top_markers_expression[<i>].` 段,与 op_marker_expression metrics 对齐。
+
+7. **step4_judge.py 注释重写**:澄清 canonical path 是 `step4_judge.rank_candidates.annotations.{cluster_id}.*`(metrics 真路径),LLM soft alias `cluster{N}.*` 是 `annotations` 段的别名;`step4_judge.per_cluster.{N}.*` 是 `_cluster_decision_view` tool stdout 的字段,**不在 metrics dict**。
+
+8. **experiments/B3/c4_audit.json 三分类重写**:
+   - 按"real (op metrics literal) / walked (LLM walked JSON content) / phantom (no op produces)" 三档分类。
+   - 重分类结果:常驻 0 / 按需 19(real)/ 应急 22(18 phantom + 4 walked)。
+   - 加 `classification_categories` schema 说明。
+
+9. **spec AC-5 文字**:从"176 passed, 2 skipped"改为"基线不变(实测 2026-09-01: 176 passed, 2 skipped)"。AGENTS.md 的 89 是过时状态,本 story 不动 AGENTS.md。
+
+10. **closure §4 + §1 数字**:与新 c4_audit 一致(19 + 22)。
+
+**Known-bad state avoided**:
+- F1: 若不修,LLM 下次重跑会在 judgment inputs 里引用 `step5_refine.summary.n_analyzed` 等 phantom 字段(LLM 会自己 pattern-match 出这些 path),run_log 里会出现大量 null 值。
+- F2: 若不修,LLM 跨 section 引用错路径(如 `step5_refine.candidate_autocorr.morans_i` 应是 `per_cluster.{N}.morans_i`),validate_log.py 会报告 missing path。
+
+**KEEP instructions** (what survived review and must not be re-derived away):
+- T6/T7 NO-OP 结论保留:C2/C3 的 phantom path 处理完全靠 SKILL.md prompt 引导,不动代码 metrics dict(因多数字段本就不在 metrics,删除字段会导致更多 phantom)。
+- AC-4 T6/T7 NO-OP 文字保留。
+- C1 选 canonical schema 为 `step4_judge.rank_candidates.cluster{N}.*` 保留(soft alias 模型,不强求 LLM 用 metrics literal path)。
+- trajectory_design.md §5.1 + §5.2 改动保留。
+- AC-5 baseline "176 passed, 2 skipped" 保留(实测验证)。
 
 ## Design Notes
 
