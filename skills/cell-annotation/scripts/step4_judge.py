@@ -111,6 +111,12 @@ def op_rank_candidates(kg_hits, log_path, params) -> dict:
          "n_clusters": len(annotations),
          "n_clusters_with_candidates": int(sum(1 for a in annotations.values()
                                                if a["status"] == "has_candidates"))}
+    # Story 6.10: LLM canonical path for cluster-level metrics is
+    #   step4_judge.rank_candidates.cluster{N}.first_count  (and sibling fields)
+    # legacy path  step4_judge.per_cluster.{N}.first  is retained in the
+    # `annotations` dict above for backward compatibility with old run_logs
+    # but new judgment inputs should use the canonical form (see
+    # design/trajectory_design.md §5.2 and skills/cell-annotation/SKILL.md §0).
     rid = common.exec_record(log_path, "step4_judge", "rank_candidates", params, m)
     m["run_id"] = rid
     return annotations, m

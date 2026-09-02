@@ -300,16 +300,18 @@ seq=11 judgment clustering_quality  decision=clustering_accept  action="proceed_
 | `step1_prepare.compute_qc.n_cells` | step1_prepare 的 compute_qc 产出的 n_cells |
 | `step1_prepare.leiden_cluster.silhouette_overall.mean` | step1_prepare 的 leiden_cluster 产出的 silhouette 均值 |
 | `step2_markers.de_rank.de_distribution.logfc_mean` | step2_markers 的 de_rank 产出的 logfc 均值 |
-| `step4_judge.rank_candidates.annotations.0.gap_metrics.count_ratio` | step4_judge 的 rank_candidates 对 cluster 0 的 count_ratio |
+| `step4_judge.rank_candidates.cluster0.count_ratio` | step4_judge 的 rank_candidates 对 cluster 0 的 count_ratio (canonical) |
 
 ### 5.2 簇级变量
 
-簇级变量在路径中包含 cluster_id:
+簇级变量在路径中包含 cluster_id。**canonical path 形式**(Story 6.10):
 
 ```
-step4_judge.rank_candidates.annotations.{cluster_id}.first_count
-step6_validate.marker_expression.{cluster_id}.top_markers_expression[0].cohen_d
+step4_judge.rank_candidates.cluster{N}.first_count
+step6_validate.marker_expression.cluster{N}.top_markers_expression[0].cohen_d
 ```
+
+canonical 形式以 SKILL.md 与 trajectory_design.md §5.2 为准;其他形式(如 `step4_judge.per_cluster.{N}.first`、`step4_judge.rank_candidates.annotations.{cluster_id}.first_count`)**仅供回放旧 run_log.jsonl** 兼容,新生成的 judgment 应使用 canonical path(用 `cluster{N}` 而不是 `annotations.{cluster_id}`,因为 LLM 主流引用形式是前者)。
 
 ### 5.3 值快照
 

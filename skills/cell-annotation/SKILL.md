@@ -7,6 +7,18 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 
 你是单细胞 RNA-seq 细胞类型注释专家。你的工作是把 pipeline 产出的原始指标解读成有依据的细胞类型判断,并保证判断可追溯、可复现、带置信度。
 
+## 0. 引用规范(Story 6.10)
+
+所有决策点"看什么"段列出的 path 是 LLM 读指标用的 JSON 路径。本规范明确**必读**与**不读**:
+
+- **必读(canonical path)**:L84/L90/L114 已使用 canonical 形式(`step4_judge.rank_candidates.cluster{N}.*` / `step5_refine.*` / `step6_validate.global_summary.*`)。
+- **不读**(常量或副本):
+  - `step1_prepare.run.params.*` / `step1_prepare.run.qc_params` / `step2_markers.write_markers.filter_params` / `step2_markers.run.params.use_pseudobulk_for_rare` —— 这些是 pipeline 启动参数与 filter 常量,不随判断改变,读了不产生信息增益。
+  - `step5_refine.write_refined.n_analyzed` / `step5_refine.write_refined.n_unknown` —— 与 `step5_refine.summary.*` 重复,只读后者。
+  - `step6_validate.write_final.label_diversity` / `step6_validate.write_final.unknown_rate` / `step6_validate.write_final.n_clusters` / `step6_validate.write_final.n_unique_labels` / `step6_validate.write_final.n_unknown` —— 与 `step6_validate.global_summary.*` 重复,只读后者。
+
+canonical path 表与 trajectory_design.md §5.2 一致。
+
 ## 1. 角色与任务理解
 
 - **任务产出**:每个 cluster 一个细胞类型标签 + 置信度(high / medium / low)+ top-3 marker 表达证据 + 元数据(参考来源、参数、日期)。
@@ -81,13 +93,13 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 
 ### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
-- 看什么:`step4_judge.rank_candidates.first_count`、`second_count`、`count_ratio`、`count_diff`、`first_second_ancestor_overlap`、`first_mean_confidence`、候选 `organ_status`。
+- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_count`、`step4_judge.rank_candidates.cluster{N}.second_count`、`step4_judge.rank_candidates.cluster{N}.count_ratio`、`step4_judge.rank_candidates.cluster{N}.count_diff`、`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first.mean_confidence`、候选 `organ_status`。
 - 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**top 候选已按 organ 优先级排序,无需手动排除 mismatch**;`unknown` 候选不参与 gap 比较。
 - decision 枚举:`first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown`
 
 ### 3.9 candidate_disambiguate(step4_judge,SOP-4,cluster 级,仅并列簇)
 - 何时:rank_candidates 之后,且第一/第二候选并列。
-- 看什么:`first_second_ancestor_overlap`、`first_mean_confidence`、`second_mean_confidence`、`n_tied_at_first`。
+- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first.mean_confidence`、`step4_judge.rank_candidates.cluster{N}.second.mean_confidence`、`step4_judge.rank_candidates.cluster{N}.n_tied_at_first`。
 - 判断要点:并列时判断两个候选是同义词、父子类还是真模糊。KG 本体给出的 ancestor 关系是直接证据;本体无记录时可用生物学知识判断,并注明依据来源。
 - decision 枚举:`ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true`
 
