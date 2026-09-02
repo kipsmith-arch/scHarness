@@ -2,7 +2,7 @@
 title: 'Story 6.10 — SKILL.md 精简 + schema 统一(B3 反哺)'
 type: feature
 created: 2026-09-01
-status: in-review
+status: done
 review_loop_iteration: 1
 context: []
 ---
@@ -267,3 +267,55 @@ context: []
 - 打开 `skills/cell-annotation/SKILL.md`,确认顶部"引用规范"段存在,3 类"不读"path 完整
 - 打开 `experiments/B3/c4_audit.json`,确认 41 项全分类
 - 打开 `_bmad-output/implementation-artifacts/story-6-10-closure.md`,确认 §1-§6 齐全
+
+## Suggested Review Order
+
+**Spec design intent (入口)**
+
+- Spec frozen block(Intent / Boundaries & Constraints / I/O Matrix),审视意图与 Always/Ask First/Never 框架。
+  [`spec-story-6-10-skill-minimal-tech-debt.md:12`](spec-story-6-10-skill-minimal-tech-debt.md#L12)
+
+- Code Map,看本 story 跨哪些文件改、为什么 trajectory_design.md + SKILL.md + step4_judge.py 是 主要改点。
+  [`spec-story-6-10-skill-minimal-tech-debt.md:52`](spec-story-6-10-skill-minimal-tech-debt.md#L52)
+
+- Design Notes § “B3 folded ≤ 60 的验收口径”,理解本 story 不重跑 LLM、为何"折叠 ≤ 60"验收降级。
+  [`spec-story-6-10-skill-minimal-tech-debt.md:229`](spec-story-6-10-skill-minimal-tech-debt.md#L229)
+
+**SKILL.md 引用规范 (主要改动)**
+
+- "## 0. 引用规范(Story 6.10)" 段,看"必读"与"不读"的两块。
+  [`SKILL.md:11`](../../skills/cell-annotation/SKILL.md#L11)
+
+- §3.8 candidate_gap "看什么" 路径列变 canonical + 补 real first_mean_confidence 等。
+  [`SKILL.md:96`](../../skills/cell-annotation/SKILL.md#L96)
+
+- §3.9 / §3.10 / §3.11 / §3.12 路径一致性补齐,理解 canonical 格式应用范围。
+  [`SKILL.md:108`](../../skills/cell-annotation/SKILL.md#L108)
+  [`SKILL.md:118`](../../skills/cell-annotation/SKILL.md#L118)
+  [`SKILL.md:126`](../../skills/cell-annotation/SKILL.md#L126)
+
+**trajectory_design.md canonical 声明**
+
+- §5.1 + §5.2 canonical 表格示例 + legacy path 保留说明。
+  [`trajectory_design.md:301`](../../design/trajectory_design.md#L301)
+  [`trajectory_design.md:311`](../../design/trajectory_design.md#L311)
+
+**step4_judge.py 注释(5 行)**
+
+- `op_rank_candidates` 输出 metrics 后的 canonical / legacy 注释。
+  [`step4_judge.py:114`](../../skills/cell-annotation/scripts/step4_judge.py#L114)
+
+**C4 审计交付物**
+
+- 41 n=1 paths 三分类: 19 按需 (real) / 22 应急 (18 phantom + 4 walked) / 0 常驻。
+  [`c4_audit.json:1`](../../experiments/B3/c4_audit.json#L1)
+
+**Review iteration 1 处理记录**
+
+- Spec Change Log,看哪些为 bad_spec 修复、哪些为 patch、哪些是 KEEP 原则。
+  [`spec-story-6-10-skill-minimal-tech-debt.md:181`](spec-story-6-10-skill-minimal-tech-debt.md#L181)
+
+**Closure 报告**
+
+- §1 摘要 + §2 折叠前后对比 + §4 C4 审计 + §6 已知残留与验收阈。
+  [`story-6-10-closure.md:13`](story-6-10-closure.md#L13)

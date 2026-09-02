@@ -1,10 +1,11 @@
 # Story 6.10 Closure — SKILL.md 精简 + schema 统一(B3 反哺)
 
-**Status**: review
+**Status**: done
 **Owner**: Kip
 **Created**: 2026-09-01
 **Spec**: `_bmad-output/implementation-artifacts/spec-story-6-10-skill-minimal-tech-debt.md`
 **Baseline commit**: `a0d4e9691135dd241777032a680e9bfa72a4e31a`
+**Sprint-status**: `6-10-skill-md-精简-schema-统一-b3-反哺: done`(review iteration 1 完成,2 个 bad_spec 修复 + 8 个 patch 已提交)
 
 ---
 
