@@ -6,7 +6,7 @@
 
     输出:
           output/C2/no_kg/step3_kg/kg_hits.json     — C2 专用,与 B1 同 schema 但 candidates 来自 marker_dict
-          output/C2/no_kg/step4_judge/annotations.json
+          output/C2/no_kg/step4_rank/annotations.json
           output/C2/no_kg/step5_refine/refined_annotations.json
           output/C2/no_kg/step6_validate/final_annotations.json
           output/C2/no_kg/run_log.jsonl             — 与 B1 同格式的 exec + judgment 记录
@@ -43,7 +43,7 @@ PIPELINE = [
     ("step1_prepare.py", "run", True),     # 跳过,如果 source 已存在
     ("step2_markers.py", "run", True),     # 跳过,如果 source 已存在
     ("step3_kg_no_kg.py", "main", False),  # 必跑,本脚本模拟
-    ("step4_judge.py", "run", False),
+    ("step4_rank.py", "run", False),
     ("step5_refine.py", "run", False),
     ("step6_validate.py", "run", False),
     ("step6_validate.py", "report", False),

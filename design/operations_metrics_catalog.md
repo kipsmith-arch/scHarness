@@ -494,7 +494,7 @@
 
 | 函数 | 适用操作 | 输入 | 输出 |
 |---|---|---|---|
-| `describe_distribution(values)` | compute_qc, detect_doublets, normalize, de_rank, pct1_pct2, marker_expression | numpy array | {mean, std, median, IQR, CV, skewness, kurtosis, bimodality, percentiles, histogram} |
+| `describe_distribution(values)` | compute_qc, detect_doublets, normalize, de_rank, pct1_pct2, marker_expression | numpy array | {mean, std, median, IQR, CV, skewness, kurtosis, bimodality, percentiles, histogram(等宽计数,无 bin_edges)} |
 | `filter_funnel(mask_stages)` | filter_cells, filter_genes, filter_markers | list of boolean masks | {n_before, n_after_each_stage, n_after_all, frac_lost_per_stage, frac_retained} |
 | `ranking_gap(ranked_values)` | de_rank, aggregate_candidates, rank_candidates | sorted array | {top1_top2_gap, top1_total_ratio, ranking_entropy, n_ties} |
 | `pairwise_overlap(sets, method)` | marker_overlap, unknown_overlap, cross_cluster | list of sets | {mean_overlap, max_overlap, jaccard_per_pair, overlap_matrix, mean_unique_frac} |

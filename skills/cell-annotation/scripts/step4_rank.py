@@ -1,12 +1,11 @@
-"""Step 4 — cluster judgment (tool_design.md §5.4, atomic_operations.md stage 4).
+"""Step 4 — candidate ranking (measurement only).
 
 Subcommand:
     run  — rank_candidates -> write_annotations. [0× h5ad — pure JSON]
 
-For every cluster: pick first/second candidates from kg_hits.json, compute gap
-metrics (count_ratio, count_diff, confidence_diff, n_tied_at_first,
-frac_support_captured_by_first, first_second_ancestor_overlap) and write
-annotations.json consumed by step5_refine / step7_diagnose.
+For every cluster: order candidates by measurement keys (organ_status /
+marker_count / mean_confidence), compute gap metrics, and write
+annotations.json. first/second are sort-order summaries, not a decided label.
 """
 
 from __future__ import annotations
@@ -23,8 +22,8 @@ import common  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="step4_judge.py",
-        description="Step 4 簇判断:候选排名 first/second + gap 指标(0 次 h5ad 加载)",
+        prog="step4_rank.py",
+        description="Step 4 候选排序:first/second 为测量序,gap 指标(0 次 h5ad 加载)",
     )
     parser.add_argument("--dump-schema", action="store_true", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="subcommand")
@@ -112,16 +111,16 @@ def op_rank_candidates(kg_hits, log_path, params) -> dict:
          "n_clusters_with_candidates": int(sum(1 for a in annotations.values()
                                                if a["status"] == "has_candidates"))}
     # Story 6.10: canonical JSON path for cluster-level metrics is
-    #   step4_judge.rank_candidates.annotations.{cluster_id}.first_count
+    #   step4_rank.rank_candidates.annotations.{cluster_id}.first_count
     #   (and sibling fields under `annotations.<cluster_id>`).
     # LLM canonical form per SKILL.md §0:
-    #   step4_judge.rank_candidates.cluster{N}.first_count
+    #   step4_rank.rank_candidates.cluster{N}.first_count
     # is a soft alias that LLM may use interchangeably — they resolve to the
     # same value because {N} maps to the same cluster_id slot. The
-    # `step4_judge.per_cluster.{N}.first` legacy form is NOT in this
+    # `step4_rank.per_cluster.{N}.first` legacy form is NOT in this
     # metrics dict; it comes from `_cluster_decision_view` (tool stdout at
     # run time), not run_log metrics. See design/trajectory_design.md §5.2.
-    rid = common.exec_record(log_path, "step4_judge", "rank_candidates", params, m)
+    rid = common.exec_record(log_path, "step4_rank", "rank_candidates", params, m)
     m["run_id"] = rid
     return annotations, m
 
@@ -143,7 +142,7 @@ def op_write_annotations(out_dir, log_path, params, annotations, rank_metrics) -
     }
     common.write_json(path, payload)
     m = {"annotations_json": path, "n_clusters": len(annotations)}
-    rid = common.exec_record(log_path, "step4_judge", "write_annotations", params, m)
+    rid = common.exec_record(log_path, "step4_rank", "write_annotations", params, m)
     m["run_id"] = rid
     return m
 
@@ -183,7 +182,7 @@ def _cluster_decision_view(c, v):
 
 
 def cmd_run(args) -> dict:
-    out_dir = common.step_dir(args.project_dir, "step4_judge")
+    out_dir = common.step_dir(args.project_dir, "step4_rank")
     log = common.run_log_path(args.project_dir)
     kg_path = os.path.join(common.step_dir(args.project_dir, "step3_kg"), "kg_hits.json")
     kg_hits = common.read_json(kg_path)

@@ -24,9 +24,9 @@ from pathlib import Path
 
 # Match any path segment that looks like a cluster identifier, in any of these
 # shapes seen in run_log.jsonl:
-#   cluster{N}             — `step4_judge.rank_candidates.cluster3.first_count`
+#   cluster{N}             — `step4_rank.rank_candidates.cluster3.first_count`
 #   cluster_{N} / cluster-{N}  — defensive
-#   per_cluster.{N}        — `step4_judge.per_cluster.13.first` (older shape)
+#   per_cluster.{N}        — `step4_rank.per_cluster.13.first` (older shape)
 #   clusters.{N}           — plural variant (defensive)
 # We collapse all of them to a single canonical token `<CLUSTER_ID>` so
 # `per_cluster.13.first` and `per_cluster.4.first` fold to the same key.

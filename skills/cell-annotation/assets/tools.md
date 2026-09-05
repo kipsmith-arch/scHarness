@@ -18,7 +18,7 @@
 - 工具名 = `{脚本名}__{子命令}`(如 `step1_prepare__run`);11 个工具来自 7 个脚本。
 - 每个工具 stdout 的**最后一行**必须是 JSON:`{"status":"ok","data":{...}}` 或 `{"status":"error",...}`;`data` 内通常含 `run_id`。
 - `run_id` 格式:`{step}.{op}#{attempt}`(如 `step1_prepare.leiden_cluster#1`),重跑追加 `#2`…;judgment 记录用 `run_id` 做 `run_ref`。脚本 stdout 的 `data` 内通常含 `last_exec_run_id`(即最后一条 exec 的 run_id);`step1_prepare__metrics` / `step3_kg__test-connection` / `step6_validate__report` 不返回 run_id。
-- 数据加载纪律:一个子命令 = 一次 h5ad 加载;`step3_kg` / `step4_judge` / `step7_diagnose` 与 `report` 类零加载,只读 JSON 与 sidecar(`obs_snapshot.csv` / `var_snapshot.csv`)。
+- 数据加载纪律:一个子命令 = 一次 h5ad 加载;`step3_kg` / `step4_rank` / `step7_diagnose` 与 `report` 类零加载,只读 JSON 与 sidecar(`obs_snapshot.csv` / `var_snapshot.csv`)。
 - 参数优先级:CLI 显式传参 > 环境变量(如 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`)> 脚本默认值。**不要把密码写死在参数里。**
 
 ## 总览表
@@ -31,7 +31,7 @@
 | 4 | `step2_markers__run` | DE 排序 + pct1/pct2 + marker 过滤 + 稀有簇 pseudobulk | 1× proc | 5 |
 | 5 | `step3_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 | 5 |
 | 6 | `step3_kg__test-connection` | 检查 Neo4j 连通性 | 0 | 1 |
-| 7 | `step4_judge__run` | first/second 候选排名与差距 | 0 | 2 |
+| 7 | `step4_rank__run` | first/second 候选排名与差距 | 0 | 2 |
 | 8 | `step5_refine__run` | 模糊簇:自相关预判 → 子聚类 → 子簇 DE/KG → 重叠检查 | 1× proc | 8 |
 | 9 | `step6_validate__run` | top-marker 表达验证 + 全局摘要 + 报告 + 最终注释 | 1× proc(backed 可选) | 5 |
 | 10 | `step6_validate__report` | 从 final_annotations.json 重新生成 report.md | 0 | 1 |
@@ -74,7 +74,7 @@
 | n_neighbors | integer | `15` | kNN 邻居数 |
 | n_pcs | integer | `30` | kNN 使用的 PC 数 |
 | resolution_list | string | `0.4,0.6,0.8,1.0,1.2` | Leiden 分辨率列表(逗号分隔) |
-| target_resolution | string | `null` | 选中的分辨率(缺省自动拐点) |
+| target_resolution | string | `null` | 选中的分辨率(必须由判断层显式给出,禁止 knee 静默选定) |
 | project_dir / input | — | — | 同上 |
 
 ### step1_prepare__recluster
@@ -83,7 +83,7 @@
 |---|---|---|---|
 | organ / batch_key / mt_pattern / cp_pattern / seed | — | 同 metrics | 同上 |
 | resolution_list | string | `0.4,0.6,0.8,1.0,1.2` | Leiden 分辨率列表 |
-| target_resolution | string | `null` | 选中的分辨率(缺省自动拐点) |
+| target_resolution | string | `null` | 选中的分辨率(必须由判断层显式给出,禁止 knee 静默选定) |
 | n_neighbors | integer | `15` | kNN 邻居数 |
 | n_pcs | integer | `30` | kNN 使用的 PC 数 |
 | project_dir / input | — | — | 同上 |
@@ -139,7 +139,7 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 | project_dir | string | `output` | 同 query |
 | `uri` / `user` / `password` (SUPPRESS) | string | env / `null` | 运维可 CLI 覆盖（隐藏于 LLM schema），默认从 `skills/cell-annotation/.env` 读 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` |
 
-### step4_judge__run
+### step4_rank__run
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -195,7 +195,7 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 | step2_markers | run | de_rank / pct1_pct2 / pseudobulk_de / filter_markers / write_markers |
 | step3_kg | query | connect / query_genes / query_hierarchy / aggregate_candidates / write_hits |
 | step3_kg | test-connection | connect |
-| step4_judge | run | rank_candidates / write_annotations |
+| step4_rank | run | rank_candidates / write_annotations |
 | step5_refine | run | candidate_autocorr / subcluster / subcluster_de / subcluster_kg / marker_overlap / type_membership / unknown_overlap / write_refined |
 | step6_validate | run | marker_expression / violin_plot / global_summary / write_report / write_final |
 | step6_validate | report | write_report |

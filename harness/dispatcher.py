@@ -33,6 +33,10 @@ def run_subprocess(spec: Dict[str, Any], args: Dict[str, Any]) -> dict:
     subcommand = spec.get("subcommand")
     if subcommand:
         cmd.append(subcommand)
+    allowed = spec.get("arg_names")
+    if allowed:
+        allowed_set = set(allowed)
+        args = {k: v for k, v in (args or {}).items() if k in allowed_set}
     for key, value in (args or {}).items():
         flag = f"--{key.replace('_', '-')}"
         if isinstance(value, bool):

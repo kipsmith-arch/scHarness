@@ -8,7 +8,7 @@
 - [1. 数据准备阶段(step1_prepare)](#1-数据准备阶段step1_prepare)
 - [2. Marker 发现阶段(step2_markers)](#2-marker-发现阶段step2_markers)
 - [3. 知识图谱查询阶段(step3_kg)](#3-知识图谱查询阶段step3_kg)
-- [4. 簇判断阶段(step4_judge)](#4-簇判断阶段step4_judge)
+- [4. 簇判断阶段(step4_rank)](#4-簇判断阶段step4_rank)
 - [5. 细化阶段(step5_refine)](#5-细化阶段step5_refine)
 - [6. 验证阶段(step6_validate)](#6-验证阶段step6_validate)
 - [7. 诊断阶段(step7_diagnose)](#7-诊断阶段step7_diagnose)
@@ -69,7 +69,7 @@
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | `pre_filter_distributions` (percentiles + histogram per QC var) | 过滤前的分布 | 检查 `pct_counts_mt.percentiles.p99` 是否远高于 p90(长尾→截尾);检查 `n_genes_by_counts.histogram.counts` 是否双峰(双峰→阈值设在谷底) |
+| `[核心]` | `pre_filter_distributions` (percentiles + histogram per QC var) | 过滤前的分布 | 检查 `pct_counts_mt.percentiles.p99` 是否远高于 p90(长尾→截尾);检查 `n_genes_by_counts.histogram`(20 个等宽箱计数,与 percentiles 同级;边界由 min/max 还原)是否双峰(双峰→阈值设在谷底) |
 | `[扩展]` | `post_filter_distributions` | 过滤后的分布 | 与 pre_filter 对比,看过滤是否真改变了分布 |
 | `[扩展]` | `distribution_diff` (Δmedian, ΔIQR, Δskewness) | 过滤前后偏移 | Δ 大→过滤有效;Δ≈0→过滤没改变分布(阈值没切到东西) |
 | `[核心]` | bimodality_coefficient per QC var | 双峰系数 | >0.555→该变量分布双峰,过滤阈值要设在谷底 |
@@ -346,9 +346,9 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 ---
 
-## 4. 簇判断阶段(step4_judge)
+## 4. 簇判断阶段(step4_rank)
 
-> 产出文件:`step4_judge/annotations.json`(每簇第一/第二候选 + 原始证据)
+> 产出文件:`step4_rank/annotations.json`(每簇第一/第二候选 + 原始证据)
 
 ### rank_candidates — 候选排名与差距
 
@@ -577,7 +577,7 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 ### 实现补充说明(P2 评审修复)
 
 - `step1_prepare` 的 `qc_metrics.json` 顶部含 `organ` 字段(来自 `--organ`),step6 的 `_meta.organ` 从它继承——不要用写死的 "root" 解读非根组织数据。
-- `choose_resolution` 的 `auto_knee_not_applicable=true` 表示簇数随分辨率单调递增(无拐点),自动选择了中间分辨率而非最高;此时 `resolution_select` 判断点应人工确认。
+- `choose_resolution` 不再做 knee 静默选定:必须由 `resolution_select` 判断点给出显式 `--target-resolution`。漏传则脚本报错。
 - `step3_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
 - `step3_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
 - `--max-ancestor-hops 0` 表示跳过层级查询(ancestors 为空);`>=1` 才执行。

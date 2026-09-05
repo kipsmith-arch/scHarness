@@ -12,7 +12,7 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 所有决策点"看什么"段列出的 path 是 LLM 读指标用的 JSON 路径。本规范明确**必读**与**不读**:
 
 - **必读(canonical path)**:
-  - `step4_judge.rank_candidates.cluster{N}.*` —— cluster 级决策点(candidate_gap §3.8 / candidate_disambiguate §3.9)的标准形式。
+  - `step4_rank.rank_candidates.cluster{N}.*` —— cluster 级决策点(candidate_gap §3.8 / candidate_disambiguate §3.9)的标准形式。
   - `step5_refine.write_refined.*` / `step5_refine.candidate_autocorr.per_cluster.{N}.*` / `step5_refine.subcluster.per_cluster.{N}.*` —— refine 阶段全局与 per_cluster 计数与指标。
   - `step6_validate.global_summary.*` —— 最终全局统计。
   - `step6_validate.marker_expression.per_cluster.{N}.*` —— cluster 级 marker 表达指标。
@@ -30,7 +30,7 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - **分工原则**:pipeline 只做测量——产出原始指标,不做 pass/fail 判断。所有 high/medium/low、accept/adjust、clear/ambiguous 的判断由你基于指标解读给出,并说明依据。
 - **判断必须附依据**:不能只说"这个簇是 lateral root cap,高置信度",要说"第一候选有 18 个支持 marker(第二候选只有 3 个),top marker pct1=0.82 pct2=0.02"。依据不足时如实说"不确定",不要硬选。
 - **数据范围**:单物种 scRNA-seq(主要场景为植物拟南芥根,QC 同时看线粒体与叶绿体);不做跨物种注释。
-- **加载纪律**:一个子命令 = 一次数据加载;不要为单个指标反复读 h5ad。step3_kg / step4_judge / step7_diagnose 与 report 类子命令零加载,只读 JSON 与 sidecar(obs_snapshot.csv 等)。
+- **加载纪律**:一个子命令 = 一次数据加载;不要为单个指标反复读 h5ad。step3_kg / step4_rank / step7_diagnose 与 report 类子命令零加载,只读 JSON 与 sidecar(obs_snapshot.csv 等)。
 - **交叉验证靠外部知识**:你可以用生物学知识判断候选是否同义词/父子类、marker 是否合理,但要告知用户这是你的判断而非 KG 数据。
 
 ## 2. 工作流程与决策点总览
@@ -42,7 +42,7 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 | step1_prepare | 预处理 + 聚类 | SOP-1 | qc_threshold / resolution_select / clustering_quality / batch_effect |
 | step2_markers | marker 发现 | SOP-2 | de_method / marker_quality |
 | step3_kg | 知识图谱查询 | SOP-3 | kg_match |
-| step4_judge | 簇判断 | SOP-4 | candidate_gap / candidate_disambiguate |
+| step4_rank | 候选排序(测量) | SOP-4 | candidate_gap / candidate_disambiguate |
 | step5_refine | 细化 | SOP-5 | refine_effect / unknown_cluster |
 | step6_validate | 验证交付 | SOP-6 | label_confirm |
 | step7_diagnose | 诊断 | SOP-6 总检 | global_quality |
@@ -62,7 +62,7 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 ### 3.2 resolution_select(step1_prepare,SOP-1,session 级)
 - 何时:leiden_cluster 之后。
 - 看什么:`step1_prepare.leiden_cluster.resolution_cluster_counts`、`step1_prepare.choose_resolution.n_clusters_derivative`、`step1_prepare.choose_resolution.adjacent_ari`(dict:`{r1-r2: ARI}`)、`step1_prepare.choose_resolution.stability_at_chosen_resolution`。
-- 判断要点:簇数随分辨率进入平台期处即合理分辨率;平台不明显或与组织生物学预期冲突时,结合已知细胞类型数判断。`auto_knee_not_applicable=true` 表示无拐点、自动选了中间分辨率,此时应人工确认。
+- 判断要点:簇数随分辨率进入平台期处即合理分辨率;平台不明显或与组织生物学预期冲突时,结合已知细胞类型数判断。`step1_prepare__run` / `recluster` **必须**带显式 `--target-resolution`（由本决策点写出），脚本不再 knee 静默选定。
 - decision 枚举:`resolution_chosen`
 
 ### 3.3 clustering_quality(step1_prepare,SOP-1,session 级)
@@ -96,21 +96,21 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
 - decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
 
-### 3.8 candidate_gap(step4_judge,SOP-4,cluster 级)
+### 3.8 candidate_gap(step4_rank,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
 - 看什么(canonical path,Story 6.10):
-  - `step4_judge.rank_candidates.cluster{N}.first_count` / `.second_count` / `.count_ratio` / `.count_diff`
-  - `step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`
-  - `step4_judge.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`
-  - `step4_judge.rank_candidates.cluster{N}.first_supporting_markers` / `.second_supporting_markers`(list,取前 5 个)
-  - `step4_judge.rank_candidates.cluster{N}.first_candidate.cell_type` / `.second_candidate.cell_type`
+  - `step4_rank.rank_candidates.cluster{N}.first_count` / `.second_count` / `.count_ratio` / `.count_diff`
+  - `step4_rank.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`
+  - `step4_rank.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`
+  - `step4_rank.rank_candidates.cluster{N}.first_supporting_markers` / `.second_supporting_markers`(list,取前 5 个)
+  - `step4_rank.rank_candidates.cluster{N}.first_candidate.cell_type` / `.second_candidate.cell_type`
   - 候选 `organ_status` / `organ` / `marker_count`
 - 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**top 候选已按 organ 优先级排序,无需手动排除 mismatch**;`unknown` 候选不参与 gap 比较。
 - decision 枚举:`first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown`
 
-### 3.9 candidate_disambiguate(step4_judge,SOP-4,cluster 级,仅并列簇)
+### 3.9 candidate_disambiguate(step4_rank,SOP-4,cluster 级,仅并列簇)
 - 何时:rank_candidates 之后,且第一/第二候选并列。
-- 看什么(canonical path,Story 6.10):`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_judge.rank_candidates.cluster{N}.first_second_ancestor_overlap.n_shared_ancestors` / `.shared_ancestors`、`step4_judge.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`、`step4_judge.rank_candidates.cluster{N}.n_tied_at_first`。
+- 看什么(canonical path,Story 6.10):`step4_rank.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_rank.rank_candidates.cluster{N}.first_second_ancestor_overlap.n_shared_ancestors` / `.shared_ancestors`、`step4_rank.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`、`step4_rank.rank_candidates.cluster{N}.n_tied_at_first`。
 - 判断要点:并列时判断两个候选是同义词、父子类还是真模糊。KG 本体给出的 ancestor 关系是直接证据;本体无记录时可用生物学知识判断,并注明依据来源。
 - decision 枚举:`ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true`
 
@@ -227,6 +227,8 @@ write_judgment__add(project_dir="<project-dir>", decision_point="clustering_qual
 - `run_ref`:取最近一次相关 exec 记录 stdout 输出的 run_id,重跑同一操作会递增 `#2`…
 - `inputs`:填你实际读取并用于判断的指标变量(path/value 快照)
 - 返回的 `data.seq` 可确认记录已追加;decision 必须在对应枚举内,否则工具报错
+- **`output.action` 不会被 loop 执行**:写 judgment 只留痕。要真正重跑/换参/细化,必须再调用对应工具(如 `step1_prepare__recluster`、带新参的 `step2_markers__run`、带 `--clusters` 的 `step5_refine__run`)。
+- **重试上限**:同一 `{step}.{op}` 最多 `#1` + 5 次重试(`#2`–`#6`)。第 7 次调用同一工具会返回 error、不写 exec。若已有成功测量但仍不满意,写一条 judgment:`decision` 用该点的 accept 枚举(如 `clustering_accept`),`action=cap_exhausted_proceed`,然后继续 SOP,不要再调同一工具。
 
 ### session_end(会话结束)
 
@@ -249,7 +251,7 @@ write_judgment__session-end(project_dir="<project-dir>",
 | `step2_markers__run` | DE 排序 + pct1/pct2 + marker 过滤 + 稀有簇 pseudobulk | 1× proc |
 | `step3_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 |
 | `step3_kg__test-connection` | 检查 Neo4j 连通性 | 0 |
-| `step4_judge__run` | first/second 候选排名与差距 | 0 |
+| `step4_rank__run` | first/second 候选排名与差距 | 0 |
 | `step5_refine__run` | 模糊簇:自相关预判 → 子聚类 → 子簇 DE/KG → 重叠检查 | 1× proc |
 | `step6_validate__run` | top-marker 表达验证 + 最终注释 | 1× proc(backed 可选) |
 | `step6_validate__report` | 生成人类可读报告 | 0 |
@@ -259,6 +261,7 @@ write_judgment__session-end(project_dir="<project-dir>",
 | `write_judgment__session-end` | 追加 session_end 记录(会话结束,含 final_summary) | 0 |
 
 使用注意:
+- 本 loop **没有读本地文件 / references 的工具**。不要尝试打开 `qc_metrics.json`、`run_log.jsonl` 或 `references/`。判断只依据工具返回的 JSON（`data` 字段）。`step1_prepare__metrics` 的 `data.distributions` 即 QC 分布；`step1_prepare__run` 的 `data.judge_view` 含聚类/批次指标。
 - step3_kg__query 的参数分两类：**任务类（生物决策）** `organ`（必填）`species` `species-type` `strict-organ` LLM 可传；**环境类** `min-confidence` `max-ancestor-hops` + Neo4j 凭据（LLM 不可见，隐藏在 schema 中，默认从代码常量回落），运维可以在 CLI 临时覆盖。
 - Neo4j 连接（`NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`）在 `skills/cell-annotation/.env` 里。运行前需要 `cp skills/cell-annotation/.env.example skills/cell-annotation/.env` 并填 `NEO4J_PASSWORD`。
 - **基因 ID 不做映射**：step3_kg 用 `adata.var_names` 原样查询 KG。若 h5ad 使用 TAIR locus 而 KG 存 symbol,需在进入 pipeline 前完成转换(不属于 skill 责任)。

@@ -50,7 +50,7 @@
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | `pre_filter_distributions` (percentiles + histogram per QC var) | 过滤前的分布 | 检查 `pct_counts_mt.percentiles.p99` 是否远高于 p90(长尾→截尾);检查 `n_genes_by_counts.histogram.counts` 是否双峰(双峰→阈值设在谷底) |
+| `[核心]` | `pre_filter_distributions` (percentiles + histogram per QC var) | 过滤前的分布 | 检查 `pct_counts_mt.percentiles.p99` 是否远高于 p90(长尾→截尾);检查 `n_genes_by_counts.histogram`(20 个等宽箱计数,与 percentiles 同级;边界由 min/max 还原)是否双峰(双峰→阈值设在谷底) |
 | `[扩展]` | `post_filter_distributions` | 过滤后的分布 | 与 pre_filter 对比,看过滤是否真改变了分布 |
 | `[扩展]` | `distribution_diff` (Δmedian, ΔIQR, Δskewness) | 过滤前后偏移 | Δ 大→过滤有效;Δ≈0→过滤没改变分布(阈值没切到东西) |
 | `[核心]` | bimodality_coefficient per QC var | 双峰系数 | >0.555→该变量分布双峰,过滤阈值要设在谷底 |

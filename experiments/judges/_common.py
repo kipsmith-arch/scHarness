@@ -1,29 +1,18 @@
-"""B1 judges — produce per-cluster annotations + write judgment records.
+"""Judge protocol helpers for B1 scripted arms.
 
-Each judge is invoked *after* ``experiments/scripted_driver.py`` has produced
-the per-step JSON artifacts (markers.json, kg_hits.json, refined_annotations.json,
-final_annotations.json from step6 default). The judge then:
+Protocol::
 
-1. Reads ``run_log.jsonl`` for the relevant exec metrics (cluster-level per dp)
-2. Decides, per cluster, what the label / confidence / status *should be* given
-   the arm's policy (default vs. rule)
-3. Writes per-cluster ``write_judgment__add`` records to run_log (trajectory)
-4. Rewrites ``step6_validate/final_annotations.json`` so that the *effective*
-   annotation differs across arms (this is what ``evaluate_cell_level.py``
-   compares — not the judgment records themselves).
+    decide(dp, exec_record, history, *, scope=None, project_dir=None) -> dict
+    commit_labels(project_dir, history) -> None   # materialise judgment labels only
 
-Shared helpers live here; the two arms (default, rule) are thin policy layers.
+Judges never rewrite measurements. ``commit_labels`` only patches
+label / confidence / status onto ``final_annotations.json``.
 """
 from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 from typing import Any
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_SCRIPTS = os.path.normpath(os.path.join(_HERE, "..", "..", "skills", "cell-annotation", "scripts"))
 
 
 def read_json(path: str) -> Any:
@@ -40,7 +29,6 @@ def write_json(path: str, obj: Any) -> None:
 
 
 def load_run_log(project_dir: str) -> list[dict]:
-    """Parse ``run_log.jsonl`` into a list of records (skip blank lines)."""
     path = os.path.join(project_dir, "run_log.jsonl")
     if not os.path.exists(path):
         return []
@@ -57,67 +45,55 @@ def load_run_log(project_dir: str) -> list[dict]:
     return out
 
 
-def latest_exec_metrics(run_log: list[dict], step_op: str) -> dict | None:
-    """Highest-seq exec record's metrics for ``{step}.{op}#*``."""
+def latest_exec_record(run_log: list[dict], step_op: str) -> dict | None:
     prefix = f"{step_op}#"
     best = None
     for r in run_log:
         if r.get("type") == "exec" and r.get("run_id", "").startswith(prefix):
             if best is None or r.get("seq", 0) > best.get("seq", 0):
                 best = r
-    return best["metrics"] if best else None
+    return best
 
 
-def write_judgment(project_dir: str, decision_point: str, decision: str,
-                   scope_type: str, cluster_id: str | None,
-                   run_ref: str, reasoning: str, confidence: str = "high",
-                   action: str = "") -> dict:
-    """Invoke ``write_judgment.py add`` as the LLM/tool would. Returns the parsed status line."""
-    cmd = [
-        sys.executable, os.path.join(SKILL_SCRIPTS, "write_judgment.py"),
-        "add",
-        "--project-dir", project_dir,
-        "--decision-point", decision_point,
-        "--decision", decision,
-        "--scope-type", scope_type,
-        "--run-ref", run_ref,
-        "--inputs", "[]",
-        "--confidence", confidence,
-        "--action", action or f"arm-policy: {decision}",
-        "--reasoning", reasoning,
-    ]
-    if cluster_id is not None:
-        cmd += ["--cluster-id", str(cluster_id)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    last = (proc.stdout or "").strip().splitlines()[-1] if proc.stdout else ""
-    try:
-        return json.loads(last)
-    except json.JSONDecodeError:
-        return {"status": "error", "returncode": proc.returncode, "stdout_tail": last,
-                "stderr_tail": (proc.stderr or "").strip().splitlines()[-1] if proc.stderr else ""}
+def latest_exec_metrics(run_log: list[dict], step_op: str) -> dict | None:
+    rec = latest_exec_record(run_log, step_op)
+    return rec["metrics"] if rec else None
 
 
-def rewrite_final_annotations(project_dir: str, per_cluster: dict[str, dict]) -> str:
-    """Replace final_annotations.json with arm-derived per-cluster labels.
+def rank_annotations(project_dir: str) -> dict[str, dict]:
+    payload = read_json(os.path.join(project_dir, "step4_rank", "annotations.json"))
+    if not payload:
+        return {}
+    return {str(c): v for c, v in payload.get("annotations", {}).items()}
 
-    ``per_cluster``: {cluster_id: {label, confidence, status, ...}}.
-    Returns the path written.
-    """
+
+def final_annotations_clusters(project_dir: str) -> dict[str, dict]:
+    payload = read_json(os.path.join(project_dir, "step6_validate", "final_annotations.json"))
+    if not payload:
+        return {}
+    return {str(c): v for c, v in payload.get("annotations", {}).items()}
+
+
+def refined_clusters(project_dir: str) -> dict[str, dict]:
+    payload = read_json(os.path.join(project_dir, "step5_refine", "refined_annotations.json"))
+    if not payload:
+        return {}
+    return {str(c): v for c, v in payload.get("clusters", {}).items()}
+
+
+def commit_label_patches(project_dir: str, patches: dict[str, dict]) -> str:
+    """Merge judge-written label/confidence/status into final_annotations.json."""
     final_path = os.path.join(project_dir, "step6_validate", "final_annotations.json")
     payload = read_json(final_path) or {"annotations": {}, "_summary": {}}
-    base_anns = {str(c): v for c, v in payload.get("annotations", {}).items()}
-    merged: dict[str, dict] = {}
-    for c, v in per_cluster.items():
-        key = str(c)
-        prev = base_anns.get(key, {"cluster_id": key})
-        merged[key] = {**prev, **v}
-    for c, v in base_anns.items():
-        if c not in merged:
-            merged[c] = v
-    payload["annotations"] = merged
-    n_clusters = len(payload["annotations"])
-    n_unknown = sum(1 for a in payload["annotations"].values() if a.get("status") == "unknown")
-    unique = sorted({a.get("label") for a in payload["annotations"].values() if a.get("label")})
+    base = {str(c): v for c, v in payload.get("annotations", {}).items()}
+    for cid, patch in patches.items():
+        key = str(cid)
+        prev = base.get(key, {"cluster_id": key})
+        base[key] = {**prev, **patch}
+    payload["annotations"] = base
+    n_clusters = len(base)
+    n_unknown = sum(1 for a in base.values() if a.get("status") == "unknown")
+    unique = sorted({a.get("label") for a in base.values() if a.get("label")})
     payload["_summary"] = {
         **payload.get("_summary", {}),
         "n_clusters": n_clusters,
@@ -129,33 +105,55 @@ def rewrite_final_annotations(project_dir: str, per_cluster: dict[str, dict]) ->
     return final_path
 
 
-def final_annotations_clusters(project_dir: str) -> dict[str, dict]:
-    """Return ``{cluster_id: annotation_entry}`` from final_annotations.json."""
-    payload = read_json(os.path.join(project_dir, "step6_validate", "final_annotations.json"))
-    if not payload:
-        return {}
-    return {str(c): v for c, v in payload.get("annotations", {}).items()}
+def cluster_entry(project_dir: str, cid: str) -> dict:
+    """Measurement view for one cluster: refine overlay, else rank, else final."""
+    cid = str(cid)
+    r = refined_clusters(project_dir).get(cid) or {}
+    a = rank_annotations(project_dir).get(cid) or {}
+    f = final_annotations_clusters(project_dir).get(cid) or {}
+    return {**a, **f, **r}
 
 
-def refined_clusters(project_dir: str) -> dict[str, dict]:
-    """Return ``{cluster_id: refined_entry}`` from refined_annotations.json."""
-    payload = read_json(os.path.join(project_dir, "step5_refine", "refined_annotations.json"))
-    if not payload:
-        return {}
-    return {str(c): v for c, v in payload.get("clusters", {}).items()}
+def materialize_llm_labels(project_dir: str) -> str:
+    """Write ③ label_confirm judgments onto final_annotations.json.
 
-
-def write_session_end(project_dir: str, summary: dict) -> dict:
-    """Append a session_end record so validate_log (e2e mode) is happy."""
-    cmd = [
-        sys.executable, os.path.join(SKILL_SCRIPTS, "write_judgment.py"),
-        "session-end",
-        "--project-dir", project_dir,
-        "--final-summary", json.dumps(summary, ensure_ascii=False),
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    last = (proc.stdout or "").strip().splitlines()[-1] if proc.stdout else ""
-    try:
-        return json.loads(last)
-    except json.JSONDecodeError:
-        return {"status": "error", "stdout_tail": last}
+    Loop does not execute ``output.action``; this is the ③ analog of
+    ``commit_labels``. Label text comes from the measurement first_candidate
+    (or unknown); confidence/status come from the latest label_confirm
+    judgment per cluster.
+    """
+    latest: dict[str, dict] = {}
+    for rec in load_run_log(project_dir):
+        if rec.get("type") != "judgment":
+            continue
+        if rec.get("decision_point") != "label_confirm":
+            continue
+        cid = str((rec.get("scope") or {}).get("cluster_id") or "")
+        if cid and cid != "_none":
+            latest[cid] = rec
+    if not latest:
+        raise SystemExit(
+            f"error: {project_dir} 没有 label_confirm judgment，无法把标签写入 final_annotations"
+        )
+    patches: dict[str, dict] = {}
+    for cid, rec in latest.items():
+        entry = cluster_entry(project_dir, cid)
+        out = rec.get("output") or {}
+        decision = out.get("decision")
+        conf = out.get("confidence") or "medium"
+        first = entry.get("first_candidate") or {}
+        if decision == "label_unknown" or not first.get("cell_type"):
+            patches[cid] = {
+                "label": "unknown", "confidence": "low", "status": "unknown",
+                "arm_decision_source": "llm",
+            }
+            continue
+        if decision == "label_downgraded":
+            conf = "low"
+        patches[cid] = {
+            "label": first["cell_type"],
+            "confidence": conf,
+            "status": "decisive",
+            "arm_decision_source": "llm",
+        }
+    return commit_label_patches(project_dir, patches)

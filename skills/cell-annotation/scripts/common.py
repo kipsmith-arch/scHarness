@@ -51,15 +51,33 @@ STEP_DIRS = {
     "step1_prepare": "step1_prepare",
     "step2_markers": "step2_markers",
     "step3_kg": "step3_kg",
-    "step4_judge": "step4_judge",
+    "step4_rank": "step4_rank",
     "step5_refine": "step5_refine",
     "step6_validate": "step6_validate",
     "step7_diagnose": "step7_diagnose",
 }
 
+# First attempt #1 + at most 5 retries #2–#6. #7 is refused (script + driver).
+MAX_ATTEMPT = 6
+
+
+class AttemptCapExceeded(RuntimeError):
+    """Raised when the next run_id would be #{7} or higher."""
+
+    def __init__(self, step: str, op: str, next_attempt: int):
+        self.step = step
+        self.op = op
+        self.next_attempt = next_attempt
+        super().__init__(
+            f"retry cap: {step}.{op} already has {MAX_ATTEMPT} attempts; "
+            f"refusing #{next_attempt}"
+        )
+
 
 def step_dir(project_dir: str, step: str) -> str:
     """Directory holding one step's data files (created on demand)."""
+    if step == "step4_judge":
+        raise ValueError("step4_judge 已改名为 step4_rank；拒绝读写 step4_judge/")
     d = os.path.join(project_dir, STEP_DIRS.get(step, step))
     os.makedirs(d, exist_ok=True)
     return d
@@ -173,6 +191,8 @@ def next_run_id(log_path: str, step: str, op: str) -> str:
                     except (ValueError, IndexError):
                         continue
     attempt = (max(attempts) + 1) if attempts else 1
+    if attempt > MAX_ATTEMPT:
+        raise AttemptCapExceeded(step, op, attempt)
     return f"{step}.{op}#{attempt}"
 
 
@@ -237,12 +257,31 @@ def _finite_or_none(x) -> Optional[float]:
     return f if np.isfinite(f) else None
 
 
+def _compact_float(x) -> Optional[float]:
+    """JSON-safe float with 6 significant figures (cuts run_log bulk)."""
+    f = _finite_or_none(x)
+    if f is None:
+        return None
+    return float(f"{f:.6g}")
+
+
+def histogram_bin_edges(dist: dict) -> Optional[np.ndarray]:
+    """Equal-width edges implied by min/max and len(histogram). None if unusable."""
+    counts = dist.get("histogram")
+    vmin, vmax = dist.get("min"), dist.get("max")
+    if not isinstance(counts, list) or len(counts) < 1:
+        return None
+    if vmin is None or vmax is None:
+        return None
+    return np.linspace(float(vmin), float(vmax), len(counts) + 1)
+
+
 def describe_distribution(values, n_bins: int = 20) -> Optional[dict]:
     """One-call distribution summary (tool_design.md §6.1).
 
-    mean/std/IQR/CV/skewness/kurtosis/bimodality_coefficient/percentiles/histogram.
-    Non-finite values (constant inputs -> NaN skew/kurtosis) are emitted as None
-    so the JSON stays strictly valid.
+    Shape fields sit together: percentiles (p1..p99) plus histogram (n_bins
+    equal-width counts from min to max). Edges are not stored — reconstruct
+    with ``histogram_bin_edges``. Floats are 6 significant figures.
     """
     values = np.asarray(values, dtype=float)
     values = values[~np.isnan(values)]
@@ -251,29 +290,26 @@ def describe_distribution(values, n_bins: int = 20) -> Optional[dict]:
     from scipy.stats import skew, kurtosis
 
     pct_keys = [1, 5, 10, 25, 50, 75, 90, 95, 99]
-    counts, edges = np.histogram(values, bins=n_bins)
+    counts, _edges = np.histogram(values, bins=n_bins)
     mean = float(values.mean())
     std = float(values.std())
     p25, p75 = np.percentile(values, [25, 75])
-    sk = _finite_or_none(skew(values))
-    kt = _finite_or_none(kurtosis(values))  # excess kurtosis
+    sk = _compact_float(skew(values))
+    kt = _compact_float(kurtosis(values))  # excess kurtosis
     bimod = ((sk ** 2) + 1) / (kt + 3) if (sk is not None and kt is not None and (kt + 3) > 0) else None
     return {
-        "min": _finite_or_none(values.min()),
-        "max": _finite_or_none(values.max()),
-        "mean": _finite_or_none(mean),
-        "std": _finite_or_none(std),
-        "median": _finite_or_none(np.median(values)),
-        "iqr": _finite_or_none(p75 - p25),
-        "cv": (_finite_or_none(std / mean) if mean != 0 else None),
+        "min": _compact_float(values.min()),
+        "max": _compact_float(values.max()),
+        "mean": _compact_float(mean),
+        "std": _compact_float(std),
+        "median": _compact_float(np.median(values)),
+        "iqr": _compact_float(p75 - p25),
+        "cv": _compact_float(std / mean) if mean != 0 else None,
         "skewness": sk,
         "kurtosis": kt,
-        "bimodality_coefficient": bimod,
-        "percentiles": {f"p{k}": _finite_or_none(np.percentile(values, k)) for k in pct_keys},
-        "histogram": {
-            "bin_edges": [float(e) for e in edges],
-            "counts": [int(c) for c in counts],
-        },
+        "bimodality_coefficient": _compact_float(bimod),
+        "percentiles": {f"p{k}": _compact_float(np.percentile(values, k)) for k in pct_keys},
+        "histogram": [int(c) for c in counts],
     }
 
 

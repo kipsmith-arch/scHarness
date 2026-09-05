@@ -19,7 +19,7 @@ LLM 调用方式:
 
 输入(每个 case):
     experiments/S1/case_{id}/metrics.json — case 决策点的指标快照
-        (聚合 step4_judge.annotations[case_cluster] + step5_refine.refined 字段)
+        (聚合 step4_rank.annotations[case_cluster] + step5_refine.refined 字段)
 
 输出:
     experiments/S1/case_{id}/llm_judgment.json

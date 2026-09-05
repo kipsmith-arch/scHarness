@@ -1,14 +1,8 @@
 """B1 cell-level evaluation — extends scripts/evaluate_annotations.py with confidence weighting.
 
 Why a new script (instead of editing the existing one):
-    The existing ``scripts/evaluate_annotations.py`` reads only ``label`` from
-    ``final_annotations.json``. With all three B1 arms returning the same
-    ``first_candidate.cell_type`` as label, accuracy is identical across
-    arms — yet the *judgment policy* of each arm differs (① default: 0 low,
-    ② rule: 31 low, ③ LLM: 10 low). B1 R1 needs the *confidence* dimension
-    to be factored in: a ``label_downgraded`` cluster's prediction should be
-    discounted (0.5 weight) and not count toward strict accuracy. That's the
-    whole point of having a judgment layer.
+    ``final_annotations.json`` 的 ``label`` / ``confidence`` / ``status`` 必须由判断层写入;
+    本脚本不再从 ``run_log`` 做第二套覆盖。缺这三项则非零退出。
 
 Cell-level semantics:
     strict_correct = (relation in {exact, synonym}) AND (confidence in {high, medium})
@@ -59,97 +53,29 @@ def load_obs_snapshot(path: str) -> dict[str, str]:
 
 
 def load_final_annotations(path: str) -> dict[str, dict]:
-    """leiden -> {label, confidence, status, ...} (preserves confidence/status)."""
+    """leiden -> {label, confidence, status, ...}. Requires judge-written fields."""
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
     ann = doc.get("annotations", doc)
     out: dict[str, dict] = {}
+    required = ("label", "confidence", "status")
     for k, v in ann.items():
-        if isinstance(v, dict):
-            out[str(k)] = v
-        else:
-            out[str(k)] = {"label": str(v), "confidence": "medium", "status": "decisive"}
-    return out
-
-
-def load_arm_judgment_confidence(run_log_path: str) -> dict[str, str]:
-    """Read arm's run_log and infer arm-specific per-cluster confidence from judgment.
-
-    Why: ``step6.write_final`` uses the deterministic ``_confidence_evidence``
-    formula — but B1 arms differ in *judgment policy*. For each cluster we
-    map the arm's most authoritative judgment to confidence:
-      - label_confirm == "label_downgraded" → "low"
-      - label_confirm == "label_unknown"   → "low" (also flips label to "unknown")
-      - label_confirm == "label_confirmed" → trust the deterministic formula
-      - no label_confirm judgment            → trust the deterministic formula
-
-    Returns ``{cluster_id: confidence_override}``. Empty dict if run_log absent.
-    """
-    if not run_log_path or not os.path.exists(run_log_path):
-        return {}
-    overrides: dict[str, str] = {}
-    with open(run_log_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if r.get("type") != "judgment" or r.get("decision_point") != "label_confirm":
-                continue
-            scope = r.get("scope") or {}
-            cid = str(scope.get("cluster_id") or "")
-            if not cid:
-                continue
-            decision = (r.get("output") or {}).get("decision")
-            if decision == "label_downgraded":
-                overrides[cid] = "low"
-            elif decision == "label_unknown":
-                overrides[cid] = "low"
-            elif decision == "label_confirmed":
-                # B1: arm-specific label_confirm overrides step6's deterministic
-                # _confidence_evidence formula. Without this override, ③ LLM
-                # arm would be indistinguishable from ② rule arm because both
-                # inherit step6's evidence-based confidence for confirmed
-                # clusters.
-                overrides[cid] = "high"
-            # label_confirmed → "high" override; rule-based confidence reweighting
-            # (high/medium based on count_ratio) is left to step6's formula.
-    return overrides
-
-
-def load_arm_unknown_label(run_log_path: str) -> set[str]:
-    """Read run_log; return cluster_ids whose final annotation should be 'unknown'.
-
-    A cluster is forced to "unknown" when its label_confirm judgment was
-    "label_unknown" or when any judgment marked it as no-candidate upstream.
-    """
-    if not run_log_path or not os.path.exists(run_log_path):
-        return set()
-    out: set[str] = set()
-    with open(run_log_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if r.get("type") != "judgment":
-                continue
-            dp = r.get("decision_point")
-            decision = (r.get("output") or {}).get("decision")
-            scope = r.get("scope") or {}
-            cid = str(scope.get("cluster_id") or "")
-            if not cid:
-                continue
-            if dp == "label_confirm" and decision == "label_unknown":
-                out.add(cid)
-            if dp == "candidate_gap" and decision == "unknown":
-                out.add(cid)
+        if not isinstance(v, dict):
+            raise SystemExit(
+                f"error: {path} cluster {k} 缺少判断层写入的 label/confidence/status"
+                "（pipeline 不再写入这些字段）"
+            )
+        missing = [f for f in required if not v.get(f)]
+        if missing:
+            raise SystemExit(
+                f"error: {path} cluster {k} 缺少判断层写入的 {missing}"
+                "（pipeline 不再写入 label/confidence/status）"
+            )
+        out[str(k)] = v
+    if not out:
+        raise SystemExit(
+            f"error: {path} 没有任何带判断层 label/confidence/status 的簇"
+        )
     return out
 
 
@@ -179,9 +105,6 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
     """Return a per-arm evaluation report with confidence-weighted metrics."""
     obs = load_obs_snapshot(obs_path)
     ann = load_final_annotations(ann_path)
-    run_log_path = os.path.join(project_dir, "run_log.jsonl")
-    arm_conf_overrides = load_arm_judgment_confidence(run_log_path)
-    arm_unknown = load_arm_unknown_label(run_log_path)
 
     per_cell: list[dict] = []
     unmatched_terms: Counter = Counter()
@@ -196,14 +119,8 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
             raw, conf, status = "unknown", "low", "unknown"
         else:
             raw = ent.get("label") or "unknown"
-            # Apply arm-specific confidence override from run_log judgments.
-            conf = arm_conf_overrides.get(str(leiden), ent.get("confidence") or "medium")
-            if str(leiden) in arm_unknown:
-                raw = "unknown"
-                conf = "low"
-                status = "unknown"
-            else:
-                status = ent.get("status") or "decisive"
+            conf = ent.get("confidence") or "medium"
+            status = ent.get("status") or "decisive"
         hits = label_map.get(raw, []) if raw != "unknown" else []
         if not hits and raw != "unknown":
             unmatched_terms[raw] += 1

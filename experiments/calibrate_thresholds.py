@@ -9,7 +9,7 @@
     选最优组合 → 写到 rule_judge.py → 重跑 arm2 → 实测验证。
 
 数据源:
-    output/B1/arm3_llm/step4_judge/annotations.json    — first/second/gap
+    output/B1/arm3_llm/step4_rank/annotations.json    — first/second/gap
     output/B1/arm3_llm/step6_validate/final_annotations.json — top3_expression
     experiments/gt_cells.csv + label_map.json            — 真值
 
@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-DEFAULT_ANN = os.path.join(REPO_ROOT, "output", "B1", "arm3_llm", "step4_judge", "annotations.json")
+DEFAULT_ANN = os.path.join(REPO_ROOT, "output", "B1", "arm3_llm", "step4_rank", "annotations.json")
 DEFAULT_FINAL = os.path.join(REPO_ROOT, "output", "B1", "arm3_llm", "step6_validate", "final_annotations.json")
 DEFAULT_OBS = os.path.join(REPO_ROOT, "output", "B1", "arm3_llm", "step1_prepare", "obs_snapshot.csv")
 DEFAULT_GT = os.path.join(REPO_ROOT, "experiments", "gt_cells.csv")

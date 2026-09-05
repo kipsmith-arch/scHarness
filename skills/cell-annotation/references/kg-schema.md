@@ -76,7 +76,7 @@ The relationships:
 
 - `ancestors` map 形如 `{cell_type: [ancestor_name, ...]}`(≤3 跳)。
 - **空列表不代表该类型没有祖先,只是 KG 本体没收录**——此时父子/同义判断要靠生物学知识,并注明依据来源。
-- `step4_judge` 的 `first_second_ancestor_overlap` 直接基于它:两个候选存在父子关系时,并列是层级而非模糊(见 traps.md 陷阱 2)。
+- `step4_rank` 的 `first_second_ancestor_overlap` 直接基于它:两个候选存在父子关系时,并列是层级而非模糊(见 traps.md 陷阱 2)。
 - 例:"lateral root cap" 的 ancestors 含 "root cap" → 并列时选更具体的 "lateral root cap"。
 
 ## 物种过滤与命名(重要)

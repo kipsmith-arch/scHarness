@@ -52,18 +52,18 @@
 ### folded 核心子集(83 个)的构成
 
 最高频引用前 10 个 path(folded):
-1. `step4_judge.rank_candidates.<CLUSTER_ID>.first.cell_type`(14+ 次)
-2. `step4_judge.rank_candidates.<CLUSTER_ID>.first_count`(10+ 次)
-3. `step4_judge.rank_candidates.<CLUSTER_ID>.second_count`(8+ 次)
-4. `step4_judge.rank_candidates.<CLUSTER_ID>.second.cell_type`
-5. `step4_judge.rank_candidates.<CLUSTER_ID>.count_diff`
-6. `step4_judge.rank_candidates.<CLUSTER_ID>.first_second_ancestor_overlap.related`
-7. `step4_judge.<CLUSTER_ID>.first`(legacy / parallel schema)
-8. `step4_judge.rank_candidates.<CLUSTER_ID>.first.mean_confidence`
-9. `step4_judge.<CLUSTER_ID>.second`(legacy / parallel schema)
-10. `step4_judge.<CLUSTER_ID>.gap.count_diff`
+1. `step4_rank.rank_candidates.<CLUSTER_ID>.first.cell_type`(14+ 次)
+2. `step4_rank.rank_candidates.<CLUSTER_ID>.first_count`(10+ 次)
+3. `step4_rank.rank_candidates.<CLUSTER_ID>.second_count`(8+ 次)
+4. `step4_rank.rank_candidates.<CLUSTER_ID>.second.cell_type`
+5. `step4_rank.rank_candidates.<CLUSTER_ID>.count_diff`
+6. `step4_rank.rank_candidates.<CLUSTER_ID>.first_second_ancestor_overlap.related`
+7. `step4_rank.<CLUSTER_ID>.first`(legacy / parallel schema)
+8. `step4_rank.rank_candidates.<CLUSTER_ID>.first.mean_confidence`
+9. `step4_rank.<CLUSTER_ID>.second`(legacy / parallel schema)
+10. `step4_rank.<CLUSTER_ID>.gap.count_diff`
 
-观察:**`step4_judge.<CLUSTER_ID>.first` 与 `step4_judge.rank_candidates.<CLUSTER_ID>.first.cell_type` 是两条 schema 不同的路径引用同一个逻辑量**(簇 0..N 的 first 候选)。这种 schema 冗余是当前 folded 子集 83 > 60 的主要原因。
+观察:**`step4_rank.<CLUSTER_ID>.first` 与 `step4_rank.rank_candidates.<CLUSTER_ID>.first.cell_type` 是两条 schema 不同的路径引用同一个逻辑量**(簇 0..N 的 first 候选)。这种 schema 冗余是当前 folded 子集 83 > 60 的主要原因。
 
 ## 3. 判定线对照
 
@@ -78,7 +78,7 @@
 ## 4. 已知局限
 
 1. **判定线对照口径选择**:实验设计 §3.3 没有显式定义 "core subset" 是否折叠 cluster_id;我们采用 folded 口径(主判定线)+ raw 口径(诊断)并列报告。若改判定线为 raw 口径,结果为 276,远超 60,判定线失去意义 — 说明折叠是必需的口径,但即便折叠仍未通过。
-2. **schema 冗余问题**:folded 83 中约 15-20 个 paths 是同一逻辑量的多条 schema(`step4_judge.<CLUSTER_ID>.first` vs `step4_judge.rank_candidates.<CLUSTER_ID>.first.cell_type` 等)。这是 Epic 7 SKILL.md 精简的**真实可改进点**。
+2. **schema 冗余问题**:folded 83 中约 15-20 个 paths 是同一逻辑量的多条 schema(`step4_rank.<CLUSTER_ID>.first` vs `step4_rank.rank_candidates.<CLUSTER_ID>.first.cell_type` 等)。这是 Epic 7 SKILL.md 精简的**真实可改进点**。
 3. **样本规模有限**:319 judgments 全部来自同一 dataset(Arabidopsis root);跨数据集(Story 7.6 X-8)可能引用分布有偏移。
 4. **N1_on 与 p5_r2 的引用分布与 arm3_llm 一致**:同 skill 跨多个 session 的引用结构稳定 — 跨决策点引用结构可作 skill 的"指纹",不应跨数据集失效。
 

@@ -1,3 +1,10 @@
+# deferred-work
+
+本文件只收 **非阻塞、暂不排期** 的遗留（跨器官字符串、覆盖率校验等）。
+**下一步要做的实验/计分改动不写这里。** B1_r3 之后的主动规划见
+`_bmad-output/implementation-artifacts/b1-r3-followup.md`
+（pseudobulk 触发条件重设计；strict 与 confidence 拆开）。
+
 - source_spec: `_bmad-output/implementation-artifacts/spec-p2-pipeline-scripts.md`
   summary: run_log.jsonl 追加无并发锁(seq 计数与追加非原子),并发进程会冲突
   evidence: common.append_log 先整文件数行再追加;P6 阶段若并行跑多个 session 写同一 run_log 需加锁或按目录隔离
@@ -67,3 +74,13 @@
   evidence: 评审发现;代码 category 名为历史遗留(语义=匹配 target);可通过将 category 名改为 "match/partial/unknown/mismatch"(rename)解决,影响所有 kg_hits.json 输出
   status: deferred
   next_action: 仅在确定输出兼容策略后再重命名,并同步 SKILL、脚本和产物 schema
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-measure-judge-decouple.md`
+  summary: 失败的 retry 仍会覆盖 processed.h5ad / JSON 产物（脚本先写盘再返回 error），log 层保留上一 ok exec，文件层无快照回滚
+  evidence: ARM2_RETRY 要求「脚本非零 → 当前产物仍是上一 ok」；GB 级 h5ad 快照不在本轮任务表，且会破坏一子命令一次加载。walker 已在 dispatch status!=ok 时不更新 last_ok。
+- source_spec: `_bmad-output/implementation-artifacts/spec-measure-judge-decouple.md`
+  summary: qc_threshold / de_method 的 judgment 尚未映射到 step1/step2 CLI 阈值与 DE 方法参数（仅 resolution_select 已显式传 --target-resolution）
+  evidence: A 组「先判再首次跑」对分辨率已落地；其余枚举→argparse 对照表未写入 frozen spec，需单独故事补参数绑定。
+- source_spec: `_bmad-output/implementation-artifacts/spec-measure-judge-decouple.md`
+  summary: pipeline exec_record 不写 status=ok 字段，失败 attempt 若已落盘 exec 无法从 log 区分于成功 exec
+  evidence: 预存在于 common.exec_record；本轮 walker 改以 dispatcher 返回的 status==ok 为准。若要 log 层 last-ok，需给 exec 补 status。

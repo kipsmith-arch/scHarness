@@ -10,6 +10,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -221,15 +222,6 @@ def op_global_summary(refined, expr, annotations, markers_json, log_path, params
     return m
 
 
-def _confidence_evidence(first_count, count_ratio):
-    """Transparent, evidence-only confidence (LLM judgment may override later)."""
-    if first_count and first_count > 15 and (count_ratio or 0) >= 2.0:
-        return "high"
-    if first_count and (count_ratio or 0) >= 1.5:
-        return "medium"
-    return "low"
-
-
 def op_write_report(report_path, final, log_path, params) -> dict:
     lines = [
         "# 细胞类型注释报告",
@@ -241,7 +233,9 @@ def op_write_report(report_path, final, log_path, params) -> dict:
     ]
     for c in sorted(final["annotations"], key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x))):
         a = final["annotations"][c]
-        lines.append(f"## 簇 {c} — {a['label']}(置信度 {a['confidence']})")
+        label = a.get("label") or "(judgment pending)"
+        confidence = a.get("confidence") or "n/a"
+        lines.append(f"## 簇 {c} — {label}(置信度 {confidence})")
         if a.get("first_candidate"):
             lines.append(f"- first: {a['first_candidate']['cell_type']} (marker_count={a['first_count']}, "
                          f"conf={a['first_candidate'].get('mean_confidence')})")
@@ -275,6 +269,22 @@ def op_write_final(out_dir, log_path, params, payload) -> dict:
     return m
 
 
+def _refined_from_rank(ann_payload: dict) -> dict:
+    """Passthrough when step5 was skipped: measurement fields only, no labels."""
+    clusters = {}
+    for c, a in (ann_payload.get("annotations") or {}).items():
+        clusters[c] = {
+            "status": "unknown" if a.get("status") == "no_candidates" else "passthrough",
+            "first_candidate": a.get("first_candidate"),
+            "second_candidate": a.get("second_candidate"),
+            "first_count": a.get("first_count"),
+            "second_count": a.get("second_count"),
+            "gap_metrics": a.get("gap_metrics"),
+        }
+    return {"clusters": clusters, "counts": {"n_passthrough": len(clusters)},
+            "meta": {"source": "step4_rank_passthrough"}}
+
+
 def cmd_run(args) -> dict:
     out_dir = common.step_dir(args.project_dir, "step6_validate")
     figures_dir = os.path.join(out_dir, "figures")
@@ -288,10 +298,33 @@ def cmd_run(args) -> dict:
                                             "markers.json"))
     kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
                                        "kg_hits.json"))
-    annotations = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_judge"),
+    annotations = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                                 "annotations.json"))
-    if not refined or not markers:
-        return common.fail("缺少 refined_annotations.json 或 markers.json(先运行 step5/step2)")
+    log_records = []
+    log_path = common.run_log_path(args.project_dir)
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    log_records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    has_step5_exec = any(
+        r.get("type") == "exec" and str(r.get("run_id", "")).startswith("step5_refine.")
+        for r in log_records
+    )
+    if not markers:
+        return common.fail("缺少 markers.json(先运行 step2_markers run)")
+    if has_step5_exec:
+        if not isinstance(refined, dict) or "clusters" not in refined:
+            return common.fail("step5 已执行但缺少 refined_annotations.json 的 clusters")
+    else:
+        if not annotations:
+            return common.fail("缺少 step4_rank/annotations.json（step5 未跑，无法 passthrough）")
+        refined = _refined_from_rank(annotations)
     if not os.path.exists(h5ad):
         return common.fail(f"processed.h5ad 不存在:{h5ad}")
 
@@ -327,11 +360,8 @@ def cmd_run(args) -> dict:
     for c, r in refined["clusters"].items():
         first = r.get("first_candidate") or {}
         second = r.get("second_candidate")
-        label = first.get("cell_type") if r["status"] != "unknown" and first else "unknown"
         gap = r.get("gap_metrics") or {}
         annotations_out[c] = {
-            "label": label,
-            "confidence": _confidence_evidence(r.get("first_count"), gap.get("count_ratio")),
             "status": r["status"],
             "first_candidate": first if r["status"] != "unknown" and first else None,
             "second_candidate": second,
@@ -368,8 +398,6 @@ def cmd_run(args) -> dict:
             "scanpy_version": _scanpy_version,
             "dataset_id": os.path.basename(h5ad).replace(".h5ad", ""),
             "thresholds": {"top_n_markers": args.top_n_markers},
-            "confidence_rule": "evidence-based: high if first_count>15 and count_ratio>=2; "
-                               "medium if count_ratio>=1.5; else low (LLM may override)",
         },
     }
     op_write_report(os.path.join(out_dir, "report.md"), payload, log, p)

@@ -38,6 +38,13 @@ def test_subprocess_ok(echo_runtime, state):
     assert result == {"status": "ok", "data": {"text": "HIHI", "input": "hi", "times": 2}}
 
 
+def test_subprocess_drops_unknown_args(echo_runtime, state):
+    spec = echo_runtime["echo__repeat"]
+    result = dispatch(spec, {"text": "hi", "organ": "root", "times": 1}, state)
+    assert result["status"] == "ok"
+    assert result["data"]["text"] == "hi"
+
+
 def test_subprocess_boolean_flag_omitted(echo_runtime, state):
     spec = echo_runtime["echo__repeat"]
     result = dispatch(spec, {"text": "hi", "upper": False}, state)

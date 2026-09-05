@@ -277,6 +277,7 @@ def load_skill(skill_dir) -> Skill:
                 "type": "subprocess",
                 "script": str(script),
                 "subcommand": subcommand,
+                "arg_names": [a["name"] for a in (tool.get("args") or []) if a.get("name")],
             }
     if errors:
         raise SkillError(

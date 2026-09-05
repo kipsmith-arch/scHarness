@@ -494,6 +494,8 @@ def cmd_query(args) -> dict:
             "kg_date": conn.get("kg_date"),
             "kg_provenance": conn.get("kg_provenance", {}),
             "query_config": config,
+            "sort_keys": ["organ_status_priority", "marker_count", "mean_confidence"],
+            "sort_note": "candidates[] is ordered by measurement keys; the judgment layer picks the winner — do not treat candidates[0] as a decided label",
             "gene_to_cts": gene_to_cts,
             "ancestors": ancestors,
             "query_stats": qstats,

@@ -5,10 +5,9 @@ Subcommand:
             -> marker_overlap -> type_membership -> unknown_overlap
             -> write_refined. [1× proc h5ad load]
 
-Ambiguous clusters (first_count <= second_count) are sub-clustered (definitional
-trigger, SOP-5A: <min_cells cells -> skipped). The candidate_autocorr metrics
-are reported so the LLM can judge whether refinement was worthwhile — the
-decision itself stays out of the code.
+Ambiguous clusters listed by the judgment layer (``--clusters``) are
+sub-clustered (SOP-5A: <min_cells cells -> skipped). Pipeline never infers
+the list from first/second counts.
 """
 
 from __future__ import annotations
@@ -32,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dump-schema", action="store_true", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="subcommand")
     p_run = sub.add_parser("run", help="candidate_autocorr~write_refined(1× proc 加载)")
+    p_run.add_argument("--clusters", default=None,
+                      help="判断层给出的待细化簇 id(逗号分隔);缺省拒绝全量自路由")
     p_run.add_argument("--subcluster-resolution", type=float, default=0.5, help="子聚类分辨率")
     p_run.add_argument("--min-cells", type=int, default=100, help="可细分的最小父簇细胞数(SOP-5A)")
     p_run.add_argument("--subcluster-n-pcs", type=int, default=15, help="子聚类 PCA 主成分数")
@@ -100,18 +101,27 @@ def _sub_de_markers(sub, n_genes, top_n, min_pct1, max_pct1, min_diff):
     return sub_markers
 
 
+def _parse_clusters(raw) -> list:
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(x) for x in raw if str(x).strip()]
+    return [p.strip() for p in str(raw).split(",") if p.strip()]
+
+
 def op_candidate_autocorr(adata, annotations, kg_hits, log_path, params, n_neighbors,
-                          n_pcs, min_cells) -> dict:
-    """Score-genes + Moran's I for every ambiguous cluster (pre-judge)."""
+                          n_pcs, min_cells, target_ids=None) -> dict:
+    """Score-genes + Moran's I for judgment-selected clusters."""
     import scanpy as sc
 
+    target_ids = set(str(c) for c in target_ids) if target_ids is not None else None
     results = {}
     for c, a in annotations.items():
-        if a.get("status") != "has_candidates":
-            results[c] = {"status": "not_ambiguous"}
+        if target_ids is not None and str(c) not in target_ids:
+            results[c] = {"status": "not_selected"}
             continue
-        if a["first_count"] > a["second_count"]:
-            results[c] = {"status": "decisive"}
+        if a.get("status") != "has_candidates":
+            results[c] = {"status": "no_candidates"}
             continue
         c1 = a.get("first_supporting_markers") or []
         c2 = a.get("second_supporting_markers") or []
@@ -137,11 +147,15 @@ def op_candidate_autocorr(adata, annotations, kg_hits, log_path, params, n_neigh
     return results
 
 
-def op_subcluster(adata, annotations, log_path, params, res, min_cells, n_pcs, n_neighbors) -> dict:
+def op_subcluster(adata, annotations, log_path, params, res, min_cells, n_pcs, n_neighbors,
+                  target_ids=None) -> dict:
+    target_ids = set(str(c) for c in target_ids) if target_ids is not None else None
     subs = {}
     outcomes = {}
     for c, a in annotations.items():
-        if a.get("status") != "has_candidates" or a["first_count"] > a["second_count"]:
+        if target_ids is not None and str(c) not in target_ids:
+            continue
+        if a.get("status") != "has_candidates":
             continue
         mask = adata.obs["leiden"].astype(str).values == c
         n_cells = int(mask.sum())
@@ -287,16 +301,22 @@ def cmd_run(args) -> dict:
     log = common.run_log_path(args.project_dir)
     h5ad = args.input or os.path.join(common.step_dir(args.project_dir, "step1_prepare"),
                                       "processed.h5ad")
-    ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_judge"),
+    ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                         "annotations.json"))
     kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
                                        "kg_hits.json"))
     markers = common.read_json(os.path.join(common.step_dir(args.project_dir, "step2_markers"),
                                             "markers.json"))
     if not ann or "annotations" not in ann:
-        return common.fail("缺少 step4_judge/annotations.json,请先运行 step4_judge run")
+        return common.fail("缺少 step4_rank/annotations.json,请先运行 step4_rank run")
     if not kg or not markers:
         return common.fail("缺少 step3_kg/kg_hits.json 或 step2_markers/markers.json")
+    target_ids = _parse_clusters(getattr(args, "clusters", None))
+    if not target_ids:
+        return common.fail("step5_refine 需要判断层给出的 --clusters，拒绝全量自路由")
+    unknown = [c for c in target_ids if c not in ann["annotations"]]
+    if unknown:
+        return common.fail(f"--clusters 含 annotations 中不存在的簇: {unknown}")
     if not os.path.exists(h5ad):
         return common.fail(f"processed.h5ad 不存在:{h5ad}")
     # Target organ fail-fast:在 h5ad 加载前检查 kg_hits.json 的 query_config.organ,
@@ -315,7 +335,8 @@ def cmd_run(args) -> dict:
          "subcluster_n_neighbors": args.subcluster_n_neighbors,
          "sub_de_n_genes": args.sub_de_n_genes, "sub_top_n": args.sub_top_n,
          "min_pct1": args.min_pct1, "max_pct1": args.max_pct1,
-         "min_pct1_pct2": args.min_pct1_pct2}
+         "min_pct1_pct2": args.min_pct1_pct2,
+         "clusters": ",".join(target_ids)}
     err = common.check_positive(args, ["min_cells", "subcluster_n_pcs",
                                        "subcluster_n_neighbors", "sub_de_n_genes",
                                        "sub_top_n"], "int")
@@ -326,10 +347,10 @@ def cmd_run(args) -> dict:
 
     autocorr = op_candidate_autocorr(adata, annotations, kg, log, p,
                                      args.subcluster_n_neighbors, args.subcluster_n_pcs,
-                                     args.min_cells)
+                                     args.min_cells, target_ids)
     subs, outcomes = op_subcluster(adata, annotations, log, p, args.subcluster_resolution,
                                    args.min_cells, args.subcluster_n_pcs,
-                                   args.subcluster_n_neighbors)
+                                   args.subcluster_n_neighbors, target_ids)
     sub_markers = op_subcluster_de(subs, log, p, args.sub_de_n_genes, args.sub_top_n,
                                    args.min_pct1, args.max_pct1, args.min_pct1_pct2)
     gene_to_cts = kg.get("gene_to_cts", {})
@@ -341,10 +362,11 @@ def cmd_run(args) -> dict:
 
     # assemble refined annotations
     clusters = {}
-    counts = {"n_decisive": 0, "n_analyzed": 0, "n_skipped": 0, "n_unknown": 0}
+    counts = {"n_passthrough": 0, "n_analyzed": 0, "n_skipped": 0, "n_unknown": 0}
+    target_set = set(str(c) for c in target_ids)
     for c, a in annotations.items():
         entry = {
-            "status": "unknown" if a.get("status") == "no_candidates" else "decisive",
+            "status": "unknown" if a.get("status") == "no_candidates" else "passthrough",
             "first_candidate": a.get("first_candidate"),
             "second_candidate": a.get("second_candidate"),
             "first_count": a.get("first_count"),
@@ -354,26 +376,25 @@ def cmd_run(args) -> dict:
         }
         if a.get("status") == "no_candidates":
             counts["n_unknown"] += 1
+        elif str(c) not in target_set:
+            counts["n_passthrough"] += 1
         else:
-            if a["first_count"] > a["second_count"]:
-                counts["n_decisive"] += 1
+            outcome = outcomes.get(c, {}).get("outcome")
+            entry["status"] = "analyzed" if outcome in ("analyzed", "analyzed_nosplit") else "skipped"
+            entry["subcluster"] = {
+                "outcome": outcome,
+                "reason": outcomes.get(c, {}).get("reason"),
+                "n_subclusters": outcomes.get(c, {}).get("n_subclusters"),
+                "sub_cluster_sizes": outcomes.get(c, {}).get("sub_cluster_sizes"),
+                "sub_markers": sub_markers.get(c),
+                "sub_results": sub_results.get(c),
+                "overlap_metrics": overlap.get(c),
+                "type_membership": {k: v for k, v in membership.items() if k.startswith(f"{c}.")},
+            }
+            if entry["status"] == "analyzed":
+                counts["n_analyzed"] += 1
             else:
-                outcome = outcomes.get(c, {}).get("outcome")
-                entry["status"] = "analyzed" if outcome in ("analyzed", "analyzed_nosplit") else "skipped"
-                entry["subcluster"] = {
-                    "outcome": outcome,
-                    "reason": outcomes.get(c, {}).get("reason"),
-                    "n_subclusters": outcomes.get(c, {}).get("n_subclusters"),
-                    "sub_cluster_sizes": outcomes.get(c, {}).get("sub_cluster_sizes"),
-                    "sub_markers": sub_markers.get(c),
-                    "sub_results": sub_results.get(c),
-                    "overlap_metrics": overlap.get(c),
-                    "type_membership": {k: v for k, v in membership.items() if k.startswith(f"{c}.")},
-                }
-                if entry["status"] == "analyzed":
-                    counts["n_analyzed"] += 1
-                else:
-                    counts["n_skipped"] += 1
+                counts["n_skipped"] += 1
         clusters[c] = entry
 
     payload = {

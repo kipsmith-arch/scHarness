@@ -135,7 +135,7 @@ def cmd_run(args) -> dict:
     log = common.run_log_path(args.project_dir)
     kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
                                        "kg_hits.json"))
-    ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_judge"),
+    ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                         "annotations.json"))
     final = common.read_json(os.path.join(common.step_dir(args.project_dir, "step6_validate"),
                                           "final_annotations.json"))

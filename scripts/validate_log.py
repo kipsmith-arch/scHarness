@@ -65,7 +65,7 @@ def validate(path: str, mode: str = "auto") -> tuple[list[dict], int]:
     prev_seq = 0
     # 循环内暂存 run_ref 悬空的 judgment(行号, run_ref),形态判定后统一报。
     orphan_run_refs: list[tuple[int, str]] = []
-    # 从 step4_judge.rank_candidates 记录的 metrics.n_clusters 跟踪最新簇数,
+    # 从 step4_rank.rank_candidates 记录的 metrics.n_clusters 跟踪最新簇数,
     # 供 cluster_id 范围与覆盖度检查使用。
     n_clusters_latest: int | None = None
     n_clusters_seq: int = 0
@@ -122,8 +122,8 @@ def validate(path: str, mode: str = "auto") -> tuple[list[dict], int]:
                 for field in ("parameters", "metrics"):
                     if not isinstance(rec.get(field), dict):
                         add(ERROR, lineno, f"exec 缺 {field}(object)")
-                # 跟踪最新 n_clusters(取最近一次 step4_judge.rank_candidates 的 seq)。
-                if isinstance(run_id, str) and run_id.startswith("step4_judge.rank_candidates#"):
+                # 跟踪最新 n_clusters(取最近一次 step4_rank.rank_candidates 的 seq)。
+                if isinstance(run_id, str) and run_id.startswith("step4_rank.rank_candidates#"):
                     n = (rec.get("metrics") or {}).get("n_clusters")
                     if isinstance(n, int) and n >= 0 and seq > n_clusters_seq:
                         n_clusters_latest = n
@@ -159,7 +159,7 @@ def validate(path: str, mode: str = "auto") -> tuple[list[dict], int]:
                             # 数字簇 id 校验范围;非数字跳过(部分数据集使用字符串簇 id)
                             if cid.isdigit() and not (0 <= int(cid) < n_clusters_latest):
                                 add(ERROR, lineno,
-                                     f"{dp!r} cluster_id {cid!r} 越界(step4_judge.rank_candidates n_clusters={n_clusters_latest})")
+                                     f"{dp!r} cluster_id {cid!r} 越界(step4_rank.rank_candidates n_clusters={n_clusters_latest})")
                         if isinstance(cid, str) and cid:
                             coverage.setdefault(dp, set()).add(cid)
                 if not isinstance(rec.get("inputs"), list):

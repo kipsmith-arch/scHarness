@@ -617,10 +617,7 @@ def describe_distribution(values, n_bins=20):
         "kurtosis": kt,
         "bimodality_coefficient": bimod,
         "percentiles": {f"p{k}": float(np.percentile(values, k)) for k in pct_keys},
-        "histogram": {
-            "bin_edges": [float(e) for e in edges],
-            "counts": [int(c) for c in counts],
-        },
+        "histogram": [int(c) for c in counts],  # n_bins 个整数,与 percentiles 同级;边界=linspace(min,max,n_bins+1)
     }
 ```
 

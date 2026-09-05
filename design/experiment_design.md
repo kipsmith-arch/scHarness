@@ -150,11 +150,14 @@ LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.m
 harness/
 ├── loop.py              ← ③ 专用(LLM↔tool 循环)
 ├── dispatcher.py        ← run_subprocess / run_function(三臂共用)
-├── scripted_driver.py  ← ①② 专用(走 DAG,确定性)
-├── dag.py               ← DAG 编码(op 列表 + deps + decision_after)
+├── scripted_driver.py  ← ①② 专用(走 DAG,确定性;与 loop 共用 dispatch)
+└── dag.py               ← 通用 DAG(nodes / deps / decision_after / 重试上限)
+experiments/
+├── cell_annotation_dag.py  ← 47 op + 13 个 decision_after(skill 外的 DAG 实例)
+├── scripted_driver.py      ← 薄 CLI,委托 harness.scripted_driver
 └── judges/
-    ├── default_judge.py ← ①(永不 adjust,走默认参,写 trivial accept)
-    └── rule_judge.py    ← ②(按规则表判 accept/adjust + action)
+    ├── default_judge.py ← ①(当场 decide(),永不 adjust,不路由 step5)
+    └── rule_judge.py    ← ②(当场 decide(),可读 metrics,可 adjust / 路由)
 ```
 
 **`scripted_driver` 骨架**(与 loop 共用 `dispatcher.dispatch`,不走 LangGraph)

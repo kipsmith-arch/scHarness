@@ -60,12 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--n-neighbors", type=int, default=15, help="kNN 邻居数")
     p_run.add_argument("--n-pcs", type=int, default=30, help="kNN 使用的 PC 数")
     p_run.add_argument("--resolution-list", default="0.4,0.6,0.8,1.0,1.2", help="Leiden 分辨率列表(逗号分隔)")
-    p_run.add_argument("--target-resolution", default=None, help="选中的分辨率(缺省自动拐点)")
+    p_run.add_argument("--target-resolution", default=None, help="选中的分辨率(必须由判断层显式给出,禁止 knee 静默选定)")
 
     p_re = sub.add_parser("recluster", help="对 processed.h5ad 重聚类(ops 12-14,16)")
     add_qc_args(p_re)
     p_re.add_argument("--resolution-list", default="0.4,0.6,0.8,1.0,1.2", help="Leiden 分辨率列表")
-    p_re.add_argument("--target-resolution", default=None, help="选中的分辨率(缺省自动拐点)")
+    p_re.add_argument("--target-resolution", default=None, help="选中的分辨率(必须由判断层显式给出,禁止 knee 静默选定)")
     p_re.add_argument("--n-neighbors", type=int, default=15, help="kNN 邻居数")
     p_re.add_argument("--n-pcs", type=int, default=30, help="kNN 使用的 PC 数")
 
@@ -132,9 +132,9 @@ def op_qc_distribution(adata, log_path, params) -> dict:
         # valley detection for bimodal distributions
         valley = None
         if d["bimodality_coefficient"] is not None and d["bimodality_coefficient"] > 0.555:
-            counts = np.array(d["histogram"]["counts"])
-            edges = np.array(d["histogram"]["bin_edges"])
-            if len(counts) >= 4:
+            counts = np.array(d["histogram"])
+            edges = common.histogram_bin_edges(d)
+            if edges is not None and len(counts) >= 4:
                 i_max = int(np.argmax(counts))
                 # find the min count between the two largest peaks
                 order = np.argsort(counts)[::-1]
@@ -414,31 +414,14 @@ def op_leiden_cluster(adata, log_path, params, res_list, seed) -> dict:
 def op_choose_resolution(adata, log_path, params, res_list, target) -> dict:
     counts = {str(r): int(adata.obs[f"leiden_{r}"].nunique()) for r in res_list if f"leiden_{r}" in adata.obs}
     res_strs = [str(r) for r in res_list if str(r) in counts]
-    auto_knee_not_applicable = False
-    if target is None:
-        target = res_strs[-1]
-        if len(counts) >= 3:
-            drops = [counts[res_strs[i]] - counts[res_strs[i + 1]] for i in range(len(res_strs) - 1)]
-            if max(drops) > 0:
-                target = res_strs[int(np.argmax(drops)) + 1]
-            else:
-                # monotonic cluster counts: no knee; pick the middle resolution
-                # rather than silently choosing the highest
-                auto_knee_not_applicable = True
-                target = res_strs[len(res_strs) // 2]
-    elif str(target) not in counts:
-        # requested resolution was never clustered -> fall back to auto with a warning
-        auto_knee_not_applicable = True
-        params = dict(params)
-        params["_warning"] = f"--target-resolution {target} 不在 resolution-list 中,回退自动选择"
-        target = res_strs[-1]
-        if len(counts) >= 3:
-            drops = [counts[res_strs[i]] - counts[res_strs[i + 1]] for i in range(len(res_strs) - 1)]
-            if max(drops) > 0:
-                target = res_strs[int(np.argmax(drops)) + 1]
+    if target is None or str(target).strip() == "":
+        raise ValueError("choose_resolution 需要显式 --target-resolution，禁止 knee 静默选定")
+    target = str(target)
+    if target not in counts:
+        raise ValueError(f"--target-resolution {target} 不在已聚类列表 {res_strs} 中")
     adata.obs["leiden"] = adata.obs[f"leiden_{target}"].astype(str).values
     stab = common.resolution_stability(adata, res_list, chosen=str(target))
-    m = {"resolution_chosen": str(target), "auto_knee_not_applicable": auto_knee_not_applicable, **stab,
+    m = {"resolution_chosen": str(target), "auto_knee_not_applicable": False, **stab,
          "n_clusters": int(adata.obs["leiden"].nunique())}
     common.exec_record(log_path, "step1_prepare", "choose_resolution", params, m)
     return m
@@ -589,11 +572,19 @@ def cmd_metrics(args) -> dict:
                           if v in adata.obs},
     }
     common.write_json(os.path.join(out_dir, "qc_metrics.json"), metrics)
-    return common.ok({"n_cells": metrics["n_cells"], "n_genes": metrics["n_genes"],
-                      "qc_metrics_json": os.path.join(out_dir, "qc_metrics.json")})
+    return common.ok({
+        "n_cells": metrics["n_cells"],
+        "n_genes": metrics["n_genes"],
+        "qc_metrics_json": os.path.join(out_dir, "qc_metrics.json"),
+        "distributions": metrics["distributions"],
+    })
 
 
 def cmd_run(args) -> dict:
+    if not getattr(args, "target_resolution", None):
+        return common.fail(
+            "step1_prepare run 需要显式 --target-resolution（由判断层或 ① 默认给出），禁止 knee 静默选定"
+        )
     out_dir = common.step_dir(args.project_dir, "step1_prepare")
     log = common.run_log_path(args.project_dir)
     if not args.input:
@@ -703,15 +694,42 @@ def cmd_run(args) -> dict:
     m = op_write_output(adata, out_dir, log, p, metrics_all)
     metrics_all["write_output"] = m
 
+    cl = metrics_all.get("clustering") or {}
+    rs = metrics_all.get("resolution_stability") or {}
+    bm = metrics_all.get("batch_mixing") or {}
     return common.ok({
         "n_cells": m["n_cells"], "n_genes": m["n_genes"], "n_clusters": m["n_clusters"],
         "processed_h5ad": m["processed_h5ad"], "obs_snapshot": m["obs_snapshot"],
         "var_snapshot": m["var_snapshot"], "qc_metrics_json": m["qc_metrics"],
         "last_exec_run_id": m["run_id"],
+        "judge_view": {
+            "resolution_chosen": cl.get("resolution_chosen"),
+            "n_clusters": cl.get("n_clusters"),
+            "resolution_cluster_counts": cl.get("resolution_cluster_counts"),
+            "silhouette_overall": cl.get("silhouette"),
+            "n_clusters_negative_mean_silhouette": cl.get("n_clusters_negative_mean_silhouette"),
+            "modularity": cl.get("modularity"),
+            "cluster_size_distribution": cl.get("cluster_size_distribution"),
+            "frac_largest_cluster": cl.get("frac_largest_cluster"),
+            "n_rare_clusters": cl.get("n_rare_clusters"),
+            "n_singleton_clusters": cl.get("n_singleton_clusters"),
+            "n_clusters_derivative": rs.get("n_clusters_derivative"),
+            "adjacent_ari": rs.get("adjacent_ari"),
+            "stability_at_chosen_resolution": rs.get("stability_at_chosen_resolution"),
+            "batch_key_used": bm.get("batch_key_used"),
+            "batch_graph_autocorr_morans_i": bm.get("batch_graph_autocorr_morans_i"),
+            "per_cluster_batch_entropy": bm.get("per_cluster_batch_entropy"),
+            "per_cluster_max_batch_fraction": bm.get("per_cluster_max_batch_fraction"),
+            "per_cluster_batch_nunique": bm.get("per_cluster_batch_nunique"),
+        },
     })
 
 
 def cmd_recluster(args) -> dict:
+    if not getattr(args, "target_resolution", None):
+        return common.fail(
+            "step1_prepare recluster 需要显式 --target-resolution（由判断层给出），禁止 knee 静默选定"
+        )
     out_dir = common.step_dir(args.project_dir, "step1_prepare")
     log = common.run_log_path(args.project_dir)
     h5ad = args.input or os.path.join(out_dir, "processed.h5ad")
