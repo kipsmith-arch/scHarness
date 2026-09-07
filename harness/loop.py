@@ -37,6 +37,14 @@ LOOP_BASE_PROMPT = """你是运行在通用 agent loop 中的助手。你可以�
 - 工具返回 {"status":"error",...} 时,根据错误信息决定是否重试或换一种方式;不要原样重复同一失败调用。
 - 最终回答用中文,直接面向用户,包含关键结论。"""
 
+# B1 ③ / N-group off: same rules, no notebook guidance (tools are also omitted).
+LOOP_BASE_PROMPT_NO_NOTEBOOK = """你是运行在通用 agent loop 中的助手。你可以调用工具完成用户任务;工具结果会以 JSON 返回,请基于结果继续推理,直到任务完成。
+
+规则:
+- 每次只做当前需要的一步:需要更多信息就调用工具,信息足够就给出最终回答;不要无谓地反复调用工具。
+- 工具返回 {"status":"error",...} 时,根据错误信息决定是否重试或换一种方式;不要原样重复同一失败调用。
+- 最终回答用中文,直接面向用户,包含关键结论。"""
+
 NOTEBOOK_TOOL_SCHEMAS = [
     {
         "type": "function",

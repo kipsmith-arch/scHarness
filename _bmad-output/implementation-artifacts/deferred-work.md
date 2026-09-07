@@ -84,3 +84,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-measure-judge-decouple.md`
   summary: pipeline exec_record 不写 status=ok 字段，失败 attempt 若已落盘 exec 无法从 log 区分于成功 exec
   evidence: 预存在于 common.exec_record；本轮 walker 改以 dispatcher 返回的 status==ok 为准。若要 log 层 last-ok，需给 exec 补 status。
+- source_spec: `_bmad-output/implementation-artifacts/spec-b1-three-arm-rerun.md`
+  summary: step3_kg test-connection 在 GraphDatabase.driver 构造成功时即 connected=true，查询失败只写入 kg_provenance.error
+  evidence: localhost:7687 拒绝时仍 emit status=ok；run_b1.preflight 已在编排层解析 provenance.error / node_labels，根因在 step3_kg.op_connect / kg_provenance 的软失败。

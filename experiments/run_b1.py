@@ -1,0 +1,289 @@
+"""Wipe historical B1 trees and rerun the three arms (spec-b1-three-arm-rerun).
+
+Usage (from repo root, conda env LM):
+
+    python experiments/run_b1.py
+    python experiments/run_b1.py --no-wipe
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+REPO_ROOT = _HERE.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+RAW = REPO_ROOT / "dataset" / "h5ad" / "SRP171040.h5ad"
+OUT = REPO_ROOT / "output" / "B1"
+OUT_R3 = REPO_ROOT / "output" / "B1_r3"
+ARM1 = OUT / "arm1_default"
+ARM2 = OUT / "arm2_rule"
+ARM3 = OUT / "arm3_llm"
+EVAL = OUT / "eval"
+LOG = OUT / "orchestrator.log"
+PY = sys.executable
+TOOL_TIMEOUT = 14400
+ARM3_MAX_TURNS = 800
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def log(msg: str) -> None:
+    line = f"{_now()} {msg}"
+    print(line, flush=True)
+    OUT.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def _allowed_wipe_targets() -> set[Path]:
+    return {OUT.resolve(), OUT_R3.resolve()}
+
+
+def wipe_history() -> None:
+    for target in (OUT_R3, OUT):
+        resolved = target.resolve()
+        if resolved not in _allowed_wipe_targets():
+            raise SystemExit(f"refusing to delete unexpected path: {resolved}")
+        if not resolved.exists():
+            print(f"{_now()} WIPE skip (missing) {resolved}", flush=True)
+            continue
+        if resolved.parent.name != "output" or resolved.name not in {"B1", "B1_r3"}:
+            raise SystemExit(f"refusing to delete: {resolved}")
+        print(f"{_now()} WIPE {resolved}", flush=True)
+        try:
+            shutil.rmtree(resolved)
+        except OSError as exc:
+            raise SystemExit(f"wipe failed: {exc}") from exc
+
+
+def arm3_task(project_dir: str) -> str:
+    return f"""请对拟南芥根单细胞 RNA-seq 做完整细胞类型注释（B1 ③ LLM 臂）。
+
+数据与目录：
+- raw h5ad: dataset/h5ad/SRP171040.h5ad
+- project-dir: {project_dir}
+- organism: Arabidopsis thaliana
+- organ: root
+- species（step3_kg --species）: arabidopsis_thaliana
+- species-type: Plant
+
+硬性要求：
+1. 第一次调工具前先 write_judgment__session-start。
+2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
+3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
+4. step3_kg__query 必须带 --organ root。
+5. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
+6. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
+7. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
+8. 不要调用 write_note / retrieve_notes（本臂禁用笔记本；session 已 --no-notebook）。
+9. 交付前 write_judgment__session-end。
+
+请开始执行。
+"""
+
+
+def run(args: list[str]) -> None:
+    log("RUN " + " ".join(args))
+    env = dict(os.environ)
+    env["RAG_EMBEDDING"] = "off"
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    r = subprocess.run(args, cwd=str(REPO_ROOT), env=env)
+    if r.returncode != 0:
+        log(f"FAIL exit={r.returncode}")
+        raise SystemExit(r.returncode)
+    log("OK")
+
+
+def _last_json_object(text: str) -> dict:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return {}
+
+
+def _require_openai_key() -> None:
+    import harness.config  # noqa: F401 — load root .env
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise SystemExit("OPENAI_API_KEY missing; halt (Ask First: OpenAI gateway)")
+
+
+def preflight() -> None:
+    if not RAW.is_file():
+        raise SystemExit(f"missing raw h5ad: {RAW}")
+    for rel in ("experiments/gt_cells.csv", "experiments/label_map.json"):
+        if not (REPO_ROOT / rel).is_file():
+            raise SystemExit(f"missing {rel}")
+    _require_openai_key()
+    tmp = tempfile.mkdtemp(prefix="b1-preflight-")
+    try:
+        cmd = [
+            PY, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3_kg.py"),
+            "test-connection", "--project-dir", tmp,
+        ]
+        print(f"{_now()} RUN " + " ".join(cmd), flush=True)
+        env = dict(os.environ)
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env, capture_output=True, text=True)
+        payload = _last_json_object(proc.stdout or "")
+        prov = (payload.get("data") or {}).get("kg_provenance") or {}
+        if (
+            proc.returncode != 0
+            or payload.get("status") != "ok"
+            or prov.get("error")
+            or not prov.get("node_labels")
+        ):
+            err = prov.get("error") or payload.get("error") or (proc.stderr or "")[:500]
+            raise SystemExit(f"Neo4j preflight failed: {err}")
+        print(f"{_now()} OK neo4j labels={list(prov.get('node_labels') or [])}", flush=True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def run_arm12(arm: str, project_dir: Path, session_id: str) -> None:
+    project_dir.mkdir(parents=True, exist_ok=True)
+    run([
+        PY, str(REPO_ROOT / "experiments" / "scripted_driver.py"),
+        "--arm", arm,
+        "--project-dir", str(project_dir),
+        "--raw", str(RAW),
+        "--organ", "root",
+        "--session-id", session_id,
+    ])
+
+
+def run_arm3() -> None:
+    from harness.session import run_session
+    from harness.skill_loader import load_skill
+
+    ARM3.mkdir(parents=True, exist_ok=True)
+    skill = load_skill(str(REPO_ROOT / "skills" / "cell-annotation"))
+    for spec in skill.tool_runtime.values():
+        spec["timeout"] = max(float(spec.get("timeout") or 0), TOOL_TIMEOUT)
+    rel = os.path.relpath(ARM3, REPO_ROOT).replace("\\", "/")
+    log(f"RUN harness.session arm3_llm notebook=False max_turns={ARM3_MAX_TURNS}")
+    os.environ["RAG_EMBEDDING"] = "off"
+    try:
+        run_session(
+            skill,
+            str(ARM3),
+            arm3_task(rel),
+            max_turns=ARM3_MAX_TURNS,
+            notebook=False,
+        )
+    except Exception as exc:
+        log(f"FAIL arm3: {exc}")
+        raise
+    log("OK arm3 session returned")
+
+
+def _assert_no_notebook_tool_calls(conv: Path) -> None:
+    if not conv.is_file():
+        raise SystemExit(f"missing conversation: {conv}")
+    for line in conv.read_text(encoding="utf-8").splitlines():
+        if '"name": "write_note"' in line or '"name": "retrieve_notes"' in line:
+            raise SystemExit(f"notebook tool_call found in {conv}")
+
+
+def materialize_or_halt() -> None:
+    from experiments.judges._common import materialize_llm_labels
+
+    _assert_no_notebook_tool_calls(ARM3 / "conversation.jsonl")
+    try:
+        path = materialize_llm_labels(str(ARM3))
+    except SystemExit as exc:
+        log(f"ASK_FIRST no label_confirm: {exc}")
+        raise SystemExit(
+            "arm3 finished without per-cluster label_confirm; "
+            "not evaluating (spec Ask First). Do not resume automatically."
+        ) from exc
+    except Exception as exc:
+        log(f"ASK_FIRST materialize: {exc}")
+        raise SystemExit(f"arm3 materialize failed: {exc}") from exc
+    log(f"OK materialized labels -> {path}")
+
+
+def evaluate() -> None:
+    EVAL.mkdir(parents=True, exist_ok=True)
+    run([
+        PY, str(REPO_ROOT / "experiments" / "evaluate_cell_level.py"),
+        "--arms",
+        f"arm1={ARM1}",
+        f"arm2={ARM2}",
+        f"arm3={ARM3}",
+        "--gt-csv", str(REPO_ROOT / "experiments" / "gt_cells.csv"),
+        "--label-map", str(REPO_ROOT / "experiments" / "label_map.json"),
+        "--out", str(EVAL / "evaluation_report.json"),
+    ])
+    run([
+        PY, str(REPO_ROOT / "experiments" / "bootstrap_test.py"),
+        "--per-cell", str(EVAL / "evaluation_report.per_cell.json"),
+        "--arms", "arm1", "arm2", "arm3",
+        "--label-map", str(REPO_ROOT / "experiments" / "label_map.json"),
+        "--out", str(EVAL / "bootstrap_report.json"),
+    ])
+    run([
+        PY, str(REPO_ROOT / "experiments" / "analyze_traps.py"),
+        "--eval-report", str(EVAL / "evaluation_report.json"),
+        "--per-cell", str(EVAL / "evaluation_report.per_cell.json"),
+        "--out", str(EVAL / "traps_report.json"),
+    ])
+
+
+def _refuse_stale_logs() -> None:
+    for arm in (ARM1, ARM2, ARM3):
+        stale = arm / "run_log.jsonl"
+        if stale.is_file():
+            raise SystemExit(f"--no-wipe refuses leftover {stale}; delete it or omit --no-wipe")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Wipe B1 history and rerun three arms.")
+    ap.add_argument("--no-wipe", action="store_true", help="Keep existing output/B1 (do not delete).")
+    ap.add_argument("--skip-preflight", action="store_true")
+    args = ap.parse_args()
+
+    os.chdir(REPO_ROOT)
+    os.environ["RAG_EMBEDDING"] = "off"
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+    if not args.skip_preflight:
+        preflight()
+    else:
+        _require_openai_key()
+    if args.no_wipe:
+        _refuse_stale_logs()
+    else:
+        wipe_history()
+    OUT.mkdir(parents=True, exist_ok=True)
+    log(f"python={PY}")
+    if "LM" not in PY.replace("\\", "/"):
+        log(f"WARN interpreter may not be conda LM: {PY}")
+    log(f"raw={RAW}")
+    run_arm12("default", ARM1, "sess-b1-arm1-default")
+    run_arm12("rule", ARM2, "sess-b1-arm2-rule")
+    run_arm3()
+    materialize_or_halt()
+    evaluate()
+    log("ALL DONE")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

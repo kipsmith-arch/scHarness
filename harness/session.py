@@ -24,7 +24,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from .conversation import load_conversation, save_conversation
-from .loop import LOOP_BASE_PROMPT, NOTEBOOK_TOOL_RUNTIME, NOTEBOOK_TOOL_SCHEMAS, build_workflow
+from .loop import (
+    LOOP_BASE_PROMPT,
+    LOOP_BASE_PROMPT_NO_NOTEBOOK,
+    NOTEBOOK_TOOL_RUNTIME,
+    NOTEBOOK_TOOL_SCHEMAS,
+    build_workflow,
+)
 from .notebook import init_embedder
 from .skill_loader import Skill, load_skill, summarize_skill
 
@@ -65,6 +71,57 @@ def build_llm(llm_config: Optional[dict] = None) -> ChatOpenAI:
     return ChatOpenAI(**kwargs)
 
 
+def session_base_prompt(notebook: bool = True) -> str:
+    """Loop base prompt; notebook guidance is omitted when notebook is off."""
+    return LOOP_BASE_PROMPT if notebook else LOOP_BASE_PROMPT_NO_NOTEBOOK
+
+
+def merge_session_tools(skill: Skill, notebook: bool = True) -> tuple:
+    """Merge skill tools with optional loop-owned notebook tools."""
+    if notebook:
+        return (
+            list(skill.tool_schemas) + list(NOTEBOOK_TOOL_SCHEMAS),
+            {**skill.tool_runtime, **NOTEBOOK_TOOL_RUNTIME},
+        )
+    return list(skill.tool_schemas), dict(skill.tool_runtime)
+
+
+def merged_tool_names(skill: Skill, notebook: bool = True) -> list[str]:
+    schemas, _ = merge_session_tools(skill, notebook)
+    names = []
+    for item in schemas:
+        fn = (item.get("function") or {}).get("name")
+        if fn:
+            names.append(fn)
+    return names
+
+
+def build_session_messages(
+    skill: Skill,
+    task_message: str,
+    *,
+    notebook: bool = True,
+    resume: bool = False,
+    conversation_path: Optional[str] = None,
+) -> list:
+    """System + history for this session. Resume restamps the system prompt."""
+    sys_content = f"{session_base_prompt(notebook)}\n\n{skill.system_prompt}"
+    fresh = [
+        SystemMessage(content=sys_content),
+        HumanMessage(content=task_message),
+    ]
+    if not (resume and conversation_path and os.path.exists(conversation_path)):
+        return fresh
+    messages = load_conversation(conversation_path)
+    if not messages:
+        return fresh
+    if isinstance(messages[0], SystemMessage):
+        messages[0] = SystemMessage(content=sys_content)
+    else:
+        messages.insert(0, SystemMessage(content=sys_content))
+    return messages
+
+
 def run_session(
     skill: Skill,
     project_dir: str,
@@ -74,6 +131,7 @@ def run_session(
     conversation_path: Optional[str] = None,
     max_turns: int = 100,
     resume: bool = False,
+    notebook: bool = True,
 ) -> dict:
     """Run one agent session with a loaded skill.
 
@@ -87,11 +145,14 @@ def run_session(
         conversation_path: Override conversation.jsonl path.
         max_turns: LangGraph recursion limit.
         resume: If True and conversation.jsonl exists, load history and continue.
+        notebook: When False, do not register write_note/retrieve_notes and
+            omit notebook guidance from the loop base prompt (B1 ③).
 
     Returns:
         Final LangGraph state (contains messages, session_id, ...).
     """
-    init_embedder()
+    if notebook:
+        init_embedder()
     project_dir = str(project_dir)
     conversation_path = conversation_path or os.path.join(project_dir, "conversation.jsonl")
     notes_path = os.environ.get("RAG_NOTES_DIR") or os.path.join(project_dir, "notes.jsonl")
@@ -99,21 +160,20 @@ def run_session(
 
     llm = build_llm(llm_config)
     app = build_workflow(llm)
+    base_prompt = session_base_prompt(notebook)
+    messages = build_session_messages(
+        skill,
+        task_message,
+        notebook=notebook,
+        resume=resume,
+        conversation_path=conversation_path,
+    )
 
-    if resume and os.path.exists(conversation_path):
-        messages = load_conversation(conversation_path)
-    else:
-        messages = [
-            SystemMessage(content=f"{LOOP_BASE_PROMPT}\n\n{skill.system_prompt}"),
-            HumanMessage(content=task_message),
-        ]
-
-    tool_schemas = skill.tool_schemas + NOTEBOOK_TOOL_SCHEMAS
-    tool_runtime = {**skill.tool_runtime, **NOTEBOOK_TOOL_RUNTIME}
+    tool_schemas, tool_runtime = merge_session_tools(skill, notebook)
 
     state = {
         "messages": messages,
-        "base_prompt": LOOP_BASE_PROMPT,
+        "base_prompt": base_prompt,
         "system_prompt": skill.system_prompt,
         "tool_schemas": tool_schemas,
         "tool_runtime": tool_runtime,
@@ -149,6 +209,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--max-turns", type=int, default=100, help="Recursion limit")
     parser.add_argument("--resume", action="store_true", help="Resume from existing conversation.jsonl")
     parser.add_argument(
+        "--no-notebook",
+        action="store_true",
+        help="Do not register write_note/retrieve_notes; omit notebook guidance from the loop prompt (B1 ③).",
+    )
+    parser.add_argument(
         "--dump-skill",
         action="store_true",
         help="Print the loader-derived interfaces (system_prompt / tool_schemas / tool_runtime) and exit",
@@ -163,6 +228,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.dump_skill:
         print(summarize_skill(skill))
+        print("session_merged_tools:" + ",".join(merged_tool_names(skill, not args.no_notebook)))
         return 0
 
     print(f"[session] skill={skill.name} model={args.model or os.environ.get('OPENAI_MODEL') or DEFAULT_MODEL}")
@@ -174,6 +240,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         llm_config=llm_config,
         max_turns=args.max_turns,
         resume=args.resume,
+        notebook=not args.no_notebook,
     )
 
     last = final_state["messages"][-1]

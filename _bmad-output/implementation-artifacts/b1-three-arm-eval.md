@@ -66,3 +66,37 @@ strict 是核心判据:`① > ③ >> ②`(rule 过度降级)。macro-F1 几乎�
 - `output/B1/eval/evaluation_report.json` — 主报告
 - `output/B1/eval/bootstrap_report.json` — bootstrap 报告
 - `output/B1/eval/traps_report.json` — 陷阱分析报告
+
+---
+
+## 7. 2026-09-07 清档重跑（解耦后 + `--no-notebook`）
+
+> 日期: 2026-09-07 · 编排: `experiments/run_b1.py` · 产物仍在 `output/B1/`
+> **未做** `b1-r3-followup.md`（pseudobulk 触发未改；strict 仍乘 confidence）。本轮 **不是** 已修复 DE 不公之后的 killer 结论。
+
+上一轮解耦后数字在已删除的 `output/B1_r3/`（① 0.9163 / ② 0.5416 / ③ 0.2037）。本轮 ①② 与 r3 一致；③ strict 从 0.20 升到 0.35（笔记本工具已从 schema 去掉，conversation 无 `write_note`/`retrieve_notes` 调用）。
+
+### 7.1 三臂 accuracy (n=33762；③ 33761)
+
+| 臂 | strict | relaxed | macro-F1 | purity | low_conf |
+|---|---|---|---|---|---|
+| ① default | **0.9163** | 0.9163 | 0.4056 | 0.8804 | 1733 |
+| ② rule | 0.5416 | 0.7290 | 0.4171 | 0.8804 | 15476 |
+| ③ LLM | 0.3547 | 0.6278 | 0.2642 | 0.8770 | 21785 |
+
+排序：strict ① >> ② > ③。macro-F1 ①≈②，③更低。
+
+### 7.2 Bootstrap（1000 draws）
+
+| 对比 | Δ strict (95% CI) | Δ relaxed | Δ macroF1 | 判据 |
+|---|---|---|---|---|
+| ② − ① | −0.38 [−0.59, −0.15] | −0.19 [−0.36, −0.02] | +0.01 [−0.13, +0.14] | strict R4（②<①）；macroF1 inconclusive |
+| ③ − ① | −0.56 [−0.79, −0.34] | −0.29 [−0.45, −0.11] | −0.16 [−0.30, +0.01] | strict/relaxed R4（③<①）；macroF1 inconclusive |
+| ③ − ② | −0.19 [−0.47, +0.10] | −0.10 [−0.28, +0.09] | −0.17 [−0.32, −0.02] | strict/relaxed inconclusive；macroF1 CI 触边 |
+
+B1 §3.1 R1（③ macroF1 − ② ≥ 0.03 且 CI 不含 0）**不成立**。R-trap ③>② 多样性：**1/4**（未达 ≥4/6）。
+
+### 7.3 说明
+
+①② 仍跳过 step5。③ 有 `refine_ineffective` 19 / `refine_autocorr_low` 3，且 19 簇 `label_downgraded`。偏低仍可能来自 r3 已记录的 pseudobulk 路径，不能解释成「关笔记本导致变差」。
+
