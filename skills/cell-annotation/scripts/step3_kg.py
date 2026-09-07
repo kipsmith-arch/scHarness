@@ -175,6 +175,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_q.add_argument("--species", default=None, help="物种(信息性,对应 g.Species)")
     p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type,默认 Plant)")
     p_q.add_argument("--strict-organ", action="store_true", help="严格按 organ 过滤命中")
+    p_q.add_argument("--ortholog-map", default=None,
+                     help="path to step2_cross_species_map/cross_species_map.json; "
+                          "enables ortholog KG path (optional)")
     # B 类(环境/资源):SUPPRESS 隐藏,LLM 不可见,CLI/运维可临时 override
     p_q.add_argument("--min-confidence", type=float, default=argparse.SUPPRESS,
                      help=argparse.SUPPRESS)
@@ -253,19 +256,25 @@ def op_connect(cfg, log_path, params) -> dict:
     return driver, m
 
 
-def op_query_genes(driver, genes, config, log_path, params) -> dict:
-    # No gene-ID normalization happens here. Whatever IDs ``adata.var_names``
-    # holds are sent to the KG verbatim — if the dataset uses TAIR locus IDs
-    # but the KG stores symbols, conversion must happen upstream of the
-    # pipeline (outside the cell-annotation skill).
-    query_names = list(dict.fromkeys(genes))
+def load_ortholog_map(path: str) -> tuple[dict, list, list]:
+    """Read cross_species_map.json (or legacy ortholog_map.json). Empty on miss."""
+    payload = common.read_json(path) if path else None
+    if not payload:
+        return {}, [], [f"ortholog-map 无法读取: {path}"]
+    cmap = payload.get("cross_species_map") or payload.get("ortholog_map") or {}
+    refs = list(payload.get("reference_species") or [])
+    warnings = list(payload.get("warnings") or [])
+    return cmap, refs, warnings
 
+
+def _fetch_marker_rows(driver, names, config) -> list[dict]:
+    query_names = list(dict.fromkeys(names))
     where = ["g.Name IN $names"]
-    if config["species_type"]:
+    if config.get("species_type"):
         where.append("g.Species_type = $species_type")
-    if config["species"]:
+    if config.get("species"):
         where.append("g.Species = $species")
-    if config["min_confidence"] > 0:
+    if config.get("min_confidence", 0) > 0:
         where.append("r.relation_confidence >= $min_conf")
     cypher = (
         "MATCH (g:Gene)-[r:marker_of]->(o:Ontology) "
@@ -274,33 +283,107 @@ def op_query_genes(driver, genes, config, log_path, params) -> dict:
         "o.Species_type AS species_type, o.Type AS ontology_type, "
         "r.relation_confidence AS confidence, r.info_source AS source"
     )
-    gene_to_cts = {g: [] for g in genes}
     hit_rows = []
     with driver.session() as s:
         for i in range(0, len(query_names), 500):
             batch = query_names[i:i + 500]
-            res = s.run(cypher, names=batch, species_type=config["species_type"],
-                        species=config["species"], min_conf=config["min_confidence"])
+            res = s.run(cypher, names=batch, species_type=config.get("species_type"),
+                        species=config.get("species"), min_conf=config.get("min_confidence") or 0)
             for r in res:
                 hit_rows.append(dict(r))
+    return hit_rows
 
-    for r in hit_rows:
-        conf = r["confidence"]
-        if conf is None:
-            conf = 1.0  # missing confidence treated as unconstrained
-        if config["min_confidence"] > 0 and conf < config["min_confidence"]:
+
+def _row_to_hit(r, config, *, source_path=None, ortholog_ref_gene=None,
+                ortholog_ref_species=None) -> dict | None:
+    conf = r["confidence"]
+    if conf is None:
+        conf = 1.0
+    if config.get("min_confidence", 0) > 0 and conf < config["min_confidence"]:
+        return None
+    if config.get("strict_organ") and (r["organ"] or "").lower() != str(config.get("organ") or "").lower():
+        return None
+    hit = {
+        "cell_type": r["cell_type"], "organ": r["organ"],
+        "ontology_id": r["ontology_id"], "species_type": r["species_type"],
+        "ontology_type": r["ontology_type"], "confidence": float(conf),
+        "source": r["source"],
+    }
+    if source_path is not None:
+        hit["source_path"] = source_path
+        hit["ortholog_ref_gene"] = ortholog_ref_gene
+        hit["ortholog_ref_species"] = ortholog_ref_species
+    return hit
+
+
+def _path_hit_stats(gene_to_cts: dict) -> dict:
+    n_direct = n_ortholog = n_mixed = n_only_orth = 0
+    for hits in gene_to_cts.values():
+        has_d = any(h.get("source_path") == "direct" for h in hits)
+        has_o = any(h.get("source_path") == "ortholog" for h in hits)
+        if has_d:
+            n_direct += 1
+        if has_o:
+            n_ortholog += 1
+        if has_d and has_o:
+            n_mixed += 1
+        if has_o and not has_d:
+            n_only_orth += 1
+    return {
+        "n_direct_hits": n_direct,
+        "n_ortholog_hits": n_ortholog,
+        "n_mixed_hits": n_mixed,
+        "n_genes_with_only_ortholog": n_only_orth,
+    }
+
+
+def op_query_genes(driver, genes, config, log_path, params, ortholog_map=None,
+                   ortholog_warnings=None) -> dict:
+    # No gene-ID normalization happens here. Whatever IDs ``adata.var_names``
+    # holds are sent to the KG verbatim — if the dataset uses TAIR locus IDs
+    # but the KG stores symbols, conversion must happen upstream of the
+    # pipeline (outside the cell-annotation skill).
+    annotate = ortholog_map is not None
+    gene_to_cts = {g: [] for g in genes}
+
+    direct_rows = _fetch_marker_rows(driver, genes, config)
+    for r in direct_rows:
+        hit = _row_to_hit(r, config, source_path=("direct" if annotate else None))
+        if hit is None:
             continue
-        if config["strict_organ"] and (r["organ"] or "").lower() != str(config["organ"]).lower():
-            continue
-        # attach the hit to every input gene whose ID matches the KG row
-        for g in genes:
-            if g == r["gene"]:
-                gene_to_cts.setdefault(g, []).append({
-                    "cell_type": r["cell_type"], "organ": r["organ"],
-                    "ontology_id": r["ontology_id"], "species_type": r["species_type"],
-                    "ontology_type": r["ontology_type"], "confidence": float(conf),
-                    "source": r["source"],
-                })
+        g = r["gene"]
+        if g in gene_to_cts:
+            gene_to_cts[g].append(hit)
+
+    cmap_warnings = list(ortholog_warnings or [])
+    if annotate and ortholog_map:
+        by_ref: dict[str, dict[str, list[str]]] = {}
+        for target, recs in ortholog_map.items():
+            for rec in recs or []:
+                if not isinstance(rec, dict):
+                    continue
+                ref_g = rec.get("ref_gene_id") or rec.get("ref_gene")
+                ref_sp = rec.get("ref_species")
+                if not ref_g or not ref_sp:
+                    continue
+                by_ref.setdefault(str(ref_sp), {}).setdefault(str(ref_g), [])
+                if target not in by_ref[str(ref_sp)][str(ref_g)]:
+                    by_ref[str(ref_sp)][str(ref_g)].append(target)
+        for ref_sp, ref_to_targets in by_ref.items():
+            ref_config = dict(config)
+            ref_config["species"] = ref_sp
+            rows = _fetch_marker_rows(driver, list(ref_to_targets), ref_config)
+            for r in rows:
+                targets = ref_to_targets.get(r["gene"]) or []
+                hit = _row_to_hit(
+                    r, config, source_path="ortholog",
+                    ortholog_ref_gene=r["gene"], ortholog_ref_species=ref_sp,
+                )
+                if hit is None:
+                    continue
+                for target in targets:
+                    if target in gene_to_cts:
+                        gene_to_cts[target].append(hit)
 
     with_hits = [g for g in genes if gene_to_cts.get(g)]
     mult = [len(gene_to_cts[g]) for g in with_hits]
@@ -315,6 +398,10 @@ def op_query_genes(driver, genes, config, log_path, params) -> dict:
         "strict_organ": config["strict_organ"],
         "organ_filter": config["organ"],
     }
+    if annotate:
+        m.update(_path_hit_stats(gene_to_cts))
+        m["ortholog_unavailable"] = not bool(ortholog_map)
+        m["ortholog_warnings"] = cmap_warnings
     common.exec_record(log_path, "step3_kg", "query_genes", params, m)
     return gene_to_cts, m
 
@@ -370,17 +457,22 @@ def _rank_candidates(per_cluster_genes, gene_to_cts, target):
                 entry = agg.setdefault(key, {
                     "cell_type": key, "supporting_markers": [], "marker_count": 0,
                     "confidences": [], "sources": set(), "organs": set(),
+                    "source_paths": set(), "source_species": set(),
                 })
                 entry["supporting_markers"].append(g)
                 entry["confidences"].append(hit["confidence"])
                 entry["sources"].add(hit["source"] or "?")
                 if hit.get("organ"):
                     entry["organs"].add(str(hit["organ"]))
+                if hit.get("source_path"):
+                    entry["source_paths"].add(hit["source_path"])
+                if hit.get("ortholog_ref_species"):
+                    entry["source_species"].add(hit["ortholog_ref_species"])
         candidates = []
         for key, e in agg.items():
             uniq_markers = list(dict.fromkeys(e["supporting_markers"]))
             organs = sorted(e["organs"])
-            candidates.append({
+            cand = {
                 "cell_type": key,
                 "supporting_markers": uniq_markers,
                 "marker_count": len(uniq_markers),
@@ -389,18 +481,37 @@ def _rank_candidates(per_cluster_genes, gene_to_cts, target):
                 "sources": sorted(e["sources"]),
                 "organ": organs,
                 "organ_status": _organ_status(organs, target),
-            })
+            }
+            if e["source_paths"]:
+                cand["source_path_set"] = sorted(e["source_paths"])
+                cand["source_species_set"] = sorted(e["source_species"])
+            candidates.append(cand)
         # Rank: organ_status priority first (organ-matching > non-matching);
         # same-category ties keep original marker_count → confidence → cell_type.
         candidates.sort(key=lambda x: (_priority(x["organ_status"]),
                                        -x["marker_count"],
                                        -(x["mean_confidence"] or 0.0), x["cell_type"]))
         n_queried = len(genes)
-        per_cluster[c] = {
+        n_hit = int(sum(1 for g in genes if gene_to_cts.get(g)))
+        cluster_block = {
             "n_markers": n_queried,
-            "n_markers_hit": int(sum(1 for g in genes if gene_to_cts.get(g))),
+            "n_markers_hit": n_hit,
             "candidates": candidates,
         }
+        if any(h.get("source_path") for hits in gene_to_cts.values() for h in hits):
+            cluster_block["n_markers_direct_hit"] = int(
+                sum(1 for g in genes if any(h.get("source_path") == "direct" for h in gene_to_cts.get(g, [])))
+            )
+            cluster_block["n_markers_ortholog_hit"] = int(
+                sum(1 for g in genes if any(h.get("source_path") == "ortholog" for h in gene_to_cts.get(g, [])))
+            )
+            cluster_block["n_markers_mixed_hit"] = int(
+                sum(1 for g in genes if (
+                    any(h.get("source_path") == "direct" for h in gene_to_cts.get(g, []))
+                    and any(h.get("source_path") == "ortholog" for h in gene_to_cts.get(g, []))
+                ))
+            )
+        per_cluster[c] = cluster_block
     return per_cluster
 
 
@@ -477,6 +588,9 @@ def cmd_query(args) -> dict:
     p = {"organ": args.organ, "species": args.species, "species_type": species_type,
          "min_confidence": min_confidence, "strict_organ": args.strict_organ,
          "max_ancestor_hops": max_ancestor_hops}
+    ortholog_path = getattr(args, "ortholog_map", None) or None
+    if ortholog_path:
+        p["ortholog_map"] = ortholog_path
 
     driver, conn = op_connect(cfg, log, p)
     try:
@@ -484,16 +598,27 @@ def cmd_query(args) -> dict:
         config = {"organ": args.organ, "species": args.species,
                   "species_type": species_type, "min_confidence": min_confidence,
                   "strict_organ": args.strict_organ}
-        gene_to_cts, qstats = op_query_genes(driver, genes, config, log, p)
+        cmap, ref_species, cmap_warnings = ({}, [], [])
+        if ortholog_path:
+            cmap, ref_species, cmap_warnings = load_ortholog_map(ortholog_path)
+        gene_to_cts, qstats = op_query_genes(
+            driver, genes, config, log, p,
+            ortholog_map=(cmap if ortholog_path else None),
+            ortholog_warnings=cmap_warnings,
+        )
         cell_types = sorted({h["cell_type"] for hits in gene_to_cts.values() for h in hits})
         ancestors, hstats = op_query_hierarchy(driver, cell_types, max_ancestor_hops, log, p)
         per_cluster, candidate_stats, astats = op_aggregate_candidates(markers, gene_to_cts, log, p, args.organ)
+        query_config = dict(config)
+        if ortholog_path:
+            query_config["ortholog_map_path"] = ortholog_path
+            query_config["ortholog_map_ref_species"] = ref_species
         payload = {
             "kg_source": "neo4j",
             "kg_version": conn.get("kg_version"),
             "kg_date": conn.get("kg_date"),
             "kg_provenance": conn.get("kg_provenance", {}),
-            "query_config": config,
+            "query_config": query_config,
             "sort_keys": ["organ_status_priority", "marker_count", "mean_confidence"],
             "sort_note": "candidates[] is ordered by measurement keys; the judgment layer picks the winner — do not treat candidates[0] as a decided label",
             "gene_to_cts": gene_to_cts,

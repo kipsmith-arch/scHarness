@@ -103,6 +103,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _flatten_species_list(values) -> list[str]:
+    """Accept argparse append, dispatcher lists, or comma-separated strings."""
+    out: list[str] = []
+    for item in values or []:
+        for part in str(item).replace(";", ",").split(","):
+            name = part.strip()
+            if name and name not in out:
+                out.append(name)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Cache
 # ---------------------------------------------------------------------------
@@ -158,31 +169,29 @@ def _ensure_provider_available(provider, species_type: str) -> list[str]:
 
 
 def _ensure_host_reachable(provider, species_type: str, override_host: str | None) -> tuple[str | None, list[str]]:
-    """For REST-based providers, try DNS on the canonical host and fall back
-    to a known-reachable host (vertebrates) if the canonical one fails. For
-    non-REST providers (e.g. future local BLAST), this is a no-op.
+    """For REST-based providers, try DNS on the canonical host.
 
-    Returns (host_to_use_or_None, warnings). ``None`` means "provider doesn't
-    need a network host (e.g. local DB); skip DNS precheck".
+    Does **not** fall back across Ensembl divisions (Plant → vertebrates REST
+    would query the wrong database for thousands of genes). Unreachable
+    canonical host → ``host=None`` + warning; caller writes an empty map.
+
+    Returns (host_to_use_or_None, warnings). ``None`` with empty warnings means
+    the provider does not need a network host.
     """
     warnings: list[str] = []
     if override_host:
         return override_host, warnings
-    # Providers may expose a default_host_for(species_type) classmethod; if so,
-    # use it. Otherwise skip DNS precheck (provider handles its own resolution).
     default_host_fn = getattr(type(provider), "default_host_for", None)
     if default_host_fn is None:
         return None, warnings
     canonical = default_host_fn(species_type)
     if check_dns(canonical):
         return canonical, warnings
-    warnings.append(f"默认 provider 端点 {canonical} DNS 解析失败,尝试备选")
-    fallback = "https://rest.ensembl.org"
-    if canonical != fallback and check_dns(fallback):
-        warnings.append(f"fallback 到 {fallback} (vertebrates);跨 division 查询可能返 400/404")
-        return fallback, warnings
-    warnings.append(f"所有 provider 端点都不可达,使用 {canonical} (预期请求失败)")
-    return canonical, warnings
+    warnings.append(
+        f"默认 provider 端点 {canonical} DNS 解析失败,不跨 division fallback;"
+        f"返回空映射"
+    )
+    return None, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +279,7 @@ def cmd_run(args) -> dict:
     out_dir = common.step_dir(project_dir, "step2_cross_species_map")
     log = common.run_log_path(project_dir)
     species_type = args.species_type or "Plant"
-    reference_species = list(dict.fromkeys(args.reference_species))  # dedupe, keep order
+    reference_species = _flatten_species_list(args.reference_species)
 
     if not reference_species:
         return common.fail("至少需要一个 --reference-species")
@@ -317,6 +326,26 @@ def cmd_run(args) -> dict:
                 "hit_rate": cached["summary"]["hit_rate"],
                 "warnings": cached.get("warnings", []),
             })
+
+    needs_host = getattr(type(provider), "default_host_for", None) is not None
+    if needs_host and host is None:
+        genes, n_clusters = op_collect_marker_genes(args.input, log, params)
+        empty = _empty_payload(
+            args, provider, reference_species, species_type, host,
+            n_clusters=n_clusters,
+            host_warnings=host_warnings + provider_warnings,
+            extra_warning="provider REST 不可达,跳过逐基因查询",
+        )
+        write_meta = op_write_output(out_dir, log, params, empty)
+        _cache_save(cache_path, empty)
+        return common.ok({
+            "cross_species_map_json": write_meta["cross_species_map_json"],
+            "cache_hit": False,
+            "n_target_genes": empty["summary"]["n_input_genes"],
+            "n_mapped": 0,
+            "hit_rate": 0.0,
+            "warnings": empty["warnings"],
+        })
 
     # Live provider calls
     genes, n_clusters = op_collect_marker_genes(args.input, log, params)

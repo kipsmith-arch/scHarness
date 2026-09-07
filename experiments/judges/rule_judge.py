@@ -11,6 +11,7 @@ from ._common import (
     load_run_log,
     rank_annotations,
     refined_clusters,
+    routing_accept_from_precheck,
 )
 
 # Story 6.9 calibration — do not retune in this refactor.
@@ -96,6 +97,11 @@ class RuleJudge:
         if dp == "marker_quality":
             return _j("markers_accept", "rule: marker 漏斗过线,accept")
 
+        if dp == "cross_species_routing" and project_dir:
+            routed = routing_accept_from_precheck(project_dir)
+            routed["reasoning"] = "rule: " + routed["reasoning"]
+            return routed
+
         if dp == "kg_match":
             return _j("id_match_ok", "rule: id_match_ok(TAIR ID 物种特异)")
 
@@ -180,6 +186,7 @@ class RuleJudge:
             "batch_effect": "well_mixed",
             "de_method": "wilcoxon",
             "marker_quality": "markers_accept",
+            "cross_species_routing": "routing_accept",
             "kg_match": "id_match_ok",
             "candidate_gap": "first_decisive",
             "candidate_disambiguate": "ambiguous_true",

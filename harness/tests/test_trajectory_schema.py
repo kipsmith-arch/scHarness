@@ -5,7 +5,7 @@
 skills/cell-annotation/scripts/trajectory_schema.py,两个调用方均导入它。
 
 本测试验证:
-- 共享表完整性:13 个决策点,9 session 级 + 4 cluster 级
+- 共享表完整性:14 个决策点,10 session 级 + 4 cluster 级
 - write_judgment 与 validate_log 都从同一模块导入(同一对象,杜绝漂移)
 - write_judgment._validate_add 对粒度违规拒写入
 - validate_log.validate 对粒度违规报 ERROR(exit 1)
@@ -38,9 +38,15 @@ _VALIDATOR = _load_module("validate_log", ROOT_SCRIPTS / "validate_log.py")
 
 
 def test_scope_map_shape():
-    assert len(_SCHEMA.REQUIRED_SCOPE) == 13
-    assert sum(v == "session" for v in _SCHEMA.REQUIRED_SCOPE.values()) == 9
+    assert len(_SCHEMA.REQUIRED_SCOPE) == 14
+    assert sum(v == "session" for v in _SCHEMA.REQUIRED_SCOPE.values()) == 10
     assert sum(v == "cluster" for v in _SCHEMA.REQUIRED_SCOPE.values()) == 4
+    assert _SCHEMA.REQUIRED_SCOPE["cross_species_routing"] == "session"
+
+
+def test_writer_enums_cover_required_scope():
+    assert set(_WRITER.DECISION_ENUMS) == set(_SCHEMA.REQUIRED_SCOPE)
+    assert set(_VALIDATOR.DECISION_ENUMS) == set(_SCHEMA.REQUIRED_SCOPE)
 
 
 def test_both_consumers_share_same_object():

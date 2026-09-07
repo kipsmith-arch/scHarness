@@ -264,6 +264,18 @@ class TestHostReachable:
         assert host == "https://my.example.org"
         assert warns == []
 
+    def test_dns_fail_does_not_fallback_to_vertebrates(self, monkeypatch):
+        p = xmap_ensembl.EnsemblComparaProvider()
+        monkeypatch.setattr(xmap, "check_dns", lambda url: False)
+        host, warns = xmap._ensure_host_reachable(p, "Plant", None)
+        assert host is None
+        assert any("不跨 division" in w for w in warns)
+
+    def test_flatten_species_list_accepts_csv(self):
+        assert xmap._flatten_species_list(["zea_mays,oryza_sativa", "zea_mays"]) == [
+            "zea_mays", "oryza_sativa",
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Schema discipline

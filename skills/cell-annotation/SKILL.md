@@ -12,7 +12,7 @@ description: 单细胞 RNA-seq 细胞类型注释技能:覆盖从 QC 预处理�
 所有决策点"看什么"段列出的 path 是 LLM 读指标用的 JSON 路径。本规范明确**必读**与**不读**:
 
 - **必读(canonical path)**:
-  - `step4_rank.rank_candidates.cluster{N}.*` —— cluster 级决策点(candidate_gap §3.8 / candidate_disambiguate §3.9)的标准形式。
+  - `step4_rank.rank_candidates.cluster{N}.*` —— cluster 级决策点(candidate_gap §3.9 / candidate_disambiguate §3.10)的标准形式。
   - `step5_refine.write_refined.*` / `step5_refine.candidate_autocorr.per_cluster.{N}.*` / `step5_refine.subcluster.per_cluster.{N}.*` —— refine 阶段全局与 per_cluster 计数与指标。
   - `step6_validate.global_summary.*` —— 最终全局统计。
   - `step6_validate.marker_expression.per_cluster.{N}.*` —— cluster 级 marker 表达指标。
@@ -29,27 +29,28 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - **任务产出**:每个 cluster 一个细胞类型标签 + 置信度(high / medium / low)+ top-3 marker 表达证据 + 元数据(参考来源、参数、日期)。
 - **分工原则**:pipeline 只做测量——产出原始指标,不做 pass/fail 判断。所有 high/medium/low、accept/adjust、clear/ambiguous 的判断由你基于指标解读给出,并说明依据。
 - **判断必须附依据**:不能只说"这个簇是 lateral root cap,高置信度",要说"第一候选有 18 个支持 marker(第二候选只有 3 个),top marker pct1=0.82 pct2=0.02"。依据不足时如实说"不确定",不要硬选。
-- **数据范围**:单物种 scRNA-seq(主要场景为植物拟南芥根,QC 同时看线粒体与叶绿体);不做跨物种注释。
+- **数据范围**:单物种 scRNA-seq(主要场景为植物拟南芥根,QC 同时看线粒体与叶绿体)。本物种在 KG 覆盖不足时走 SOP-2.5:先 `step3_kg_precheck` 再按需 `step2_cross_species_map`,然后 `step3_kg__query --ortholog-map`。
 - **加载纪律**:一个子命令 = 一次数据加载;不要为单个指标反复读 h5ad。step3_kg / step4_rank / step7_diagnose 与 report 类子命令零加载,只读 JSON 与 sidecar(obs_snapshot.csv 等)。
 - **交叉验证靠外部知识**:你可以用生物学知识判断候选是否同义词/父子类、marker 是否合理,但要告知用户这是你的判断而非 KG 数据。
 
 ## 2. 工作流程与决策点总览
 
-按 7 个阶段依次执行(对应 SOP-1~SOP-6),全程共 13 个决策点:
+按 7 个阶段依次执行(对应 SOP-1~SOP-6),全程共 14 个决策点:
 
 | 阶段 | 工具 | SOP 步骤 | 决策点 |
 |---|---|---|---|
 | step1_prepare | 预处理 + 聚类 | SOP-1 | qc_threshold / resolution_select / clustering_quality / batch_effect |
 | step2_markers | marker 发现 | SOP-2 | de_method / marker_quality |
+| step3_kg_precheck + 可选 step2_cross_species_map | 跨物种路由 | SOP-2.5 | cross_species_routing |
 | step3_kg | 知识图谱查询 | SOP-3 | kg_match |
 | step4_rank | 候选排序(测量) | SOP-4 | candidate_gap / candidate_disambiguate |
 | step5_refine | 细化 | SOP-5 | refine_effect / unknown_cluster |
 | step6_validate | 验证交付 | SOP-6 | label_confirm |
 | step7_diagnose | 诊断 | SOP-6 总检 | global_quality |
 
-主流程:预处理 QC 合格 → 找 marker → 查参考知识 → 判断每簇 → 模糊簇细化 → 验证交付。某步质量不达标时回到对应步骤调整(例如聚类质量不理想时,可调用 `step1_prepare__recluster` 换分辨率)。流程细节、质量检查表与症状速查见 references/sop.md。
+主流程:预处理 QC 合格 → 找 marker → **precheck 路由** →(需要时同源映射)→ 查参考知识 → 判断每簇 → 模糊簇细化 → 验证交付。某步质量不达标时回到对应步骤调整(例如聚类质量不理想时,可调用 `step1_prepare__recluster` 换分辨率)。流程细节、质量检查表与症状速查见 references/sop.md。
 
-## 3. 13 个决策点
+## 3. 14 个决策点
 
 每个决策点:何时判断、"看什么"(指标路径,数值解读见 references/metrics.md)、判断要点、decision 枚举。**decision 只能选枚举内的值**(这是实验断言与可比性的前提);每条判断都要写 judgment 记录(见 §7)。
 
@@ -89,14 +90,20 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - 判断要点:每簇 marker 10-50 个是合格尺度;0 个说明 DE 无结果——先确认 DE 输入是 raw counts、过滤是否过严;稀有簇 marker 天然少,不要反复收紧;当 marker 大量是管家基因/批次基因时,先查基因构成再决定如何调过滤。
 - decision 枚举:`markers_accept` / `markers_adjust_filter` / `markers_fail`
 
-### 3.7 kg_match(step3_kg,SOP-3,session 级)
+### 3.7 cross_species_routing(step3_kg_precheck,SOP-2.5,session 级)
+- 何时:`marker_quality` 接受之后、`step3_kg__query` 之前。先调 `step3_kg_precheck__run`(`--target-species` `--organ` `--species-type`)。
+- 看什么:`step3_kg_precheck.write_report` / coverage_report 的 `coverage_tier`、`recommended_strategy`(`single_species` / `mixed` / `cross_species_only`)、`recommended_reference_species`(species / kg_genes / score)。
+- 判断要点:`routing_accept` 跟推荐。`single_species` → 直接 `step3_kg__query`(不要先拿本物种 ID 打空 KG 再补救)。`mixed` / `cross_species_only` → 先 `step2_cross_species_map__run`(`--target-species` `--reference-species` `--input step2_markers/markers.json`),再 `step3_kg__query --ortholog-map step2_cross_species_map/cross_species_map.json`。映射 hit_rate 很低或 warnings 含 DNS/REST 不可达时,可换 reference、或 `routing_force_single` 走直接路径。`routing_multi_reference` 必须在 action 里写出参考物种列表。
+- decision 枚举:`routing_accept` / `routing_force_single` / `routing_force_cross` / `routing_multi_reference`
+
+### 3.8 kg_match(step3_kg,SOP-3,session 级)
 - 何时:query_genes 之后。
-- 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
-- 判断要点:命中率高说明基因 ID 与 KG 中存储格式一致、organ 对齐良好;命中率低先查 organ 是否与数据来源对齐(动物/植物、不同器官名变体如 root/shoot/leaf 都要核实),再查上游预处理是否完成了 ID 转换(TAIR locus -> symbol 等)——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
+- 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;若传了 `--ortholog-map` 再看 `n_direct_hits` / `n_ortholog_hits` / `n_mixed_hits` / `ortholog_warnings`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
+- 判断要点:命中率高说明基因 ID 与 KG 中存储格式一致、organ 对齐良好;命中率低先查 organ 是否与数据来源对齐(动物/植物、不同器官名变体如 root/shoot/leaf 都要核实),再查上游预处理是否完成了 ID 转换(TAIR locus -> symbol 等)——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。本物种不在 KG 时不应在此处才第一次去同源:应已在 §3.7 走完映射再查。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
 - **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
 - decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
 
-### 3.8 candidate_gap(step4_rank,SOP-4,cluster 级)
+### 3.9 candidate_gap(step4_rank,SOP-4,cluster 级)
 - 何时:rank_candidates 之后(每簇各一条)。
 - 看什么(canonical path,Story 6.10):
   - `step4_rank.rank_candidates.cluster{N}.first_count` / `.second_count` / `.count_ratio` / `.count_diff`
@@ -108,31 +115,31 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - 判断要点:first_count 明显大于 second_count 时第一候选可信;两者接近时先查 first_second_ancestor_overlap——父子/同义关系下的并列不是真模糊(陷阱 2),选更具体者;无 KG 命中(first_candidate 为 None)标 unknown。小样本时 count_diff 比 count_ratio 可靠(陷阱 3)。**top 候选已按 organ 优先级排序,无需手动排除 mismatch**;`unknown` 候选不参与 gap 比较。
 - decision 枚举:`first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown`
 
-### 3.9 candidate_disambiguate(step4_rank,SOP-4,cluster 级,仅并列簇)
+### 3.10 candidate_disambiguate(step4_rank,SOP-4,cluster 级,仅并列簇)
 - 何时:rank_candidates 之后,且第一/第二候选并列。
 - 看什么(canonical path,Story 6.10):`step4_rank.rank_candidates.cluster{N}.first_second_ancestor_overlap.related`、`step4_rank.rank_candidates.cluster{N}.first_second_ancestor_overlap.n_shared_ancestors` / `.shared_ancestors`、`step4_rank.rank_candidates.cluster{N}.first_mean_confidence` / `.second_mean_confidence`、`step4_rank.rank_candidates.cluster{N}.n_tied_at_first`。
 - 判断要点:并列时判断两个候选是同义词、父子类还是真模糊。KG 本体给出的 ancestor 关系是直接证据;本体无记录时可用生物学知识判断,并注明依据来源。
 - decision 枚举:`ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true`
 
-### 3.10 refine_effect(step5_refine,SOP-5,cluster 级,仅 analyzed 簇)
+### 3.11 refine_effect(step5_refine,SOP-5,cluster 级,仅 analyzed 簇)
 - 何时:candidate_autocorr、subcluster、marker_overlap 之后。
 - 看什么(canonical path,Story 6.10):`step5_refine.candidate_autocorr.per_cluster.{N}.morans_i` / `score_distribution`(双峰性)、`step5_refine.subcluster.per_cluster.{N}.n_subclusters` / `step5_refine.marker_overlap.per_cluster.{N}.Jaccard_index`、`step5_refine.type_membership.per_subcluster.<sub_id>.types_in_parent_candidates`。
 - 判断要点:morans_i 高且倾向分数双峰 → 存在子群体结构,细分有基础;子簇间 Jaccard 高 → 没有真正分开,细化无效;子簇类型与父候选完全无关 → 可能是批次/质量驱动的假分裂,退回父级标签。细胞数 <100 的簇直接标"细胞数不足,未细分"(SOP-5A)。
 - decision 枚举:`refine_effective` / `refine_ineffective` / `refine_skipped` / `refine_autocorr_low`
 
-### 3.11 unknown_cluster(step5_refine,SOP-5,session 级)
+### 3.12 unknown_cluster(step5_refine,SOP-5,session 级)
 - 何时:unknown_overlap 之后。
 - 看什么(canonical path,Story 6.10):`step5_refine.unknown_overlap.unknown_overlap_summary.avg_overlap`、`step5_refine.unknown_overlap.unknown_overlap_summary.jaccard_per_pair`、`step5_refine.unknown_overlap.unknown_overlap_summary.n_unknown_clusters`、`step5_refine.unknown_overlap.unknown_overlap_summary.frac_unknown`。
 - 判断要点:unknown 簇之间 marker 重叠高 → 是同一个未知类型,重叠低 → 各自独立的新类型;不硬贴标签。unknown 比例高先查 organ 对齐与 KG 覆盖,不要直接判定数据有问题。
 - decision 枚举:`single_unknown_type` / `multiple_unknown_types`
 
-### 3.12 label_confirm(step6_validate,SOP-6,cluster 级)
+### 3.13 label_confirm(step6_validate,SOP-6,cluster 级)
 - 何时:marker_expression 之后(每簇各一条)。
 - 看什么(canonical path,Story 6.10):`step6_validate.marker_expression.per_cluster.{N}.top_markers_expression[<i>].pct1` / `pct2` / `cohen_d`(Cohen's d,即指标的 effect_size 命名)/ `auc` / `fold_change`、`step6_validate.marker_expression.per_cluster.{N}.mean_top3_pct1` / `mean_top3_specificity` / `marker_gene_overlap_score`。
 - 判断要点:top-3 marker 在本簇高表达、在其他簇低表达,标签有支撑;pct1 高但 pct2 也高 → 管家基因型 marker,标签存疑(陷阱 4);canonical marker 在该簇不表达 → 标签错了,重查 SOP-3/SOP-4。证据型 confidence 字段是快照,你可用更多证据覆盖它,覆盖时在 reasoning 说明。
 - decision 枚举:`label_confirmed` / `label_downgraded` / `label_unknown`
 
-### 3.13 global_quality(step7_diagnose,SOP-6 总检,session 级)
+### 3.14 global_quality(step7_diagnose,SOP-6 总检,session 级)
 - 何时:cross_cluster 之后、交付之前。
 - 看什么:`step7_diagnose.cross_cluster`(label_uniqueness、annotation_entropy、cluster_purity_proxy、mean_first_count_gap、cross_cluster_marker_overlap_matrix / mean_cross_cluster_marker_overlap)+ `step6_validate.global_summary.unknown_rate`、`label_diversity`。
 - 判断要点:交付前总检——每簇有标签 + 置信度 + marker 证据;unknown 率、标签多样性、跨簇 marker 共享对照 SOP-6 总检表;元数据(参考来源、参数、日期)完整。总检不达标时回到对应 SOP 修复。
@@ -194,7 +201,7 @@ write_judgment__session-start(project_dir="<project-dir>",
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| decision_point | 是 | 13 个决策点之一(见 §3) |
+| decision_point | 是 | 14 个决策点之一(见 §3) |
 | scope | 是 | `{"type":"session"}` 或 `{"type":"cluster","cluster_id":"0"}`(粒度由决策点决定,见下表) |
 | run_ref | 是 | 基于的 exec 记录 run_id(从脚本输出获取) |
 | inputs | 是 | [{path, value}] 你实际读取并用于判断的变量 |
@@ -207,7 +214,7 @@ write_judgment__session-start(project_dir="<project-dir>",
 
 | decision_point | scope 类型 | 每数据集条数 |
 |---|---|---|
-| qc_threshold / resolution_select / clustering_quality / batch_effect / de_method / marker_quality / kg_match / unknown_cluster / global_quality | session | 1 |
+| qc_threshold / resolution_select / clustering_quality / batch_effect / de_method / marker_quality / cross_species_routing / kg_match / unknown_cluster / global_quality | session | 1 |
 | candidate_gap / candidate_disambiguate / refine_effect / label_confirm | cluster | candidate_gap/label_confirm = 簇数;disambiguate/refine_effect 仅部分簇 |
 
 - **session 级决策点**:一次写一条,scope.type=session,不需 cluster_id。

@@ -53,6 +53,7 @@ def _by_subcommand(payload: dict) -> dict:
     "name",
     [
         "organ", "species", "species_type", "strict_organ",  # biological decision
+        "ortholog_map",  # SOP-2.5 map consumed by step3
         "project_dir", "input",  # I/O paths exposed to LLM (decision-point-driven overrides)
     ],
 )

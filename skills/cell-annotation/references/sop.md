@@ -12,6 +12,7 @@
 - [步骤总览](#步骤总览)
 - [SOP-1 数据预处理 QC](#sop-1数据预处理-qc)
 - [SOP-2 找 marker 基因](#sop-2找-marker-基因)
+- [SOP-2.5 跨物种路由预检](#sop-25跨物种路由预检条件)
 - [SOP-3 查参考知识](#sop-3查参考知识)
 - [SOP-4 判断每个 cluster 是什么细胞](#sop-4判断每个-cluster-是什么细胞)
 - [SOP-5 处理模糊和缺失](#sop-5处理模糊和缺失)
@@ -40,7 +41,7 @@
 - 元数据：参考数据库版本、阈值参数、注释日期
 
 ## 步骤总览
-SOP-1 预处理 QC → SOP-2 找 marker → SOP-3 查参考知识 → SOP-4 判断 cluster → SOP-5 处理模糊/缺失 → SOP-6 验证交付
+SOP-1 预处理 QC → SOP-2 找 marker → SOP-2.5 跨物种路由 → SOP-3 查参考知识 → SOP-4 判断 cluster → SOP-5 处理模糊/缺失 → SOP-6 验证交付
 
 ---
 
@@ -90,13 +91,27 @@ SOP-1 预处理 QC → SOP-2 找 marker → SOP-3 查参考知识 → SOP-4 判�
 
 ---
 
+## SOP-2.5　跨物种路由预检（条件）
+
+**何时**：SOP-2 完成、SOP-3 查 KG **之前**。每个数据集一次。
+
+**操作**：
+1. 调 `step3_kg_precheck__run`（`--target-species` `--organ` `--species-type`），读 `coverage_report.json`：`coverage_tier` / `recommended_strategy` / `recommended_reference_species`。
+2. 写 `cross_species_routing` judgment：`routing_accept`（跟推荐）/ `routing_force_single` / `routing_force_cross` / `routing_multi_reference`。
+3. `single_species`：跳过同源，直接 SOP-3。
+4. `mixed` / `cross_species_only`：调 `step2_cross_species_map__run`，产出 `cross_species_map.json`；再 SOP-3 时传 `--ortholog-map`。
+
+**不要**先用本物种 ID 查空 KG、发现 0 命中后再去同源。映射失败（空表 / DNS）时工具返回空 map + warnings，KG 自动只走直接路径。
+
+---
+
 ## SOP-3　查参考知识
 
-**输入**：SOP-2 的 marker 列表
+**输入**：SOP-2 的 marker 列表；若走了 SOP-2.5b，另加 `cross_species_map.json`
 **操作**：
 1. 选定 organ（必须和数据来源 organ 对齐）。
-2. 在参考数据库/图谱里（PanglaoDB、CellMarker、文献 marker list、知识图谱），按 organ 过滤。
-3. 拿每个 cluster 的 marker 去查它标记什么细胞类型。
+2. 在参考数据库/图谱里（PanglaoDB、CellMarker、文献 marker list、知识图谱），按 organ 过滤。传 `--ortholog-map` 时工具并行跑直接路径与同源路径。
+3. 拿每个 cluster 的 marker（及映出的参考物种基因）去查它标记什么细胞类型。
 4. 统计每个 cluster 命中多少种候选细胞类型。
 
 **输出**：每个 marker → 它标记的细胞类型；每个 cluster → 候选细胞类型列表

@@ -98,11 +98,12 @@ def arm3_task(project_dir: str) -> str:
 2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
 3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
 4. step3_kg__query 必须带 --organ {ORGAN}。
-5. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
-6. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
-7. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
-8. 不要调用 write_note / retrieve_notes（本臂禁用笔记本；session 已 --no-notebook）。
-9. 交付前 write_judgment__session-end。
+5. marker 接受后先 step3_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing；single_species 直接查 KG，mixed/cross_species_only 先 step2_cross_species_map__run 再 step3_kg__query --ortholog-map。不要先打空 KG 再补同源。
+6. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
+7. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
+8. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
+9. 不要调用 write_note / retrieve_notes（本臂禁用笔记本；session 已 --no-notebook）。
+10. 交付前 write_judgment__session-end。
 
 请开始执行。
 """

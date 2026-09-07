@@ -11,6 +11,7 @@ REQUIRED_SCOPE: dict[str, str] = {
     "de_method": "session",
     "marker_quality": "session",
     "kg_match": "session",
+    "cross_species_routing": "session",
     "unknown_cluster": "session",
     "global_quality": "session",
     "candidate_gap": "cluster",

@@ -1,4 +1,4 @@
-"""Cell-annotation DAG instance (47 ops + 13 decision_after bindings).
+"""Cell-annotation DAG instance (47 ops + 14 decision_after bindings).
 
 Lives in experiments/ so harness stays domain-agnostic. The walker is
 ``harness.scripted_driver.run_scripted``.
@@ -84,6 +84,10 @@ MARKER_QUALITY = DecisionAfter(
     accept_decision="markers_accept",
     retry_on=("markers_adjust_filter",),
 )
+CROSS_SPECIES_ROUTING = DecisionAfter(
+    "cross_species_routing",
+    accept_decision="routing_accept",
+)
 KG_MATCH = DecisionAfter("kg_match", accept_decision="id_match_ok")
 CANDIDATE_GAP = DecisionAfter(
     "candidate_gap",
@@ -137,9 +141,24 @@ CELL_ANNOTATION_DAG: list[Node] = [
         ops=STEP2_OPS,
     ),
     Node(
+        id="step3_kg_precheck.run",
+        tool="step3_kg_precheck__run",
+        deps=["step2_markers.run"],
+        decision_after=[CROSS_SPECIES_ROUTING],
+        ops=("target_coverage", "candidate_refs", "write_report"),
+    ),
+    Node(
+        id="step2_cross_species_map.run",
+        tool="step2_cross_species_map__run",
+        deps=["step3_kg_precheck.run"],
+        skippable=True,
+        require_args=("reference_species",),
+        ops=("collect_marker_genes", "query_provider", "write_output"),
+    ),
+    Node(
         id="step3_kg.query",
         tool="step3_kg__query",
-        deps=["step2_markers.run"],
+        deps=["step2_cross_species_map.run"],
         decision_after=[KG_MATCH],
         ops=STEP3_OPS,
     ),
@@ -201,6 +220,6 @@ def unique_pipeline_ops() -> list[str]:
 
 
 assert len(unique_pipeline_ops()) == 47, unique_pipeline_ops()
-assert len(all_decision_points(CELL_ANNOTATION_DAG)) == 13, all_decision_points(CELL_ANNOTATION_DAG)
+assert len(all_decision_points(CELL_ANNOTATION_DAG)) == 14, all_decision_points(CELL_ANNOTATION_DAG)
 # catalog listing (with reuse on metrics/test-connection/report) is larger than 47
 assert len(all_ops(CELL_ANNOTATION_DAG)) >= 47

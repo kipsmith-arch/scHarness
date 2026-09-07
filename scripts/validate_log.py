@@ -4,7 +4,7 @@
 - 公共字段:ts(ISO 8601)、seq(int,文件内唯一从 1 单调递增)、type
 - type ∈ {session_start, exec, judgment, session_end}
 - exec:run_id 格式 ``{step}.{op}#{attempt}`` + parameters + metrics
-- judgment:decision_point(13 枚举之一)、scope、run_ref、inputs[]、output、reasoning
+- judgment:decision_point(14 枚举之一)、scope、run_ref、inputs[]、output、reasoning
 - 记录级别:error(exit 1)/ warning(exit 0 但报告)
 
 校验形态(mode):
@@ -37,6 +37,9 @@ DECISION_ENUMS: dict[str, set[str]] = {
     "de_method": {"wilcoxon", "pseudobulk_all", "pseudobulk_rare"},
     "marker_quality": {"markers_accept", "markers_adjust_filter", "markers_fail"},
     "kg_match": {"id_match_ok", "id_mismatch_gene_key", "id_mismatch_organ"},
+    "cross_species_routing": {
+        "routing_accept", "routing_force_single", "routing_force_cross", "routing_multi_reference",
+    },
     "candidate_gap": {"first_decisive", "ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true", "unknown"},
     "candidate_disambiguate": {"ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true"},
     "refine_effect": {"refine_effective", "refine_ineffective", "refine_skipped", "refine_autocorr_low"},
@@ -48,7 +51,7 @@ VALID_TYPES = {"session_start", "exec", "judgment", "session_end"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 
 # 决策点→scope 类型由 skills/cell-annotation/scripts/trajectory_schema.py 提供。
-# 9 session 级 + 4 cluster 级;粒度违规报 ERROR。
+# 10 session 级 + 4 cluster 级;粒度违规报 ERROR。
 
 ERROR, WARNING = "error", "warning"
 
@@ -131,7 +134,7 @@ def validate(path: str, mode: str = "auto") -> tuple[list[dict], int]:
             elif rtype == "judgment":
                 dp = rec.get("decision_point")
                 if dp not in DECISION_ENUMS:
-                    add(ERROR, lineno, f"decision_point 非法: {dp!r}(13 枚举之一)")
+                    add(ERROR, lineno, f"decision_point 非法: {dp!r}(14 枚举之一)")
                 else:
                     decision = (rec.get("output") or {}).get("decision")
                     if decision not in DECISION_ENUMS[dp]:

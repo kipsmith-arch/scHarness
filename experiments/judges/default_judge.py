@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ._common import cluster_entry, commit_label_patches
+from ._common import cluster_entry, commit_label_patches, routing_accept_from_precheck
 
 ACCEPT = {
     "qc_threshold": "threshold_default",
@@ -13,6 +13,7 @@ ACCEPT = {
     "batch_effect": "well_mixed",
     "de_method": "wilcoxon",
     "marker_quality": "markers_accept",
+    "cross_species_routing": "routing_accept",
     "kg_match": "id_match_ok",
     "candidate_gap": "first_decisive",
     "candidate_disambiguate": "ambiguous_true",
@@ -41,6 +42,10 @@ class DefaultJudge:
             }
         cid = str((scope or {}).get("cluster_id") or "")
         driver: dict = {"kind": "proceed"}
+        if dp == "cross_species_routing" and project_dir:
+            routed = routing_accept_from_precheck(project_dir)
+            routed["reasoning"] = "arm-default: " + routed["reasoning"]
+            return routed
         if dp == "resolution_select":
             driver["node_args"] = {
                 "step1_prepare.run": {"target_resolution": self.resolution},

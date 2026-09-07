@@ -157,3 +157,51 @@ def materialize_llm_labels(project_dir: str) -> str:
             "arm_decision_source": "llm",
         }
     return commit_label_patches(project_dir, patches)
+
+
+def coverage_report(project_dir: str) -> dict:
+    path = os.path.join(project_dir, "step3_kg_precheck", "coverage_report.json")
+    return read_json(path) or {}
+
+
+def routing_accept_from_precheck(project_dir: str) -> dict:
+    """①②: follow precheck recommendation. Skip map on single_species."""
+    report = coverage_report(project_dir)
+    strategy = report.get("recommended_strategy") or "single_species"
+    refs = report.get("recommended_reference_species") or []
+    ref_names = [r.get("species") for r in refs if isinstance(r, dict) and r.get("species")]
+    target = report.get("target_species")
+    inputs = [
+        {"path": "step3_kg_precheck.coverage_report.recommended_strategy", "value": strategy},
+        {"path": "step3_kg_precheck.coverage_report.recommended_reference_species", "value": ref_names},
+    ]
+    need_map = strategy in ("mixed", "cross_species_only") and bool(ref_names) and bool(target)
+    driver: dict = {"kind": "proceed", "skip_nodes": [], "node_args": {}}
+    if not need_map:
+        driver["skip_nodes"] = ["step2_cross_species_map.run"]
+        action = "run step3_kg__query (single_species; skip map)"
+        reason = f"routing_accept: strategy={strategy}, skip cross-species map"
+    else:
+        map_json = os.path.join(project_dir, "step2_cross_species_map", "cross_species_map.json")
+        markers = os.path.join(project_dir, "step2_markers", "markers.json")
+        driver["node_args"] = {
+            "step2_cross_species_map.run": {
+                "target_species": target,
+                "reference_species": ref_names[0],
+                "input": markers,
+            },
+            "step3_kg.query": {"ortholog_map": map_json},
+        }
+        action = (
+            f"run step2_cross_species_map --reference-species={ref_names[0]} "
+            f"then step3_kg__query --ortholog-map"
+        )
+        reason = f"routing_accept: strategy={strategy}, map via {ref_names[0]}"
+    return {
+        "decision": "routing_accept",
+        "confidence": "high",
+        "action": action,
+        "inputs": inputs,
+        "driver": driver,
+        "reasoning": reason,
+    }

@@ -14,7 +14,7 @@ execution channel (dispatcher subprocess). seq counter is shared with exec
 records via common.append_log — no separate counter to keep in sync.
 
 Validation (before append, so illegal values never enter the trajectory):
-- add           : decision_point ∈ 13 points; decision ∈ that point's enum;
+- add           : decision_point ∈ 14 points; decision ∈ that point's enum;
                   scope ∈ {session, cluster} (cluster_id required when cluster);
                   run_ref matches ``{step}.{op}#{attempt}``; inputs JSON array
                   of {path, value}; confidence ∈ {high, medium, low}; reasoning non-empty
@@ -44,6 +44,9 @@ DECISION_ENUMS: dict[str, set[str]] = {
     "de_method": {"wilcoxon", "pseudobulk_all", "pseudobulk_rare"},
     "marker_quality": {"markers_accept", "markers_adjust_filter", "markers_fail"},
     "kg_match": {"id_match_ok", "id_mismatch_gene_key", "id_mismatch_organ"},
+    "cross_species_routing": {
+        "routing_accept", "routing_force_single", "routing_force_cross", "routing_multi_reference",
+    },
     "candidate_gap": {"first_decisive", "ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true", "unknown"},
     "candidate_disambiguate": {"ambiguous_parent_child", "ambiguous_synonym", "ambiguous_true"},
     "refine_effect": {"refine_effective", "refine_ineffective", "refine_skipped", "refine_autocorr_low"},
@@ -56,7 +59,7 @@ VALID_CONFIDENCE = {"high", "medium", "low"}
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+#[1-9][0-9]*$")
 
 # 决策点→scope 类型硬映射由 trajectory_schema.REQUIRED_SCOPE 提供。
-# 9 session 级 + 4 cluster 级;粒度违规直接拒写入。
+# 10 session 级 + 4 cluster 级;粒度违规直接拒写入。
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_add = sub.add_parser("add", help="校验并追加一条 judgment 记录")
     common.add_common_args(p_add)
-    p_add.add_argument("--decision-point", required=True, help="13 个决策点之一(见 SKILL.md §3)")
+    p_add.add_argument("--decision-point", required=True, help="14 个决策点之一(见 SKILL.md §3)")
     p_add.add_argument("--decision", required=True, help="该决策点的 decision 枚举值")
     p_add.add_argument("--scope-type", required=True, choices=sorted(VALID_SCOPES),
                        help="session 或 cluster")
@@ -180,7 +183,7 @@ SCHEMA = {
         "description": "追加一条 judgment 记录(决策留痕;校验 decision 枚举,非法值不写入)",
         "args": [
             ("project_dir", "string", True, "output", "项目目录(含 run_log.jsonl)"),
-            ("decision_point", "string", True, None, "13 个决策点之一"),
+            ("decision_point", "string", True, None, "14 个决策点之一"),
             ("decision", "string", True, None, "该决策点的 decision 枚举值"),
             ("scope_type", "string", True, None, "session 或 cluster"),
             ("cluster_id", "string", False, None, "scope-type=cluster 时必填"),

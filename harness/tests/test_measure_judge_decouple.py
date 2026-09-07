@@ -464,13 +464,15 @@ def test_step5_refuses_without_clusters(tmp_path):
     assert "--clusters" in result["error"] or "clusters" in result["error"]
 
 
-def test_cell_annotation_dag_binds_13_and_47():
+def test_cell_annotation_dag_binds_14_and_47():
     from experiments.cell_annotation_dag import (
         CELL_ANNOTATION_DAG, unique_pipeline_ops,
     )
     from harness.dag import all_decision_points
     assert len(unique_pipeline_ops()) == 47
-    assert len(all_decision_points(CELL_ANNOTATION_DAG)) == 13
+    assert len(all_decision_points(CELL_ANNOTATION_DAG)) == 14
     tools = {n.tool for n in CELL_ANNOTATION_DAG}
     assert "step4_rank__run" in tools
     assert "step4_judge__run" not in tools
+    assert "step3_kg_precheck__run" in tools
+    assert "step2_cross_species_map__run" in tools
