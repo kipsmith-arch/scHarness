@@ -183,7 +183,6 @@ def evaluate_predictions(features: dict[str, dict], cluster_top_true: dict[str, 
     STRICT_HIT = {"exact", "synonym"}
     PARTIAL_HIT = {"subtype", "supertype"}
     WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5, "unrelated": 0.0, "unmatched": 0.0}
-    CONF = {"high": 1.0, "medium": 1.0, "low": 0.5}
 
     n_correct = 0
     n_total = 0
@@ -210,9 +209,8 @@ def evaluate_predictions(features: dict[str, dict], cluster_top_true: dict[str, 
         else:
             relation = hits[0]["relation"]
         rel_w = WEIGHT.get(relation, 0.0)
-        conf_w = CONF.get(conf, 0.5)
-        cell_w = rel_w * conf_w
-        is_strict = relation in STRICT_HIT and conf in ("high", "medium")
+        cell_w = rel_w
+        is_strict = relation in STRICT_HIT
 
         true = cluster_top_true.get(cid)
         if true is None:

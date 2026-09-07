@@ -43,16 +43,14 @@ STRICT_HIT = {"exact", "synonym"}
 PARTIAL_HIT = {"subtype", "supertype"}
 WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5,
           "unrelated": 0.0, "unmatched": 0.0}
-CONFIDENCE_WEIGHT = {"high": 1.0, "medium": 1.0, "low": 0.5}
 
 
 def _cluster_strict_relaxed_macro(cells: list[dict], label_map: dict, true_labels: list[str]) -> dict:
     """Compute strict / relaxed / macro-F1 from a list of cell dicts.
 
-    Identical semantics to evaluate_cell_level.evaluate_arm (same WEIGHT and
-    CONFIDENCE_WEIGHT). label_map is the real {raw: [{true, relation}]}
-    mapping, not a bootstrap-time approximation — the previous simplified
-    mapping caused macro-F1 to drift from evaluate_cell_level.
+    Identical semantics to evaluate_cell_level.evaluate_arm (relation weight
+    only; confidence is not in the formula). label_map is the real
+    {raw: [{true, relation}]} mapping, not a bootstrap-time approximation.
     """
     tp = {t: 0.0 for t in true_labels}
     fp = {t: 0.0 for t in true_labels}
@@ -62,10 +60,9 @@ def _cluster_strict_relaxed_macro(cells: list[dict], label_map: dict, true_label
     n = len(cells)
     for c in cells:
         rel = c["relation"]
-        conf_w = c["confidence_weight"]
-        rel_w = WEIGHT.get(rel, 0.0)
-        cell_w = rel_w * conf_w
-        is_strict = rel in STRICT_HIT and c.get("is_strict_correct", False)
+        rel_w = c.get("relation_weight", WEIGHT.get(rel, 0.0))
+        cell_w = rel_w
+        is_strict = rel in STRICT_HIT
         if is_strict:
             strict_hits += 1
         score_sum += cell_w

@@ -79,8 +79,8 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 
 ### 3.5 de_method(step2_markers 前,SOP-2,session 级)
 - 何时:运行 step2 之前。
-- 看什么:`step1_prepare.leiden_cluster.cluster_size_distribution.n_rare_clusters`、`frac_smallest_cluster`(占比 <5% 的稀有簇)。
-- 判断要点:稀有簇单细胞 DE 检验力不足,应切 pseudobulk(按样本×簇聚合后 t-test);pseudobulk 聚合样本 <3 时检验力弱(解读参考,见 references/metrics.md §pseudobulk_de)——是否回退由你依证据自行判断。参数见 `step2_markers__run` 的 `--use-pseudobulk-for-rare` 与 `--rare-threshold`。
+- 看什么:`step1_prepare.leiden_cluster.n_clusters`、`step1_prepare.leiden_cluster.cluster_size_distribution`(min / max / 各簇细胞数或占比)。不要把任何预计算的"稀有簇计数"当成稀有定义。
+- 判断要点:哪些簇算稀有由你根据簇大小自行判断。若你判定存在稀有簇,可用 pseudobulk(按样本×簇聚合后 t-test)替代单细胞 Wilcoxon。pseudobulk 是否适用(例如聚合后样本是否够)同样由你依证据判断。切稀有簇时传 `step2_markers__run` 的 `--use-pseudobulk-for-rare`;稀有标准若你已形成判断,再传 `--rare-threshold`。
 - decision 枚举:`wilcoxon` / `pseudobulk_all` / `pseudobulk_rare`
 
 ### 3.6 marker_quality(step2_markers,SOP-2,session 级)

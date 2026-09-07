@@ -1,19 +1,15 @@
-"""B1 cell-level evaluation — extends scripts/evaluate_annotations.py with confidence weighting.
+"""B1 cell-level evaluation — label–map accuracy; confidence is diagnostic only.
 
 Why a new script (instead of editing the existing one):
     ``final_annotations.json`` 的 ``label`` / ``confidence`` / ``status`` 必须由判断层写入;
     本脚本不再从 ``run_log`` 做第二套覆盖。缺这三项则非零退出。
 
-Cell-level semantics:
-    strict_correct = (relation in {exact, synonym}) AND (confidence in {high, medium})
-    partial_correct = (relation in {exact, synonym, subtype, supertype}) weighted
-                       by confidence: high=1.0, medium=1.0, low=0.5
-    label_unknown   = (status == "unknown") → mapped to "unknown" with relation=unmatched
-
-This mirrors the oracle table: a "best-effort but uncertain" label is scored
-half-credit (relaxed) but does not count toward strict accuracy — exactly the
-behavior the trap-aware oracle table would expect (B1 §3.1 陷阱4 管家基因 pct1
-高 → label_downgraded).
+Cell-level semantics (b1-r3-followup.md §2):
+    strict_correct = relation in {exact, synonym}
+    relaxed        = relation weight only (exact/synonym=1, subtype/supertype=0.5)
+    label_unknown  = raw "unknown" → relation=unmatched (no type to score)
+    label_downgraded keeps the predicted label; low confidence is reported as
+    ``low_conf_rate``, not multiplied into accuracy.
 
 Usage:
     python experiments/evaluate_cell_level.py \\
@@ -33,8 +29,7 @@ from collections import Counter
 STRICT_HIT = {"exact", "synonym"}
 PARTIAL_HIT = {"subtype", "supertype"}
 WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5, "unrelated": 0.0, "unmatched": 0.0}
-# B1: a high/medium confidence prediction is treated as "fully committed";
-#       low confidence = "best-effort but uncertain" → 0.5 weight.
+# Recorded on per_cell for diagnostics; not used in strict / relaxed / macro-F1.
 CONFIDENCE_WEIGHT = {"high": 1.0, "medium": 1.0, "low": 0.5}
 
 
@@ -102,7 +97,7 @@ def load_gt(path: str) -> dict[str, str]:
 
 def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
                  label_map: dict, meta: dict, gt: dict) -> dict:
-    """Return a per-arm evaluation report with confidence-weighted metrics."""
+    """Return a per-arm evaluation report (accuracy from label–map only)."""
     obs = load_obs_snapshot(obs_path)
     ann = load_final_annotations(ann_path)
 
@@ -131,9 +126,8 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
             relation = hits[0]["relation"]
         rel_w = WEIGHT.get(relation, 0.0)
         conf_w = CONFIDENCE_WEIGHT.get(conf, 0.5)
-        cell_w = rel_w * conf_w  # combined weight (0..1)
-        # strict requires relation hit AND confidence not low
-        is_strict = relation in STRICT_HIT and conf in ("high", "medium")
+        cell_w = rel_w
+        is_strict = relation in STRICT_HIT
         per_cell.append({
             "cell": cell, "true": true, "leiden": leiden, "raw": raw,
             "confidence": conf, "status": status, "relation": relation,
@@ -193,8 +187,8 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
         }
     mean_purity = sum(v["purity"] for v in cluster_per_arm.values()) / max(len(cluster_per_arm), 1)
 
-    # confidence distribution
     conf_dist = Counter(c["confidence"] for c in per_cell)
+    n_low = conf_dist.get("low", 0)
 
     return {
         "arm": name,
@@ -205,6 +199,7 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
         "macro_f1_soft": round(macro_f1, 4),
         "mean_cluster_purity": round(mean_purity, 4),
         "n_clusters": len(cluster_per_arm),
+        "low_conf_rate": round(n_low / n, 4),
         "confidence_distribution": dict(conf_dist),
         "unmatched_terms": dict(unmatched_terms),
         "unknown_leiden": sorted(unknown_leiden),
@@ -215,7 +210,7 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="evaluate_cell_level.py",
-                                 description="B1 多臂细胞级评估(confidence-weighted)")
+                                 description="B1 多臂细胞级评估(strict/relaxed 只看标签–对照表)")
     ap.add_argument("--arms", nargs="+", required=True,
                     help="格式 <name>=<project_dir>(可多个),如 arm1=output/B1/arm1_default")
     ap.add_argument("--gt-csv", default="experiments/gt_cells.csv")
@@ -251,14 +246,17 @@ def main() -> int:
             "relaxed_accuracy": r["relaxed_accuracy"],
             "macro_f1_soft": r["macro_f1_soft"],
             "mean_cluster_purity": r["mean_cluster_purity"],
+            "low_conf_rate": r["low_conf_rate"],
             "confidence_distribution": r["confidence_distribution"],
             "n_clusters": r["n_clusters"],
         })
 
     report = {
         "label_map_verified": meta.get("verified") is True,
-        "weights": {"relation": WEIGHT, "confidence": CONFIDENCE_WEIGHT,
-                    "strict_requires": "relation in {exact,synonym} AND confidence in {high,medium}"},
+        "weights": {"relation": WEIGHT,
+                    "confidence_diagnostic_only": CONFIDENCE_WEIGHT,
+                    "strict_requires": "relation in {exact, synonym}",
+                    "relaxed": "relation weight; confidence not multiplied"},
         "arms_summary": summary_table,
         "arms": [
             {k: v for k, v in r.items() if k != "per_cell"} for r in arms

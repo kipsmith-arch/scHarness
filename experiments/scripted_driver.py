@@ -33,6 +33,8 @@ def main() -> int:
     ap.add_argument("--project-dir", required=True)
     ap.add_argument("--raw", default=None, help="Raw h5ad path (passed as --input to step1)")
     ap.add_argument("--organ", default="root")
+    ap.add_argument("--species", default=None,
+                    help="Passed to step3_kg__query --species (e.g. sorghum_bicolor)")
     ap.add_argument("--session-id", default=None)
     args = ap.parse_args()
 
@@ -53,6 +55,8 @@ def main() -> int:
                 extra["input"] = args.raw
         elif node.id == "step3_kg.query":
             extra["organ"] = args.organ
+            if args.species:
+                extra["species"] = args.species
         dag.append(replace(node, default_args=extra) if extra != node.default_args else node)
     dataset = {"id": os.path.basename(args.project_dir), "h5ad_path": args.raw, "organ": args.organ}
     try:

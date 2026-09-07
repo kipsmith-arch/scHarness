@@ -927,16 +927,23 @@ def flatten(values: Iterable[Any]) -> List[Any]:
 def resolve_batch_key(obs_columns, batch_key: Optional[str], default: str = "Orig.ident") -> str:
     """Pick the batch column: requested key, else a categorical/object column.
 
-    Raises ValueError when no suitable column exists (never silently picks a
-    numeric QC column as a batch label).
+    Column names are matched case-insensitively (Seurat ``Orig.ident`` vs
+    ``orig.ident``). Raises ValueError when no suitable column exists (never
+    silently picks a numeric QC column as a batch label).
     """
-    if batch_key and batch_key in obs_columns:
-        return batch_key
-    if default in obs_columns:
-        return default
-    for c in ("Dataset", "sample", "batch", "Libraries"):
-        if c in obs_columns:
-            return c
+    lower = {str(c).lower(): c for c in obs_columns}
+
+    def _hit(name: Optional[str]) -> Optional[str]:
+        if not name:
+            return None
+        if name in obs_columns:
+            return name
+        return lower.get(str(name).lower())
+
+    for candidate in (batch_key, default, "Dataset", "sample", "batch", "Libraries"):
+        found = _hit(candidate)
+        if found:
+            return found
     raise ValueError(
         f"找不到批次列:未指定 --batch-key,且 obs 中没有 {default!r}/Dataset/sample/batch/Libraries 列。"
         f"可用列:{list(obs_columns)[:20]}"

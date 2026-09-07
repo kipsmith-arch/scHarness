@@ -37,3 +37,9 @@ def test_compact_floats_keep_json_short():
     blob = json.dumps(d)
     assert "0.1234567890123" not in blob
     assert "bin_edges" not in blob
+
+
+def test_resolve_batch_key_case_insensitive():
+    cols = ["orig.ident", "nCount_RNA"]
+    assert common.resolve_batch_key(cols, "Orig.ident") == "orig.ident"
+    assert common.resolve_batch_key(cols, None) == "orig.ident"

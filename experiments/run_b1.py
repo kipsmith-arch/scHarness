@@ -4,6 +4,10 @@ Usage (from repo root, conda env LM):
 
     python experiments/run_b1.py
     python experiments/run_b1.py --no-wipe
+    python experiments/run_b1.py --raw dataset/h5ad/PRJNA935359.h5ad \\
+        --out output/B1_PRJNA935359 --organism "Sorghum bicolor" \\
+        --species sorghum_bicolor --gt-csv experiments/gt_cells_PRJNA935359.csv \\
+        --label-map experiments/label_map_PRJNA935359.json
 """
 from __future__ import annotations
 
@@ -24,15 +28,29 @@ if str(REPO_ROOT) not in sys.path:
 
 RAW = REPO_ROOT / "dataset" / "h5ad" / "SRP171040.h5ad"
 OUT = REPO_ROOT / "output" / "B1"
-OUT_R3 = REPO_ROOT / "output" / "B1_r3"
 ARM1 = OUT / "arm1_default"
 ARM2 = OUT / "arm2_rule"
 ARM3 = OUT / "arm3_llm"
 EVAL = OUT / "eval"
 LOG = OUT / "orchestrator.log"
+GT_CSV = REPO_ROOT / "experiments" / "gt_cells.csv"
+LABEL_MAP = REPO_ROOT / "experiments" / "label_map.json"
+ORGAN = "root"
+SPECIES: str | None = "arabidopsis_thaliana"
+SPECIES_TYPE = "Plant"
+ORGANISM = "Arabidopsis thaliana"
 PY = sys.executable
 TOOL_TIMEOUT = 14400
 ARM3_MAX_TURNS = 800
+
+
+def _bind_paths() -> None:
+    global ARM1, ARM2, ARM3, EVAL, LOG
+    ARM1 = OUT / "arm1_default"
+    ARM2 = OUT / "arm2_rule"
+    ARM3 = OUT / "arm3_llm"
+    EVAL = OUT / "eval"
+    LOG = OUT / "orchestrator.log"
 
 
 def _now() -> str:
@@ -47,43 +65,39 @@ def log(msg: str) -> None:
         f.write(line + "\n")
 
 
-def _allowed_wipe_targets() -> set[Path]:
-    return {OUT.resolve(), OUT_R3.resolve()}
-
-
 def wipe_history() -> None:
-    for target in (OUT_R3, OUT):
-        resolved = target.resolve()
-        if resolved not in _allowed_wipe_targets():
-            raise SystemExit(f"refusing to delete unexpected path: {resolved}")
-        if not resolved.exists():
-            print(f"{_now()} WIPE skip (missing) {resolved}", flush=True)
-            continue
-        if resolved.parent.name != "output" or resolved.name not in {"B1", "B1_r3"}:
-            raise SystemExit(f"refusing to delete: {resolved}")
-        print(f"{_now()} WIPE {resolved}", flush=True)
-        try:
-            shutil.rmtree(resolved)
-        except OSError as exc:
-            raise SystemExit(f"wipe failed: {exc}") from exc
+    resolved = OUT.resolve()
+    output_root = (REPO_ROOT / "output").resolve()
+    if resolved.parent != output_root or not resolved.name.startswith("B1"):
+        raise SystemExit(f"refusing to delete unexpected path: {resolved}")
+    if not resolved.exists():
+        print(f"{_now()} WIPE skip (missing) {resolved}", flush=True)
+        return
+    print(f"{_now()} WIPE {resolved}", flush=True)
+    try:
+        shutil.rmtree(resolved)
+    except OSError as exc:
+        raise SystemExit(f"wipe failed: {exc}") from exc
 
 
 def arm3_task(project_dir: str) -> str:
-    return f"""请对拟南芥根单细胞 RNA-seq 做完整细胞类型注释（B1 ③ LLM 臂）。
+    raw_rel = os.path.relpath(RAW, REPO_ROOT).replace("\\", "/")
+    species_line = SPECIES or "(不传 --species，按 SKILL / KG 默认)"
+    return f"""请对{ORGANISM} {ORGAN} 单细胞 RNA-seq 做完整细胞类型注释（B1 ③ LLM 臂）。
 
 数据与目录：
-- raw h5ad: dataset/h5ad/SRP171040.h5ad
+- raw h5ad: {raw_rel}
 - project-dir: {project_dir}
-- organism: Arabidopsis thaliana
-- organ: root
-- species（step3_kg --species）: arabidopsis_thaliana
-- species-type: Plant
+- organism: {ORGANISM}
+- organ: {ORGAN}
+- species（step3_kg --species）: {species_line}
+- species-type: {SPECIES_TYPE}
 
 硬性要求：
 1. 第一次调工具前先 write_judgment__session-start。
 2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
 3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
-4. step3_kg__query 必须带 --organ root。
+4. step3_kg__query 必须带 --organ {ORGAN}。
 5. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
 6. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
 7. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
@@ -127,9 +141,10 @@ def _require_openai_key() -> None:
 def preflight() -> None:
     if not RAW.is_file():
         raise SystemExit(f"missing raw h5ad: {RAW}")
-    for rel in ("experiments/gt_cells.csv", "experiments/label_map.json"):
-        if not (REPO_ROOT / rel).is_file():
-            raise SystemExit(f"missing {rel}")
+    if not GT_CSV.is_file():
+        raise SystemExit(f"missing {GT_CSV}")
+    if not LABEL_MAP.is_file():
+        raise SystemExit(f"missing {LABEL_MAP}")
     _require_openai_key()
     tmp = tempfile.mkdtemp(prefix="b1-preflight-")
     try:
@@ -158,14 +173,17 @@ def preflight() -> None:
 
 def run_arm12(arm: str, project_dir: Path, session_id: str) -> None:
     project_dir.mkdir(parents=True, exist_ok=True)
-    run([
+    cmd = [
         PY, str(REPO_ROOT / "experiments" / "scripted_driver.py"),
         "--arm", arm,
         "--project-dir", str(project_dir),
         "--raw", str(RAW),
-        "--organ", "root",
+        "--organ", ORGAN,
         "--session-id", session_id,
-    ])
+    ]
+    if SPECIES:
+        cmd.extend(["--species", SPECIES])
+    run(cmd)
 
 
 def run_arm3() -> None:
@@ -227,15 +245,15 @@ def evaluate() -> None:
         f"arm1={ARM1}",
         f"arm2={ARM2}",
         f"arm3={ARM3}",
-        "--gt-csv", str(REPO_ROOT / "experiments" / "gt_cells.csv"),
-        "--label-map", str(REPO_ROOT / "experiments" / "label_map.json"),
+        "--gt-csv", str(GT_CSV),
+        "--label-map", str(LABEL_MAP),
         "--out", str(EVAL / "evaluation_report.json"),
     ])
     run([
         PY, str(REPO_ROOT / "experiments" / "bootstrap_test.py"),
         "--per-cell", str(EVAL / "evaluation_report.per_cell.json"),
         "--arms", "arm1", "arm2", "arm3",
-        "--label-map", str(REPO_ROOT / "experiments" / "label_map.json"),
+        "--label-map", str(LABEL_MAP),
         "--out", str(EVAL / "bootstrap_report.json"),
     ])
     run([
@@ -254,10 +272,29 @@ def _refuse_stale_logs() -> None:
 
 
 def main() -> int:
+    global RAW, OUT, GT_CSV, LABEL_MAP, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM
     ap = argparse.ArgumentParser(description="Wipe B1 history and rerun three arms.")
-    ap.add_argument("--no-wipe", action="store_true", help="Keep existing output/B1 (do not delete).")
+    ap.add_argument("--no-wipe", action="store_true", help="Keep existing --out (do not delete).")
     ap.add_argument("--skip-preflight", action="store_true")
+    ap.add_argument("--raw", type=Path, default=RAW)
+    ap.add_argument("--out", type=Path, default=OUT, help="output/<B1...> tree; wipe only this dir")
+    ap.add_argument("--organ", default=ORGAN)
+    ap.add_argument("--species", default=SPECIES)
+    ap.add_argument("--species-type", default=SPECIES_TYPE)
+    ap.add_argument("--organism", default=ORGANISM)
+    ap.add_argument("--gt-csv", type=Path, default=GT_CSV)
+    ap.add_argument("--label-map", type=Path, default=LABEL_MAP)
     args = ap.parse_args()
+
+    RAW = args.raw if args.raw.is_absolute() else REPO_ROOT / args.raw
+    OUT = args.out if args.out.is_absolute() else REPO_ROOT / args.out
+    GT_CSV = args.gt_csv if args.gt_csv.is_absolute() else REPO_ROOT / args.gt_csv
+    LABEL_MAP = args.label_map if args.label_map.is_absolute() else REPO_ROOT / args.label_map
+    ORGAN = args.organ
+    SPECIES = args.species or None
+    SPECIES_TYPE = args.species_type
+    ORGANISM = args.organism
+    _bind_paths()
 
     os.chdir(REPO_ROOT)
     os.environ["RAG_EMBEDDING"] = "off"
@@ -275,7 +312,7 @@ def main() -> int:
     log(f"python={PY}")
     if "LM" not in PY.replace("\\", "/"):
         log(f"WARN interpreter may not be conda LM: {PY}")
-    log(f"raw={RAW}")
+    log(f"raw={RAW} out={OUT} organ={ORGAN} species={SPECIES}")
     run_arm12("default", ARM1, "sess-b1-arm1-default")
     run_arm12("rule", ARM2, "sess-b1-arm2-rule")
     run_arm3()
