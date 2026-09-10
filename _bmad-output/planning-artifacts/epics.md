@@ -308,3 +308,23 @@
 4. **SKILL.md / references iteration**(Epic 7 Stories 7.2/7.3)
 5. **`.skill` packaging**(Epic 7 Story 7.5)— 最终交付
 6. **Deferred-work clean-up**(Epic 7 Story 7.6)— 仅跨器官/跨数据集场景到来时清理
+
+---
+
+## Epic 8（未来，未排期）: 图谱 API 化
+
+**目标**:cell-annotation skill（及实验脚本）不再直连 Neo4j。Bolt 凭据与 Cypher / 图 schema 留在服务端，skill 只调 API。
+
+**不依赖**:BLASTP / P7。不要并进 `spec-blastp-homology`。
+
+**清单**:`_bmad-output/implementation-artifacts/future-kg-api.md`。
+
+### Story 8.1: 冻结 KG JSON 契约
+- 对齐现有 `coverage_report.json` / `kg_hits.json` 字段，减少换传输时的 LLM/评估抖动
+
+### Story 8.2: 抽出 kg_client
+- step3a / step3c / `build_label_map.py` 只经 client；可先 Bolt 实现
+
+### Story 8.3: 换 HTTP（或同等）并删直连
+- `.env` 改为 API base + token；删 `--uri/--user/--password` 与内嵌 Cypher
+- skill/LLM 文档从 `kg-schema.md` 改为 API 字段说明；删旧 `step3_kg_precheck.py` 副本

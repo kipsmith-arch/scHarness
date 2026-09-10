@@ -112,6 +112,7 @@ The bottleneck is **not** coding or first-time end-to-end run — those are done
 5. **SKILL.md / references iteration** driven by B1 + S1 + N findings; tighten `description` to match real user phrasings seen in arm3 judgments.
 6. **`.skill` packaging (P7 / M7)** — final delivery artifact for the cell-annotation skill.
 7. **Deferred-work clean-up** (only when the cross-organ / cross-dataset scenario actually arrives): organ substring boundary matching, `_organ_status.title()` normalization, `validate_log` cluster-coverage on refine_effect / candidate_disambiguate, organ_status category rename. None of these block the root dataset.
+8. **图谱改为 API、skill 不再直连 Neo4j**（未排期，与 BLASTP 无关）— 脚本现用 Bolt + 内嵌 Cypher；将来凭据与图 schema 留在服务端。清单与建议顺序见 `_bmad-output/implementation-artifacts/future-kg-api.md`。
 
 Estimated wall-clock from "P1–P6 done" to "P7 shipped": ~1–2 weeks, mostly items 1, 5, 6.
 

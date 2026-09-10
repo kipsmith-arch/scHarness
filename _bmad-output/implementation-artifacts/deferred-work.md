@@ -4,6 +4,8 @@
 **下一步要做的实验/计分改动不写这里。** B1_r3 之后的主动规划见
 `_bmad-output/implementation-artifacts/b1-r3-followup.md`
 （pseudobulk 触发条件重设计；strict 与 confidence 拆开）。
+**图谱改为 API、skill 不再直连 Neo4j** 见
+`_bmad-output/implementation-artifacts/future-kg-api.md`（未排期，与 BLASTP 无关）。
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-p2-pipeline-scripts.md`
   summary: run_log.jsonl 追加无并发锁(seq 计数与追加非原子),并发进程会冲突
