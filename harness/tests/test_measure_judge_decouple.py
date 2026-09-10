@@ -369,7 +369,7 @@ def test_arm2_refine_only_cluster_c(tmp_path):
 def test_pipeline_no_enum_step4_rank(tmp_path):
     step4 = _load_module("step4_rank", SKILL_SCRIPTS / "step4_rank.py")
     common = _load_module("common", SKILL_SCRIPTS / "common.py")
-    kg_dir = tmp_path / "step3_kg"
+    kg_dir = tmp_path / "step3c_kg"
     kg_dir.mkdir()
     kg = {
         "ancestors": {"root": [], "leaf": ["plant"]},
@@ -413,6 +413,18 @@ def test_rename_old_path_not_used(tmp_path):
     assert not (SKILL_SCRIPTS / "step4_judge.py").exists()
     with pytest.raises(ValueError, match="step4_rank"):
         common.step_dir(str(tmp_path), "step4_judge")
+    assert "step3_kg_precheck" not in common.STEP_DIRS
+    assert "step3_cross_species_map" not in common.STEP_DIRS
+    assert "step3_kg" not in common.STEP_DIRS
+    assert (SKILL_SCRIPTS / "step3a_kg_precheck.py").exists()
+    assert (SKILL_SCRIPTS / "step3b_cross_species_map.py").exists()
+    assert (SKILL_SCRIPTS / "step3c_kg.py").exists()
+    with pytest.raises(ValueError, match="step3a_kg_precheck"):
+        common.step_dir(str(tmp_path), "step3_kg_precheck")
+    with pytest.raises(ValueError, match="step3b_cross_species_map"):
+        common.step_dir(str(tmp_path), "step3_cross_species_map")
+    with pytest.raises(ValueError, match="step3c_kg"):
+        common.step_dir(str(tmp_path), "step3_kg")
 
 
 def test_evaluate_missing_judge_fields(tmp_path):
@@ -443,12 +455,12 @@ def test_res_explicit_rejects_missing_target(tmp_path):
 
 def test_step5_refuses_without_clusters(tmp_path):
     step5 = _load_module("step5_refine", SKILL_SCRIPTS / "step5_refine.py")
-    for name in ("step4_rank", "step3_kg", "step2_markers"):
+    for name in ("step4_rank", "step3c_kg", "step2_markers"):
         d = tmp_path / name
         d.mkdir()
     (tmp_path / "step4_rank" / "annotations.json").write_text(
         json.dumps({"annotations": {"0": {"status": "has_candidates"}}}), encoding="utf-8")
-    (tmp_path / "step3_kg" / "kg_hits.json").write_text(
+    (tmp_path / "step3c_kg" / "kg_hits.json").write_text(
         json.dumps({"query_config": {"organ": "root"}}), encoding="utf-8")
     (tmp_path / "step2_markers" / "markers.json").write_text(
         json.dumps({"per_cluster": {}}), encoding="utf-8")
@@ -474,5 +486,6 @@ def test_cell_annotation_dag_binds_14_and_47():
     tools = {n.tool for n in CELL_ANNOTATION_DAG}
     assert "step4_rank__run" in tools
     assert "step4_judge__run" not in tools
-    assert "step3_kg_precheck__run" in tools
-    assert "step2_cross_species_map__run" in tools
+    assert "step3a_kg_precheck__run" in tools
+    assert "step3b_cross_species_map__run" in tools
+    assert "step3c_kg__query" in tools

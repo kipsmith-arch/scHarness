@@ -1,4 +1,8 @@
-"""Tests for step2_cross_species_map (CAP-2, provider-abstraction refactor).
+"""Tests for step3b_cross_species_map (CAP-2, provider-abstraction refactor).
+
+Belongs to SOP-3 (KG lookup). Renamed 2026-09-08 from
+test_step2_cross_species_map.py. Mapping raises KG hit rate; it does not
+discover markers.
 
 Refactored 2026-08-24 from test_step2_ortholog.py: was Ensembl-Compara-hardcoded;
 now tests the generic provider abstraction and the Ensembl provider as the
@@ -28,14 +32,14 @@ from unittest.mock import patch
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPT = REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step2_cross_species_map.py"
+SCRIPT = REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3b_cross_species_map.py"
 sys.path.insert(0, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts"))
 
 import common  # noqa: E402
-import step2_cross_species_map as xmap  # noqa: E402
-import step2_xmap_providers  # noqa: E402  -- registers built-in providers
-import step2_xmap_providers.base as xmap_base  # noqa: E402
-import step2_xmap_providers.ensembl_compara as xmap_ensembl  # noqa: E402
+import step3b_cross_species_map as xmap  # noqa: E402
+import step3b_xmap_providers  # noqa: E402  -- registers built-in providers
+import step3b_xmap_providers.base as xmap_base  # noqa: E402
+import step3b_xmap_providers.ensembl_compara as xmap_ensembl  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +306,7 @@ class TestSchemaDiscipline:
             assert required in arg_names, f"missing arg: {required}"
 
     def test_no_suppressed_args(self):
-        """step2_cross_species_map has no KG-resource args; all are biological
+        """step3b_cross_species_map has no KG-resource args; all are biological
         / network / provider-tuning."""
         parser = xmap._build_parser()
         all_actions = []

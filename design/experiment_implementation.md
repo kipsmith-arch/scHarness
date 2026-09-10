@@ -21,7 +21,7 @@
 |---|---|---|
 | raw h5ad | `dataset/h5ad/SRP171040.h5ad` | 已按 `dataset/init.py` 约定处理:X sparse、raw 重建、var_names 为基因符号 |
 | ground truth | `dataset/index/SRP171040.h5ad.csv` | `Seurat_clusters` + `Celltype`,33,956 细胞,12 类型 |
-| KG 环境 | `.env` 的 `NEO4J_*` | 已配置;用于 step3_kg 与标签映射表(§1.2 D-2) |
+| KG 环境 | `.env` 的 `NEO4J_*` | 已配置;用于 step3c_kg 与标签映射表(§1.2 D-2) |
 
 **12 个真值类型及分布**:Columella root cap 5,640 / Root cortex 4,747 / Root hair 4,743 / Non-hair 4,242 / Root endodermis 3,668 / Pericycle 3,232 / Lateral root cap 2,537 / Phloem 1,753 / Root stele 1,367 / Xylem 1,030 / Meristematic cell 570 / Stem cell niche 427。
 
@@ -33,7 +33,7 @@
 
 **D-2 标签映射表** → 生成 `experiments/label_map.json`(新构造,核心资产)
 - 问题:harness 输出 KG 本体术语(如 "root cap")、真值是人类命名("Columella root cap"),两者粒度/措辞不同,不定义映射就无法算准确率。
-- 机制:对每个预测术语与 12 个真值标签,用 KG 本体(`step3_kg query_hierarchy` 的 ancestors)+ Plant Ontology 词汇手工核对,判定关系:
+- 机制:对每个预测术语与 12 个真值标签,用 KG 本体(`step3c_kg query_hierarchy` 的 ancestors)+ Plant Ontology 词汇手工核对,判定关系:
   - `exact` / `synonym` — 同义(大小写/单复数/换词,如 "columella root cap" ~ "Columella root cap")
   - `subtype` — 预测比真值更具体(预测 "columella root cap"、真值 "root cap")
   - `supertype` — 预测比真值更宽(预测 "root cap"、真值 "columella root cap")
@@ -359,7 +359,7 @@ loop 的 LLM 后端通过配置切换(GPT-4o / Claude / Gemini),同一 skill/pip
 **回答**:知识图谱这一层值不值?(A3 的 Marker 硬匹配即为"无 KG"臂)
 
 #### 数据准备
-- **无 KG 变体**:用 `marker_dict.json`(D-3)替代 step3_kg 查询——每簇 markers 直接 match 字典 → 类型,无 confidence、无 ontology/ancestor。其余 pipeline(step1/2/4/5/6/7)不变。
+- **无 KG 变体**:用 `marker_dict.json`(D-3)替代 step3c_kg 查询——每簇 markers 直接 match 字典 → 类型,无 confidence、无 ontology/ancestor。其余 pipeline(step1/2/4/5/6/7)不变。
 - 若静态字典不可得 → 退化为"LLM 仅凭自身知识标注"(无参考),标注为降级版本,结论限定。
 
 #### 实验流程

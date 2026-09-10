@@ -1,8 +1,14 @@
-"""Step 2.5 — cross-species gene mapping (SPEC CAP-2, provider-abstraction refactor).
+"""Step 3 — cross-species gene mapping to raise KG hit rate (SPEC CAP-2).
 
-Refactored 2026-08-24: was ``step2_ortholog.py`` (Ensembl Compara hardcoded).
-Now generic ``step2_cross_species_map.py`` that dispatches to a registered
-provider via ``--provider``. Default provider is ``ensembl_compara``.
+Belongs to SOP-3 (query the knowledge graph), not SOP-2 (find markers).
+Marker lists are only the input; the purpose of mapping is to look up
+reference-species genes that the KG actually covers.
+
+Was ``step2_ortholog.py`` then ``step2_cross_species_map.py`` then
+``step3_cross_species_map.py``; renamed 2026-09-08 to ``step3b_`` so
+SOP-3 order is visible in the filename (3a precheck → 3b map → 3c query).
+Dispatches to a registered provider via ``--provider``. Default provider
+is ``ensembl_compara``.
 
 Subcommands:
     run — read markers.json, call the chosen provider for each marker
@@ -17,13 +23,13 @@ Per SPEC cross-species-routing CAP-2 (revised):
           --max-hits-per-gene (default 3),
           --provider-timeout, --provider-max-retries, --provider-concurrency,
           --force-refresh, --max-genes
-- Output: step2_cross_species_map/cross_species_map.json (+ cache file)
+- Output: step3b_cross_species_map/cross_species_map.json (+ cache file)
 - Cache key: (target_species, sorted_ref_species, provider_name, md5(markers.json))
 - Provider unreachable -> warn, return empty map, never block pipeline.
 
-Adding a new provider: write a class in step2_cross_species_map/
+Adding a new provider: write a class in step3b_xmap_providers/
 implementing BaseCrossSpeciesProvider; register it with @register_provider.
-No changes to this CLI, no changes to LLM-facing args, no changes to step3_kg.
+No changes to this CLI, no changes to LLM-facing args, no changes to step3c_kg.
 """
 
 from __future__ import annotations
@@ -40,9 +46,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402  -- also triggers load_skill_dotenv()
 
-from step2_xmap_providers import PROVIDERS, get_provider  # noqa: E402
-from step2_xmap_providers.base import MappingRecord  # noqa: E402
-from step2_xmap_providers.ensembl_compara import check_dns  # noqa: E402
+from step3b_xmap_providers import PROVIDERS, get_provider  # noqa: E402
+from step3b_xmap_providers.base import MappingRecord  # noqa: E402
+from step3b_xmap_providers.ensembl_compara import check_dns  # noqa: E402
 
 
 DEFAULT_PROVIDER = "ensembl_compara"
@@ -59,7 +65,7 @@ DEFAULT_CONCURRENCY = 8
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="step2_cross_species_map.py",
+        prog="step3b_cross_species_map.py",
         description="Step 2.5 cross-species gene mapping via pluggable provider (0 h5ad)",
     )
     p.add_argument("--dump-schema", action="store_true", help=argparse.SUPPRESS)
@@ -69,7 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # Provider selection (was hardcoded before refactor)
     p_r.add_argument("--provider", default=DEFAULT_PROVIDER,
                      choices=sorted(PROVIDERS.keys()),
-                     help=f"mapping provider (default {DEFAULT_PROVIDER}; see step2_cross_species_map/)")
+                     help=f"mapping provider (default {DEFAULT_PROVIDER}; see step3b_xmap_providers/)")
     # A-class (LLM-visible): biological decisions + I/O paths
     p_r.add_argument("--target-species", required=True,
                      help="target species in Ensembl/KG format (lower_underscore)")
@@ -132,7 +138,7 @@ def _cache_key(target_species: str, reference_species: list[str],
 
 
 def _cache_dir(project_dir: str) -> str:
-    d = os.path.join(project_dir, "step2_cross_species_map", "cache")
+    d = os.path.join(project_dir, "step3b_cross_species_map", "cache")
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -209,7 +215,7 @@ def op_collect_marker_genes(markers_path: str, log_path: str, params: dict) -> t
                 genes.add(g)
     genes_sorted = sorted(genes)
     m = {"n_input_marker_genes": len(genes_sorted), "source_markers_json": markers_path}
-    common.exec_record(log_path, "step2_cross_species_map", "collect_marker_genes", params, m)
+    common.exec_record(log_path, "step3b_cross_species_map", "collect_marker_genes", params, m)
     return genes_sorted, len(payload.get("per_cluster", {}))
 
 
@@ -256,7 +262,7 @@ def op_query_provider(genes: list[str], target_species: str, reference_species: 
             kept.sort(key=lambda r: -r.score)
             per_ref[ref][sym] = kept[:max_hits]
 
-    common.exec_record(log_path, "step2_cross_species_map", "query_provider", params, stats)
+    common.exec_record(log_path, "step3b_cross_species_map", "query_provider", params, stats)
     return per_ref, stats
 
 
@@ -266,7 +272,7 @@ def op_write_output(out_dir: str, log_path: str, params: dict, payload: dict) ->
     m = {"cross_species_map_json": json_path,
          "n_target_genes": payload["summary"]["n_input_genes"],
          "n_mapped": payload["summary"]["n_mapped"]}
-    common.exec_record(log_path, "step2_cross_species_map", "write_output", params, m)
+    common.exec_record(log_path, "step3b_cross_species_map", "write_output", params, m)
     return m
 
 
@@ -276,7 +282,7 @@ def op_write_output(out_dir: str, log_path: str, params: dict, payload: dict) ->
 
 def cmd_run(args) -> dict:
     project_dir = common.env_or_default(args, "project_dir", (), "output")
-    out_dir = common.step_dir(project_dir, "step2_cross_species_map")
+    out_dir = common.step_dir(project_dir, "step3b_cross_species_map")
     log = common.run_log_path(project_dir)
     species_type = args.species_type or "Plant"
     reference_species = _flatten_species_list(args.reference_species)

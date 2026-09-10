@@ -51,11 +51,11 @@
 | step2_markers.filter_markers Marker 过滤 | **JSON** (DE 表 + pct) | **是,不需要 h5ad** |
 | step2_markers.pseudobulk_de Pseudobulk DE | **RAW** (raw.X + leiden + sample) | 否 |
 | step2_markers.write_markers 写出 markers | **JSON** | **不需要 h5ad** |
-| step3_kg.connect KG 连接 | **JSON** (markers.json) | **不需要 h5ad** |
-| step3_kg.query_genes KG 查询 | **JSON** (markers.json) | **不需要 h5ad** |
-| step3_kg.query_hierarchy 层级查询 | **JSON** (KG 结果) | **不需要 h5ad** |
-| step3_kg.aggregate_candidates 候选聚合 | **JSON** (gene_to_cts) | **不需要 h5ad** |
-| step3_kg.write_hits 写出 KG 命中 | **JSON** | **不需要 h5ad** |
+| step3c_kg.connect KG 连接 | **JSON** (markers.json) | **不需要 h5ad** |
+| step3c_kg.query_genes KG 查询 | **JSON** (markers.json) | **不需要 h5ad** |
+| step3c_kg.query_hierarchy 层级查询 | **JSON** (KG 结果) | **不需要 h5ad** |
+| step3c_kg.aggregate_candidates 候选聚合 | **JSON** (gene_to_cts) | **不需要 h5ad** |
+| step3c_kg.write_hits 写出 KG 命中 | **JSON** | **不需要 h5ad** |
 | step4_judge.rank_candidates 候选排名 | **JSON** (kg_hits.json) | **不需要 h5ad** |
 | step4_judge.write_annotations 写出注释 | **JSON** | **不需要 h5ad** |
 | step5_refine.candidate_autocorr 候选自相关 | **X** (kNN 图 + score_genes 需表达) | 否(在 step5_refine.subcluster 加载中完成) |
@@ -241,7 +241,7 @@ gene_id,highly_variable,mt,chloroplast,means,dispersions,dispersions_norm,...
 | 文件 | 新增操作块 |
 |---|---|
 | `step2_markers/markers.json` | `de_distribution` (logfc/pval 分布 + BH-FDR + AUC + inflation λ), `filter_funnel` |
-| `step3_kg/kg_hits.json` | `query_stats` (n_genes_queried/with_hits/multiplicity), `candidate_stats` (n_candidates/ranking_entropy/n_tied) |
+| `step3c_kg/kg_hits.json` | `query_stats` (n_genes_queried/with_hits/multiplicity), `candidate_stats` (n_candidates/ranking_entropy/n_tied) |
 | `step4_judge/annotations.json` | `gap_metrics` (count_ratio, count_diff, confidence_diff, ancestor_overlap) |
 | `step5_refine/refined_annotations.json` | `sub_cluster_quality` (silhouette, size_dist), `overlap_metrics` (jaccard, mean_overlap, unique_frac) |
 | `step6_validate/final_annotations.json` | `effect_sizes` (cohen_d, AUC, fold_change per marker), `global_stats` (label_diversity, co_annotation_matrix) |
@@ -262,8 +262,8 @@ step1_prepare.py recluster   [1× proc h5ad] → step1_prepare.leiden_cluster~14
 
 step2_markers.py run [1× proc h5ad] → step2_markers.de_rank~21 (DE + all DE metrics)
 
-step3_kg.py query  [0× h5ad]      → step3_kg.connect~26 (pure JSON)
-step3_kg.py test-conn [0× h5ad]
+step3c_kg.py query  [0× h5ad]      → step3c_kg.connect~26 (pure JSON)
+step3c_kg.py test-conn [0× h5ad]
 
 step4_judge.py run [0× h5ad]   → step4_judge.rank_candidates~28 (pure JSON)
 
@@ -329,15 +329,15 @@ step7_diagnose.py run      [0× h5ad]       → step7_diagnose.hit_rate~46 (read
                                          │           │
                               ┌──────────┴───────────┴┐
                               │                        │
-                        step3_kg query              step6_validate run
+                        step3c_kg query              step6_validate run
                         [0× h5ad]               [1× load, backed*]
                               │                        │
                         ┌─────┴──────┐          ┌──────┴──────┐
-                        │step3_kg.connect conn  │          │step6_validate.marker_expression expr   │
-                        │step3_kg.query_genes query │          │step6_validate.violin_plot violin │
-                        │step3_kg.query_hierarchy hier  │          │step6_validate.global_summary~40     │
-                        │step3_kg.aggregate_candidates agg   │          └──────┬──────┘
-                        │step3_kg.write_hits wrt   │                 │
+                        │step3c_kg.connect conn  │          │step6_validate.marker_expression expr   │
+                        │step3c_kg.query_genes query │          │step6_validate.violin_plot violin │
+                        │step3c_kg.query_hierarchy hier  │          │step6_validate.global_summary~40     │
+                        │step3c_kg.aggregate_candidates agg   │          └──────┬──────┘
+                        │step3c_kg.write_hits wrt   │                 │
                         └─────┬──────┘                 │
                               │                        │
                         step4_judge run                 ┌─────┴──────┐
@@ -474,8 +474,8 @@ funnel = {
 ```
 输入: step2_markers/markers.json
 加载: 0× h5ad
-操作: step3_kg.connect~26
-输出: step3_kg/kg_hits.json (enriched)
+操作: step3c_kg.connect~26
+输出: step3c_kg/kg_hits.json (enriched)
 ```
 
 **新增指标(纯 JSON 计算,无 I/O 瓶颈):**
@@ -488,7 +488,7 @@ funnel = {
 ### 5.4 Step 4: 簇判断
 
 ```
-输入: step3_kg/kg_hits.json
+输入: step3c_kg/kg_hits.json
 加载: 0× h5ad
 操作: step4_judge.rank_candidates~28
 输出: step4_judge/annotations.json (enriched)
@@ -497,12 +497,12 @@ funnel = {
 **新增指标(纯 JSON 计算):**
 - count_ratio, count_diff, confidence_diff
 - frac_support_captured_by_first
-- first_second_ancestor_overlap (使用 step3_kg.query_hierarchy 写入的 ancestors map)
+- first_second_ancestor_overlap (使用 step3c_kg.query_hierarchy 写入的 ancestors map)
 
 ### 5.5 Step 5: 细化
 
 ```
-输入: processed.h5ad + step4_judge/annotations.json + step2_markers/markers.json + step3_kg/kg_hits.json
+输入: processed.h5ad + step4_judge/annotations.json + step2_markers/markers.json + step3c_kg/kg_hits.json
 加载: 1× processed h5ad
 操作: step5_refine.subcluster~35
 输出: step5_refine/refined_annotations.json (enriched)
@@ -526,7 +526,7 @@ for c in ambiguous:
 ### 5.6 Step 6: 验证
 
 ```
-输入: processed.h5ad + step5_refine/refined_annotations.json + step2_markers/markers.json + step3_kg/kg_hits.json
+输入: processed.h5ad + step5_refine/refined_annotations.json + step2_markers/markers.json + step3c_kg/kg_hits.json
 加载: 1× processed h5ad (可选 backed 模式)
 操作: step6_validate.marker_expression~40
 输出: step6_validate/final_annotations.json, step6_validate/report.md
@@ -559,7 +559,7 @@ sub_raw = adata.raw.X[:, idx].to_memory()  # ~34K × 100, <50 MB
 ### 5.7 Diagnostics: 诊断
 
 ```
-输入: step1_prepare/qc_metrics.json + step1_prepare/obs_snapshot.csv + step3_kg/kg_hits.json + 
+输入: step1_prepare/qc_metrics.json + step1_prepare/obs_snapshot.csv + step3c_kg/kg_hits.json + 
       step4_judge/annotations.json + step6_validate/final_annotations.json
 加载: 0× h5ad!
 操作: step7_diagnose.hit_rate~46
@@ -930,7 +930,7 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 
 ### Phase C: Step 3/4/5 enrichment(纯 JSON,无 I/O)
 
-8. 实现 `step3_kg` — 增加查询统计,候选排名熵,ancestors 写入,每个 op 调 `append_log()`
+8. 实现 `step3c_kg` — 增加查询统计,候选排名熵,ancestors 写入,每个 op 调 `append_log()`
 9. 实现 `step4_judge` — 增加 gap metrics, ancestor overlap,调 `append_log()`
 10. 实现 `step5_refine` — 增加 Jaccard, sub_silhouette, type membership 计数,每个 op 调 `append_log()`
 
@@ -962,7 +962,7 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 ├── step2_markers/
 │   ├── markers.csv              (已有)
 │   └── markers.json             (~100 KB, enriched: DE 分布 + 过滤漏斗)
-├── step3_kg/
+├── step3c_kg/
 │   ├── kg_hits.json             (~200 KB, enriched: 查询统计 + 候选排名熵 + ancestors)
 │   └── kg_source.txt
 ├── step4_judge/
@@ -986,15 +986,19 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 
 ## 10. 外部依赖配置
 
-pipeline 的外部依赖(知识图谱)通过环境变量配置,不硬编码在代码或配置文件中。脚本按 `CLI flags > 环境变量 > 硬编码默认值` 的优先级读取。
+pipeline 的外部依赖(知识图谱、BLAST subject 库)通过环境变量配置,不硬编码在代码或配置文件中。脚本按 `CLI flags > 环境变量 > 硬编码默认值` 的优先级读取。**cell-annotation 的环境类 key 在 `skills/cell-annotation/.env`**,harness 不知情。完整清单见 `docs/CONFIGURATION_REFERENCE.md`。BLASTP 规范见 `_bmad-output/specs/spec-blastp-homology/SPEC.md`。
 
 ### 10.1 环境变量清单
 
 | 环境变量 | 用途 | 默认值 | 哪个脚本读 |
 |---|---|---|---|
-| `NEO4J_URI` | Neo4j 连接地址 | `bolt://localhost:7687` | step3_kg.py, step5_refine.py |
-| `NEO4J_USER` | Neo4j 用户名 | `neo4j` | step3_kg.py, step5_refine.py |
-| `NEO4J_PASSWORD` | Neo4j 密码 | (无默认,必须设置) | step3_kg.py, step5_refine.py |
+| `NEO4J_URI` | Neo4j 连接地址 | `bolt://localhost:7687` | step3c_kg.py, step3a_kg_precheck.py, step5_refine.py |
+| `NEO4J_USER` | Neo4j 用户名 | `neo4j` | 同上 |
+| `NEO4J_PASSWORD` | Neo4j 密码 | (无默认,必须设置) | 同上 |
+| `CELL_ANNOTATION_BLASTDB_DIR` | subject BLAST 库缓存根 | `~/.cache/sc-harness/cell-annotation/blastdb` | step3b(provider=blastp) |
+| `CELL_ANNOTATION_BLASTDB_URL` | subject zip | xener 公开下载 `blastdb.zip` | ensure_blastdb |
+| `CELL_ANNOTATION_BLASTDB_SHA256` | zip 校验 | 实现时 pin | ensure_blastdb |
+| `CELL_ANNOTATION_QUERY_FASTA` | 用户蛋白 FASTA 默认路径 | 无 | step3b `--query-fasta` 回落 |
 
 ### 10.2 配置方式
 
@@ -1017,7 +1021,7 @@ export NEO4J_PASSWORD=your_password_here
 或通过 CLI flags 覆盖:
 
 ```bash
-python scripts/step3_kg.py query --project-dir ./output --organ root \
+python scripts/step3c_kg.py query --project-dir ./output --organ root \
     --uri neo4j://10.224.28.66:7688 --user neo4j --password your_password_here
 ```
 
@@ -1025,7 +1029,15 @@ python scripts/step3_kg.py query --project-dir ./output --organ root \
 
 - **不硬编码密码** — 密码只通过环境变量或 CLI flags 传入,不写入任何文件
 - **不使用配置文件** — 不在 skill 目录或项目目录中放 config.json,避免密码泄露到 git
-- **`.env` 是项目级配置** — 每个 project 的 .env 包含该环境特有的连接信息,skill 本身保持环境无关
+- **skill 自管外部资源** — Neo4j 与 BLAST 库路径/URL 在 cell-annotation `.env`,不进 harness
+- **BLAST 库不进 skill 包** — 二进制缓存在用户目录,仅 `--provider blastp` 且缺库时 GET;不在 skill 加载时下载
+- **过滤 FASTA 不二次加载 h5ad** — 用 `var_snapshot.csv` sidecar
+
+### 10.4 BLASTP 与加载纪律
+
+- 一个子命令仍最多一次 h5ad 加载。step3a / step3b / step3c query 均为 0 次 h5ad。
+- `ncbi-blast+` 是系统依赖,skill 不下载该二进制。
+- 默认 `--provider` 仍是 `ensembl_compara`;blastp 故障改道 Ensembl,对外 `status=ok`。
 
 ---
 

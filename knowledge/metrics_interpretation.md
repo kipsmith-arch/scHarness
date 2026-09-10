@@ -279,9 +279,25 @@ Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,�
 
 ---
 
-## 3. 知识图谱查询阶段(step3_kg)
+## 3. 查参考知识阶段(step3a / 3b / 3c)
 
-> 产出文件:`step3_kg/kg_hits.json`(每簇候选细胞类型 + gene_to_cts + ancestors)、`step3_kg/kg_source.txt`(KG 来源)
+> 覆盖预检 → 条件同源 → 图谱。BLAST 规范:`_bmad-output/specs/spec-blastp-homology/SPEC.md`。下列数字是解读参考,**不是**自动终止阈值。
+
+### step3a — 覆盖预检
+
+| 状态 | 指标 | 含义 | LLM 解读要点 |
+|---|---|---|---|
+| `[核心]` | `coverage_tier`, `recommended_strategy` | 本物种 KG 够不够、要不要做同源 | `single_species`→跳过 3b;`mixed` / `cross_species_only`→做 3b。参考物种由你按亲缘从静态名录点名,最多 3 个,不是工具推荐列表 |
+| `[核心]` | `target_species_genes_with_ct` | 本物种带细胞类型边的基因数 | 接近 0→必须同源;很高→默认不必为了同源而同源 |
+
+### step3b — 同源映射
+
+| 状态 | 指标 | 含义 | LLM 解读要点 |
+|---|---|---|---|
+| `[核心]` | `hit_rate`, `n_mapped` | marker 映射到至少一个参考基因的比例 | 低且亲缘不远→查 ID / FASTA 是否与矩阵一致,或换近缘物种。不要用固定百分比当通过线 |
+| `[核心]` | `provider`, `warnings` | ensembl_compara 或 blastp;是否改道、缺库、FASTA 过滤 | warnings 含改道 Ensembl 时,映射仍可能可用 |
+| `[扩展]` | `score_distribution` | BLAST=pident;Ensembl=perc_id | 这是序列相似度,不是 3c 的 confidence |
+| `[扩展]` | `n_fasta_dropped_not_in_var` | FASTA 有、h5ad 没有的序列数 | 高→用户 FASTA 与矩阵 ID 体系不一致 |
 
 ### query_genes — KG 查询
 
@@ -302,7 +318,7 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 | 状态 | 指标 | 含义 | LLM 解读要点 |
 |---|---|---|---|
-| `[核心]` | `candidates`: cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources | 候选列表 | marker_count 是核心证据(多少独立 marker 支持);mean_confidence 是 KG 的 relation_confidence(0-1),高(>0.8)→有文献背书 |
+| `[核心]` | `candidates`: cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources | 候选列表 | marker_count 是核心证据(多少独立 marker 支持);mean_confidence **只**是 KG 的 `relation_confidence`(0-1),高(>0.8)→有文献背书。**不是** BLAST pident |
 | `[核心]` | `n_candidates` per cluster | 候选数量 | **过多(>20)→marker 集太嘈杂,需收紧 step2 过滤;过少(1-2)→KG 覆盖窄** |
 | `[扩展]` | `marker_coverage` = n_supporting_markers_unique / n_markers_queried | 有多少比例 marker 支持了候选 | 低→大量 marker 没命中任何候选,候选代表性弱 |
 | `[扩展]` | `candidate_count_distribution` | marker_count 在候选间的分布 | 集中(一个候选独大)→清晰;分散(都差不多)→模糊 |
@@ -557,8 +573,8 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 - `step1_prepare` 的 `qc_metrics.json` 顶部含 `organ` 字段(来自 `--organ`),step6 的 `_meta.organ` 从它继承——不要用写死的 "root" 解读非根组织数据。
 - `choose_resolution` 的 `auto_knee_not_applicable=true` 表示簇数随分辨率单调递增(无拐点),自动选择了中间分辨率而非最高;此时 `resolution_select` 判断点应人工确认。
-- `step3_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
-- `step3_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
+- `step3c_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
+- `step3c_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
 - `--max-ancestor-hops 0` 表示跳过层级查询(ancestors 为空);`>=1` 才执行。
 - step6 `final_annotations.json` 的 `_meta.kg_version` 亦为上述代理值;`metadata_check` 只检查字段存在。
 

@@ -28,7 +28,7 @@
 
 ## OQ-4 reference species 列表的更新机制
 
-- **当前默认**: `step3_kg_precheck` 每次跑实时从 Neo4j 取物种列表,实时排序
+- **当前默认**: `step3a_kg_precheck` 每次跑实时从 Neo4j 取物种列表,实时排序
 - **何时决断**: 批 1 实施后第一次跑预检时(看性能)
 - **决断影响**:
   - 实时跑 → 简单但慢(每次约 1s)
@@ -37,20 +37,20 @@
 
 ## OQ-5 扩张家族反向计数的工程实现
 
-- **当前默认**: `step2_ortholog` 在 summary 输出 `n_ref_genes_per_target_mean`,LLM 看到 > 2.0 警戒
+- **当前默认**: `step3b_cross_species_map` 在 summary 输出 `n_ref_genes_per_target_mean`,LLM 看到 > 2.0 警戒
 - **何时决断**: 批 2 step5_refine 评估时
 - **决断影响**:
   - 当前默认 → 不强制处理扩张家族
-  - 替代方案: `step2_ortholog` 检测 1 ref gene 被 ≥ 5 target gene 命中时,自动把该 ref gene 标记为扩张家族,候选聚合时降权
+  - 替代方案: `step3b_cross_species_map` 检测 1 ref gene 被 ≥ 5 target gene 命中时,自动把该 ref gene 标记为扩张家族,候选聚合时降权
 - **决策者**: 实施者
 
 ## OQ-6 cross_species_routing 决策点的 action 字段格式
 
-- **当前默认**: 自由文本(如 `run_step2_ortholog --target-species=X --reference-species=Y,Z`)
+- **当前默认**: 自由文本(如 `run_step3b_cross_species_map --target-species=X --reference-species=Y,Z`)
 - **何时决断**: 批 2 trajectory_schema.py 注册时
 - **决断影响**:
   - 自由文本 → 灵活但 LLM 输出不稳定
-  - 结构化 → 必填字段 `{step: "step2_ortholog__run"|"step3_kg__query", args: {...}}`,validate_log 校验
+  - 结构化 → 必填字段 `{step: "step3b_cross_species_map__run"|"step3c_kg__query", args: {...}}`,validate_log 校验
 - **决策者**: 设计层
 
 ---

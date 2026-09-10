@@ -1,19 +1,20 @@
 # Data Contracts — 新工具 I/O schema
 
-> SPEC cross-species-routing 的数据契约伴侣。定义 `step3_kg_precheck` / `step2_cross_species_map` / `step3_kg --ortholog-map` 的输入输出 JSON schema;供 loader、tests、evals、validate_log 引用。
+> SPEC cross-species-routing 的数据契约伴侣。定义 `step3a_kg_precheck` / `step3b_cross_species_map` / `step3c_kg --ortholog-map` 的输入输出 JSON schema;供 loader、tests、evals、validate_log 引用。
 > Refactored 2026-08-24: CAP-2 renamed `step2_ortholog` → `step2_cross_species_map` with provider abstraction. Field renames: `ortholog_map` → `cross_species_map`, `ortholog_type` → `mapping_type`, `min-identity` → `min-score`, `Ensembl REST`-specific fields generalized.
+> Renamed 2026-09-08: `step2_cross_species_map` → `step3b_cross_species_map`(同源映射归属 SOP-3 查图谱,用来提高 KG 命中率)。同日按执行顺序命名:`step3a_kg_precheck` / `step3b_cross_species_map` / `step3c_kg`。
 
 ---
 
-## 1. step3_kg_precheck — coverage_report.json
+## 1. step3a_kg_precheck — coverage_report.json
 
 ### 1.1 输入参数(工具层 argparse)
 
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `--target-species` | string | 是 | — | Ensembl / KG 物种名格式(小写下划线,如 `arabidopsis_thaliana`) |
-| `--organ` | string | 是 | — | 目标 organ,与 step3_kg 一致 |
-| `--species-type` | string | 否 | `Plant` | `Plant` / `Animal` / `Fungi` / `Protists`,与 step3_kg 一致 |
+| `--organ` | string | 是 | — | 目标 organ,与 step3c_kg 一致 |
+| `--species-type` | string | 否 | `Plant` | `Plant` / `Animal` / `Fungi` / `Protists`,与 step3c_kg 一致 |
 | `--project-dir` | string | 否 | `output` | 与其它 step 一致 |
 | `--high-threshold` | int | 否 | 500 | coverage_tier=high 的下限(genes_with_ct ≥ 此值) |
 | `--low-threshold` | int | 否 | 50 | coverage_tier=low 的上限(genes_with_ct < 此值) |
@@ -76,7 +77,7 @@
 
 ---
 
-## 2. step2_cross_species_map — cross_species_map.json
+## 2. step3b_cross_species_map — cross_species_map.json
 
 ### 2.1 输入参数
 
@@ -159,7 +160,7 @@
 ### 2.4 缓存文件
 
 ```
-<project-dir>/step2_cross_species_map/cache/
+<project-dir>/step3b_cross_species_map/cache/
   cross_species_map__{target_species}__{ref_species_comma_joined}__{provider_name}__{md5(markers.json)[0:8]}.json
 ```
 
@@ -176,19 +177,19 @@ Cache key **includes provider name** — different providers cache independently
 
 ### 2.6 Adding a new provider
 
-1. Create `skills/cell-annotation/scripts/step2_xmap_providers/<name>.py`
+1. Create `skills/cell-annotation/scripts/step3b_xmap_providers/<name>.py`
 2. Subclass `BaseCrossSpeciesProvider`, implement `available(species_type) -> bool` and `lookup(target_species, ref_species, gene, *, timeout, max_retries, host=None) -> tuple[list[MappingRecord] | None, str | None]`
 3. Decorate with `@register_provider`
-4. No CLI / LLM-facing / step3_kg changes needed
+4. No CLI / LLM-facing / step3c_kg changes needed
 
 ---
 
-## 3. step3_kg — kg_hits.json 扩展
+## 3. step3c_kg — kg_hits.json 扩展
 
 ### 3.1 新增 CLI 选项
 
 ```
---ortholog-map PATH    path to step2_ortholog/ortholog_map.json (optional)
+--ortholog-map PATH    path to step3b_cross_species_map/cross_species_map.json (optional)
 ```
 
 ### 3.2 kg_hits.json 结构改动
@@ -257,7 +258,7 @@ Cache key **includes provider name** — different providers cache independently
 
 ```json
 {
-  "ortholog_map_path": "step2_ortholog/ortholog_map.json",
+  "ortholog_map_path": "step3b_cross_species_map/cross_species_map.json",
   "ortholog_map_ref_species": ["oryza_sativa"],
   "ensembl_used": true
 }
@@ -308,10 +309,10 @@ routing_multi_reference
 |---|---|
 | `decision_point` | `"cross_species_routing"` |
 | `scope` | `{"type": "session"}` |
-| `run_ref` | `step3_kg_precheck.precheck#1`(取自 precheck 工具 stdout run_id) |
-| `inputs[]` | 必含 `{path: "step3_kg_precheck.coverage_report.recommended_strategy", value: "..."}` 与 `{path: "step3_kg_precheck.coverage_report.recommended_reference_species", value: [...]}` |
+| `run_ref` | `step3a_kg_precheck.precheck#1`(取自 precheck 工具 stdout run_id) |
+| `inputs[]` | 必含 `{path: "step3a_kg_precheck.coverage_report.recommended_strategy", value: "..."}` 与 `{path: "step3a_kg_precheck.coverage_report.recommended_reference_species", value: [...]}` |
 | `output.decision` | 枚举之一 |
-| `output.action` | 如 `run_step2_ortholog --target-species=X --reference-species=Y,Z` 或 `run_step3_kg --species-type=Plant --organ=root` |
+| `output.action` | 如 `run_step3b_cross_species_map --target-species=X --reference-species=Y,Z` 或 `run_step3c_kg --species-type=Plant --organ=root` |
 | `reasoning` | 自然语言解释为什么选这条路径 |
 
 `routing_multi_reference` 必须在 `output.action` 显式列出 reference species 列表(可覆盖 precheck 推荐)。
@@ -320,10 +321,10 @@ routing_multi_reference
 
 ## 5. 缓存清理
 
-`step2_ortholog --force-refresh` 或 marker 集合变化(md5 不同)自动重打。手动清理:
+`step3b_cross_species_map --force-refresh` 或 marker 集合变化(md5 不同)自动重打。手动清理:
 
 ```bash
-rm -rf <project-dir>/step2_ortholog/cache/
+rm -rf <project-dir>/step3b_cross_species_map/cache/
 ```
 
 LLM 不需要关心;但 `write_judgment.py` 与 `step7_diagnose.metadata_check` 应记录 `ortholog_map.json` 的 md5 与 mtime 便于审计。

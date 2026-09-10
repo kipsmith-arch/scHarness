@@ -29,8 +29,8 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - **任务产出**:每个 cluster 一个细胞类型标签 + 置信度(high / medium / low)+ top-3 marker 表达证据 + 元数据(参考来源、参数、日期)。
 - **分工原则**:pipeline 只做测量——产出原始指标,不做 pass/fail 判断。所有 high/medium/low、accept/adjust、clear/ambiguous 的判断由你基于指标解读给出,并说明依据。
 - **判断必须附依据**:不能只说"这个簇是 lateral root cap,高置信度",要说"第一候选有 18 个支持 marker(第二候选只有 3 个),top marker pct1=0.82 pct2=0.02"。依据不足时如实说"不确定",不要硬选。
-- **数据范围**:单物种 scRNA-seq(主要场景为植物拟南芥根,QC 同时看线粒体与叶绿体)。本物种在 KG 覆盖不足时走 SOP-2.5:先 `step3_kg_precheck` 再按需 `step2_cross_species_map`,然后 `step3_kg__query --ortholog-map`。
-- **加载纪律**:一个子命令 = 一次数据加载;不要为单个指标反复读 h5ad。step3_kg / step4_rank / step7_diagnose 与 report 类子命令零加载,只读 JSON 与 sidecar(obs_snapshot.csv 等)。
+- **数据范围**:单物种 scRNA-seq(主要场景为植物拟南芥根,QC 同时看线粒体与叶绿体)。本物种在 KG 覆盖不足时走 SOP-3:先 `step3a_kg_precheck` 再按需 `step3b_cross_species_map`(同源是为了提高 KG 命中率,不是找 marker),然后 `step3c_kg__query --ortholog-map`。
+- **加载纪律**:一个子命令 = 一次数据加载;不要为单个指标反复读 h5ad。step3a_kg_precheck / step3b_cross_species_map / step3c_kg / step4_rank / step7_diagnose 与 report 类子命令零加载,只读 JSON 与 sidecar(obs_snapshot.csv 等)。
 - **交叉验证靠外部知识**:你可以用生物学知识判断候选是否同义词/父子类、marker 是否合理,但要告知用户这是你的判断而非 KG 数据。
 
 ## 2. 工作流程与决策点总览
@@ -41,14 +41,14 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 |---|---|---|---|
 | step1_prepare | 预处理 + 聚类 | SOP-1 | qc_threshold / resolution_select / clustering_quality / batch_effect |
 | step2_markers | marker 发现 | SOP-2 | de_method / marker_quality |
-| step3_kg_precheck + 可选 step2_cross_species_map | 跨物种路由 | SOP-2.5 | cross_species_routing |
-| step3_kg | 知识图谱查询 | SOP-3 | kg_match |
+| step3a_kg_precheck + 可选 step3b_cross_species_map | KG 覆盖与同源路由 | SOP-3 | cross_species_routing |
+| step3c_kg | 知识图谱查询 | SOP-3 | kg_match |
 | step4_rank | 候选排序(测量) | SOP-4 | candidate_gap / candidate_disambiguate |
 | step5_refine | 细化 | SOP-5 | refine_effect / unknown_cluster |
 | step6_validate | 验证交付 | SOP-6 | label_confirm |
 | step7_diagnose | 诊断 | SOP-6 总检 | global_quality |
 
-主流程:预处理 QC 合格 → 找 marker → **precheck 路由** →(需要时同源映射)→ 查参考知识 → 判断每簇 → 模糊簇细化 → 验证交付。某步质量不达标时回到对应步骤调整(例如聚类质量不理想时,可调用 `step1_prepare__recluster` 换分辨率)。流程细节、质量检查表与症状速查见 references/sop.md。
+主流程:预处理 QC 合格 → 找 marker → **查参考知识**(先覆盖预检,需要时同源映射以提高 KG 命中率,再查图谱) → 判断每簇 → 模糊簇细化 → 验证交付。某步质量不达标时回到对应步骤调整(例如聚类质量不理想时,可调用 `step1_prepare__recluster` 换分辨率)。流程细节、质量检查表与症状速查见 references/sop.md。
 
 ## 3. 14 个决策点
 
@@ -90,15 +90,15 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 - 判断要点:每簇 marker 10-50 个是合格尺度;0 个说明 DE 无结果——先确认 DE 输入是 raw counts、过滤是否过严;稀有簇 marker 天然少,不要反复收紧;当 marker 大量是管家基因/批次基因时,先查基因构成再决定如何调过滤。
 - decision 枚举:`markers_accept` / `markers_adjust_filter` / `markers_fail`
 
-### 3.7 cross_species_routing(step3_kg_precheck,SOP-2.5,session 级)
-- 何时:`marker_quality` 接受之后、`step3_kg__query` 之前。先调 `step3_kg_precheck__run`(`--target-species` `--organ` `--species-type`)。
-- 看什么:`step3_kg_precheck.write_report` / coverage_report 的 `coverage_tier`、`recommended_strategy`(`single_species` / `mixed` / `cross_species_only`)、`recommended_reference_species`(species / kg_genes / score)。
-- 判断要点:`routing_accept` 跟推荐。`single_species` → 直接 `step3_kg__query`(不要先拿本物种 ID 打空 KG 再补救)。`mixed` / `cross_species_only` → 先 `step2_cross_species_map__run`(`--target-species` `--reference-species` `--input step2_markers/markers.json`),再 `step3_kg__query --ortholog-map step2_cross_species_map/cross_species_map.json`。映射 hit_rate 很低或 warnings 含 DNS/REST 不可达时,可换 reference、或 `routing_force_single` 走直接路径。`routing_multi_reference` 必须在 action 里写出参考物种列表。
+### 3.7 cross_species_routing(step3a_kg_precheck,SOP-3,session 级)
+- 何时:`marker_quality` 接受之后、`step3c_kg__query` 之前。同源映射属于 SOP-3 查图谱,目的是提高 KG 命中率,不是 SOP-2 找 marker。先调 `step3a_kg_precheck__run`(`--target-species` `--organ` `--species-type`)。
+- 看什么:`step3a_kg_precheck.write_report` / coverage_report 的 `coverage_tier`、`recommended_strategy`(`single_species` / `mixed` / `cross_species_only`)、`recommended_reference_species`(species / kg_genes / score)。
+- 判断要点:`routing_accept` 跟推荐。`single_species` → 直接 `step3c_kg__query`(不要先拿本物种 ID 打空 KG 再补救)。`mixed` / `cross_species_only` → 先 `step3b_cross_species_map__run`(`--target-species` `--reference-species` `--input step2_markers/markers.json`),再 `step3c_kg__query --ortholog-map step3b_cross_species_map/cross_species_map.json`。映射 hit_rate 很低或 warnings 含 DNS/REST 不可达时,可换 reference、或 `routing_force_single` 走直接路径。`routing_multi_reference` 必须在 action 里写出参考物种列表。
 - decision 枚举:`routing_accept` / `routing_force_single` / `routing_force_cross` / `routing_multi_reference`
 
-### 3.8 kg_match(step3_kg,SOP-3,session 级)
+### 3.8 kg_match(step3c_kg,SOP-3,session 级)
 - 何时:query_genes 之后。
-- 看什么:`step3_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;若传了 `--ortholog-map` 再看 `n_direct_hits` / `n_ortholog_hits` / `n_mixed_hits` / `ortholog_warnings`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
+- 看什么:`step3c_kg.query_genes.overall_hit_rate`、`n_markers_hit`、`genes_with_no_kg_entry`、`n_genes_with_hits`;若传了 `--ortholog-map` 再看 `n_direct_hits` / `n_ortholog_hits` / `n_mixed_hits` / `ortholog_warnings`;候选的 `organ` / `organ_status`(含目标 organ 的候选 / partial / unknown / mismatch)。
 - 判断要点:命中率高说明基因 ID 与 KG 中存储格式一致、organ 对齐良好;命中率低先查 organ 是否与数据来源对齐(动物/植物、不同器官名变体如 root/shoot/leaf 都要核实),再查上游预处理是否完成了 ID 转换(TAIR locus -> symbol 等)——物种特异基因本就不在 KG,不一定是 ID 错(见 references/traps.md)。本物种不在 KG 时不应在此处才第一次去同源:应已在 §3.7 走完映射再查。`genes_with_no_kg_entry` 帮助定位 ID 系统问题。
 - **organ 优先级排序(由 pipeline 自动完成)**:step3 在聚合候选时已按 `organ_status` 优先级排序(含目标 organ 的候选 → partial → unknown → mismatch),同类内按 marker_count(降序) → mean_confidence(降序) → cell_type(升序)。决策视图 top-k 默认展示器官匹配的候选,减少跨组织污染。**LLM 不再需要手动排除 mismatch**;若某簇只剩 mismatch 候选(如跨组织污染严重的小簇),仍会出现,由你以生物学常识判断。
 - decision 枚举:`id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ`
@@ -248,7 +248,7 @@ write_judgment__session-end(project_dir="<project-dir>",
 
 ## 8. 工具概览
 
-11 个工具由加载器从 scripts/ 的 `--dump-schema` 自动派生,命名 `{脚本}__{子命令}`。每个工具 stdout 最后一行是 JSON `{"status":"ok","data":{...}}` 或 `{"status":"error",...}`。参数细节以加载器注册的 schema 为准。
+工具由加载器从 scripts/ 的 `--dump-schema` 自动派生,命名 `{脚本}__{子命令}`。每个工具 stdout 最后一行是 JSON `{"status":"ok","data":{...}}` 或 `{"status":"error",...}`。参数细节以加载器注册的 schema 为准。SOP-3 三个脚本按执行顺序命名为 3a / 3b / 3c。
 
 | 工具 | 作用 | 数据加载 |
 |---|---|---|
@@ -256,8 +256,10 @@ write_judgment__session-end(project_dir="<project-dir>",
 | `step1_prepare__run` | 完整预处理:QC → 过滤 → doublet → 归一化 → HVG → PCA → kNN → Leiden → UMAP → 批次检查(16 op) | 1× raw |
 | `step1_prepare__recluster` | 换分辨率重新聚类 | 1× proc |
 | `step2_markers__run` | DE 排序 + pct1/pct2 + marker 过滤 + 稀有簇 pseudobulk | 1× proc |
-| `step3_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 |
-| `step3_kg__test-connection` | 检查 Neo4j 连通性 | 0 |
+| `step3a_kg_precheck__run` | KG 覆盖预检:coverage_tier / 推荐策略 / 参考物种 | 0 |
+| `step3b_cross_species_map__run` | 同源映射(条件,提高 KG 命中率) | 0 |
+| `step3c_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 |
+| `step3c_kg__test-connection` | 检查 Neo4j 连通性 | 0 |
 | `step4_rank__run` | first/second 候选排名与差距 | 0 |
 | `step5_refine__run` | 模糊簇:自相关预判 → 子聚类 → 子簇 DE/KG → 重叠检查 | 1× proc |
 | `step6_validate__run` | top-marker 表达验证 + 最终注释 | 1× proc(backed 可选) |
@@ -269,8 +271,8 @@ write_judgment__session-end(project_dir="<project-dir>",
 
 使用注意:
 - 本 loop **没有读本地文件 / references 的工具**。不要尝试打开 `qc_metrics.json`、`run_log.jsonl` 或 `references/`。判断只依据工具返回的 JSON（`data` 字段）。`step1_prepare__metrics` 的 `data.distributions` 即 QC 分布；`step1_prepare__run` 的 `data.judge_view` 含聚类/批次指标。
-- step3_kg__query 的参数分两类：**任务类（生物决策）** `organ`（必填）`species` `species-type` `strict-organ` LLM 可传；**环境类** `min-confidence` `max-ancestor-hops` + Neo4j 凭据（LLM 不可见，隐藏在 schema 中，默认从代码常量回落），运维可以在 CLI 临时覆盖。
+- step3c_kg__query 的参数分两类：**任务类（生物决策）** `organ`（必填）`species` `species-type` `strict-organ` LLM 可传；**环境类** `min-confidence` `max-ancestor-hops` + Neo4j 凭据（LLM 不可见，隐藏在 schema 中，默认从代码常量回落），运维可以在 CLI 临时覆盖。
 - Neo4j 连接（`NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`）在 `skills/cell-annotation/.env` 里。运行前需要 `cp skills/cell-annotation/.env.example skills/cell-annotation/.env` 并填 `NEO4J_PASSWORD`。
-- **基因 ID 不做映射**：step3_kg 用 `adata.var_names` 原样查询 KG。若 h5ad 使用 TAIR locus 而 KG 存 symbol,需在进入 pipeline 前完成转换(不属于 skill 责任)。
+- **基因 ID 不做映射**：step3c_kg 用 `adata.var_names` 原样查询 KG。若 h5ad 使用 TAIR locus 而 KG 存 symbol,需在进入 pipeline 前完成转换(不属于 skill 责任)。
 - 每步执行后注意 stdout 中的 run_id，judgment 记录需要引用它。
 - 工具返回 error 时，根据错误信息决定重试或换一种方式，不要原样重复同一失败调用。

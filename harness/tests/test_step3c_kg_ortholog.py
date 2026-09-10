@@ -1,4 +1,4 @@
-"""step3_kg --ortholog-map: map load + candidate aggregation (no Neo4j)."""
+"""step3c_kg --ortholog-map: map load + candidate aggregation (no Neo4j)."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts"))
 
-import step3_kg as kg  # noqa: E402
+import step3c_kg as kg  # noqa: E402
 
 
 def test_load_ortholog_map_reads_cross_species_key(tmp_path):

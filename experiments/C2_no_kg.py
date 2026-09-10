@@ -1,11 +1,11 @@
 """C2 KG 消融 — no-KG 臂驱动。
 
 为什么需要这个 (experiment_implementation.md §3.8 C2 — KG 消融):
-    跑一份"无 KG"臂:用静态 marker_dict 替代 step3_kg.py 的 Neo4j 查询,
+    跑一份"无 KG"臂:用静态 marker_dict 替代 step3c_kg.py 的 Neo4j 查询,
     其余 step1/2/4/5/6/7 与 B1 arm3_llm 一致(同 h5ad, 同 step1 处理, 同 markers)。
 
     输出:
-          output/C2/no_kg/step3_kg/kg_hits.json     — C2 专用,与 B1 同 schema 但 candidates 来自 marker_dict
+          output/C2/no_kg/step3c_kg/kg_hits.json     — C2 专用,与 B1 同 schema 但 candidates 来自 marker_dict
           output/C2/no_kg/step4_rank/annotations.json
           output/C2/no_kg/step5_refine/refined_annotations.json
           output/C2/no_kg/step6_validate/final_annotations.json
@@ -37,12 +37,12 @@ DEFAULT_OUT = os.path.join(REPO_ROOT, "output", "C2", "no_kg")
 DEFAULT_MARKER_DICT = os.path.join(REPO_ROOT, "experiments", "marker_dict.json")
 DEFAULT_ORGAN = "root"
 
-# Pipeline DAG,仅 step3_kg 替换;step5_refine 需 step3_kg 输出的 candidates
+# Pipeline DAG,仅 step3c_kg 替换;step5_refine 需 step3c_kg 输出的 candidates
 # step6_validate 需 step4 output + step5 refined
 PIPELINE = [
     ("step1_prepare.py", "run", True),     # 跳过,如果 source 已存在
     ("step2_markers.py", "run", True),     # 跳过,如果 source 已存在
-    ("step3_kg_no_kg.py", "main", False),  # 必跑,本脚本模拟
+    ("step3c_kg_no_kg.py", "main", False),  # 必跑,本脚本模拟
     ("step4_rank.py", "run", False),
     ("step5_refine.py", "run", False),
     ("step6_validate.py", "run", False),
@@ -87,7 +87,7 @@ def build_c2_kg_hits(markers: dict, gene_to_cts: dict[str, list[str]], target_or
     Each candidate: {cell_type, supporting_markers, marker_count, sources}.
     No confidence (dict has none), no ancestors (no ontology), no organ_status (no organ column).
 
-    Output's `gene_to_cts` field is normalised to the step3_kg hit schema
+    Output's `gene_to_cts` field is normalised to the step3c_kg hit schema
     ({cell_type, confidence, source, organ, ...} per entry) so downstream
     _rank_candidates can re-use it without modification.
     """
@@ -135,7 +135,7 @@ def build_c2_kg_hits(markers: dict, gene_to_cts: dict[str, list[str]], target_or
         "query_config": {"organ": target_organ, "species": None, "species_type": "Plant",
                           "min_confidence": 0.0, "strict_organ": False, "gene_key": "marker_dict"},
         "gene_to_cts": {
-            # normalise to step3_kg hit schema so step5_refine._rank_candidates can reuse
+            # normalise to step3c_kg hit schema so step5_refine._rank_candidates can reuse
             g: [{
                 "cell_type": ct,
                 "confidence": 1.0,  # marker_dict has no per-hit confidence
@@ -156,19 +156,19 @@ def build_c2_kg_hits(markers: dict, gene_to_cts: dict[str, list[str]], target_or
 
 
 def write_step3kg(out_dir: str, payload: dict, log_path: str):
-    """Write kg_hits.json equivalent, plus an exec record for step3_kg.query_genes."""
-    step3_dir = os.path.join(out_dir, "step3_kg")
+    """Write kg_hits.json equivalent, plus an exec record for step3c_kg.query_genes."""
+    step3_dir = os.path.join(out_dir, "step3c_kg")
     os.makedirs(step3_dir, exist_ok=True)
     out_json = os.path.join(step3_dir, "kg_hits.json")
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    # append exec record mimicking step3_kg.query_genes
+    # append exec record mimicking step3c_kg.query_genes
     import time
     n_clusters = len(payload["per_cluster"])
     total_cands = sum(len(p["candidates"]) for p in payload["per_cluster"].values())
     rec = {
-        "type": "exec", "step": "step3_kg", "op": "query_genes_no_kg",
-        "run_id": "step3_kg.query_genes_no_kg#1", "seq": None,
+        "type": "exec", "step": "step3c_kg", "op": "query_genes_no_kg",
+        "run_id": "step3c_kg.query_genes_no_kg#1", "seq": None,
         "params": {"source": "marker_dict"},
         "metrics": {
             "n_clusters": n_clusters,
@@ -243,14 +243,14 @@ def main() -> int:
     payload = build_c2_kg_hits(markers, gene_to_cts, args.organ)
     payload["kg_provenance"]["marker_dict_meta"] = dict_meta
 
-    # 4) 写 step3_kg/kg_hits.json + exec record
+    # 4) 写 step3c_kg/kg_hits.json + exec record
     log_path = os.path.join(out_dir, "run_log.jsonl")
     write_step3kg(out_dir, payload, log_path)
 
     # 5) 跑 step4-7 (subprocess, 复用 skill scripts)
     ok = True
     for script, sub, can_skip in PIPELINE:
-        if script == "step3_kg_no_kg.py":
+        if script == "step3c_kg_no_kg.py":
             continue  # 已手工跑
         if can_skip and not args.force:
             continue  # step1/step2 已复制

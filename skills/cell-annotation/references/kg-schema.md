@@ -1,12 +1,12 @@
 # 知识图谱(KG)schema 与查询语义(skill references 版)
 
 > 本文档是 `knowledge/kg_schema.md` 原文 + 查询语义说明的合集。
-> 用途:理解 `step3_kg__query` 的结果(kg_hits.json)、ancestors 字段;SKILL.md §3.7 kg_match 与 §3.8/3.9 并列判断依赖本文件。
+> 用途:理解 `step3c_kg__query` 的结果(kg_hits.json)、ancestors 字段;SKILL.md §3.7 kg_match 与 §3.8/3.9 并列判断依赖本文件。
 
 ## 目录(TOC)
 
 - [节点与关系 schema](#节点与关系-schema)
-- [查询语义(step3_kg__query)](#查询语义step3_kg__query)
+- [查询语义(step3c_kg__query)](#查询语义step3c_kg__query)
 - [ancestors 与层级判断](#ancestors-与层级判断)
 - [物种过滤与命名](#物种过滤与命名)
 
@@ -48,9 +48,9 @@ The relationships:
 (:Gene)-[:marker_of]->(:Ontology)
 (:Ontology)-[:ontology_relation]->(:Ontology)
 
-## 查询语义(step3_kg__query)
+## 查询语义(step3c_kg__query)
 
-`step3_kg__query` 把 marker 基因 → 候选细胞类型(Ontology 节点),过程与过滤:
+`step3c_kg__query` 把 marker 基因 → 候选细胞类型(Ontology 节点),过程与过滤:
 
 **参数分类**(遵循 LLM 工具参数 vs skill 配置原则,见 `AGENTS.md`):
 - **任务参数(A 类,LLM 可见)**——生物决策:`--organ`(必填)、`--species`、`--species-type`、`--strict-organ`。
@@ -58,7 +58,7 @@ The relationships:
   - `--min-confidence`(默认 0):`marker_of.relation_confidence` 下限。
   - `--max-ancestor-hops`(默认 3):`ontology_relation` 祖先查询上限;设为 0 跳过层级查询(ancestors 为空)。
 
-**基因 ID 不做映射**——step3_kg 用 `adata.var_names` 原样查 KG。若 h5ad 使用 TAIR locus ID (如 AT1G01010) 而 KG 存 symbol,需在进入 pipeline 前手动转换(可用 `name_map4Arabidopsis_thaliana_symbol.json` 或上游预处理脚本),这是数据处理责任,不在 skill 行为范围内。
+**基因 ID 不做映射**——step3c_kg 用 `adata.var_names` 原样查 KG。若 h5ad 使用 TAIR locus ID (如 AT1G01010) 而 KG 存 symbol,需在进入 pipeline 前手动转换(可用 `name_map4Arabidopsis_thaliana_symbol.json` 或上游预处理脚本),这是数据处理责任,不在 skill 行为范围内。
 
 1. **过滤条件**:
    - `--organ`(LLM 必填):对应 Ontology 的 `o.Organ`,与数据来源 organ 必须对齐。
@@ -68,9 +68,9 @@ The relationships:
    - `--min-confidence`(默认 0):`marker_of.relation_confidence` 下限。
 2. **候选聚合**:per cluster 按 marker_count → mean_confidence 排名,产出 `candidates`(cell_type / supporting_markers / marker_count / mean_confidence / min_confidence / sources)。
 3. **层级查询**:`--max-ancestor-hops`(默认 3)沿 `ontology_relation` 查祖先写入 kg_hits.json 的 ancestors map;设为 0 跳过层级查询(ancestors 为空)。
-4. **连通性检查**:`step3_kg__test-connection` 只查连通性,不依赖项目目录。
+4. **连通性检查**:`step3c_kg__test-connection` 只查连通性,不依赖项目目录。
 
-输出:`step3_kg/kg_hits.json`(每簇候选 + gene_to_cts + ancestors)、`step3_kg/kg_source.txt`(KG 来源)。
+输出:`step3c_kg/kg_hits.json`(每簇候选 + gene_to_cts + ancestors)、`step3c_kg/kg_source.txt`(KG 来源)。
 
 ## ancestors 与层级判断
 
@@ -90,4 +90,4 @@ The relationships:
 - `kg_version` 是 Neo4j 服务版本(`kg_version_source=neo4j-server`)——KG 本体无版本号,这是溯源代理值。
 - `query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不混入 ancestors 统计。
 - 凭据优先级:CLI 参数(--uri/--user/--password)> 环境变量(NEO4J_URI/USER/PASSWORD);密码不硬编码、不写文件。
-- NEO4J 不可用时先跑 `step3_kg__test-connection` 定位问题。
+- NEO4J 不可用时先跑 `step3c_kg__test-connection` 定位问题。

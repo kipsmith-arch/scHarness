@@ -1,4 +1,4 @@
-"""Tests for step3_kg_precheck (CAP-1).
+"""Tests for step3a_kg_precheck (CAP-1).
 
 Coverage:
 - arg_spec / --dump-schema discipline
@@ -21,11 +21,11 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPT = REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3_kg_precheck.py"
+SCRIPT = REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3a_kg_precheck.py"
 sys.path.insert(0, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts"))
 
 import common  # noqa: E402
-import step3_kg_precheck as precheck  # noqa: E402
+import step3a_kg_precheck as precheck  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -150,9 +150,9 @@ class TestSchemaDiscipline:
             if action.dest in ("help", "dump_schema"):
                 continue
             assert action.default is not argparse.SUPPRESS, \
-                f"step3_kg_precheck has SUPPRESS on {action.dest}; this tool has no B-class args"
+                f"step3a_kg_precheck has SUPPRESS on {action.dest}; this tool has no B-class args"
             assert action.help is not argparse.SUPPRESS, \
-                f"step3_kg_precheck has SUPPRESS on {action.dest} help; this tool has no B-class args"
+                f"step3a_kg_precheck has SUPPRESS on {action.dest} help; this tool has no B-class args"
 
 
 # ---------------------------------------------------------------------------

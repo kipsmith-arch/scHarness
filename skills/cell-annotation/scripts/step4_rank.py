@@ -184,10 +184,10 @@ def _cluster_decision_view(c, v):
 def cmd_run(args) -> dict:
     out_dir = common.step_dir(args.project_dir, "step4_rank")
     log = common.run_log_path(args.project_dir)
-    kg_path = os.path.join(common.step_dir(args.project_dir, "step3_kg"), "kg_hits.json")
+    kg_path = os.path.join(common.step_dir(args.project_dir, "step3c_kg"), "kg_hits.json")
     kg_hits = common.read_json(kg_path)
     if not kg_hits:
-        return common.fail("缺少 step3_kg/kg_hits.json,请先运行 step3_kg query")
+        return common.fail("缺少 step3c_kg/kg_hits.json,请先运行 step3c_kg query")
     p = {}
     annotations, rank_metrics = op_rank_candidates(kg_hits, log, p)
     m = op_write_annotations(out_dir, log, p, annotations, rank_metrics)

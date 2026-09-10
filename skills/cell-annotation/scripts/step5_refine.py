@@ -20,7 +20,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
-from step3_kg import _rank_candidates  # reuse the single candidate-ranking impl
+from step3c_kg import _rank_candidates  # reuse the single candidate-ranking impl
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -303,14 +303,14 @@ def cmd_run(args) -> dict:
                                       "processed.h5ad")
     ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                         "annotations.json"))
-    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
+    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3c_kg"),
                                        "kg_hits.json"))
     markers = common.read_json(os.path.join(common.step_dir(args.project_dir, "step2_markers"),
                                             "markers.json"))
     if not ann or "annotations" not in ann:
         return common.fail("缺少 step4_rank/annotations.json,请先运行 step4_rank run")
     if not kg or not markers:
-        return common.fail("缺少 step3_kg/kg_hits.json 或 step2_markers/markers.json")
+        return common.fail("缺少 step3c_kg/kg_hits.json 或 step2_markers/markers.json")
     target_ids = _parse_clusters(getattr(args, "clusters", None))
     if not target_ids:
         return common.fail("step5_refine 需要判断层给出的 --clusters，拒绝全量自路由")
@@ -323,7 +323,7 @@ def cmd_run(args) -> dict:
     # 避免后续 op_* 调用产生的孤立 exec 记录(参见 step5_fail_late 改动)。
     query_config = kg.get("query_config")
     if not isinstance(query_config, dict) or not query_config.get("organ"):
-        return common.fail("kg_hits.json 缺少 query_config.organ,无法确定目标 organ;请重新运行 step3_kg query")
+        return common.fail("kg_hits.json 缺少 query_config.organ,无法确定目标 organ;请重新运行 step3c_kg query")
     target_organ = query_config["organ"]
     adata = common.read_h5ad(h5ad)
     if adata.raw is None:

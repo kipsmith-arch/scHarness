@@ -7,7 +7,7 @@
 
 ## 8. 跨物种指标
 
-### 8.1 step3_kg_precheck 指标
+### 8.1 step3a_kg_precheck 指标
 
 #### `coverage_tier`
 
@@ -40,7 +40,7 @@
 
 ---
 
-### 8.2 step2_ortholog 指标
+### 8.2 step3b_cross_species_map 指标
 
 #### `summary.hit_rate`
 
@@ -79,7 +79,7 @@
 
 ---
 
-### 8.3 step3_kg 跨物种融合指标
+### 8.3 step3c_kg 跨物种融合指标
 
 #### `per_cluster[].n_markers_direct_hit` / `n_markers_ortholog_hit` / `n_markers_mixed_hit`
 

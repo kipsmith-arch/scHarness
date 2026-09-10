@@ -63,7 +63,7 @@ PREBUILT: list[dict] = [
 def kg_ancestors(cfg: dict, terms: list[str], max_hops: int = 3) -> tuple[dict, bool]:
     """Query KG ancestors for each term. Returns ({term: [ancestors]}, ok).
 
-    Cypher mirrors skills/cell-annotation/scripts/step3_kg.py op_query_hierarchy.
+    Cypher mirrors skills/cell-annotation/scripts/step3c_kg.py op_query_hierarchy.
     """
     try:
         from neo4j import GraphDatabase

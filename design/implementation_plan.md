@@ -30,10 +30,12 @@
 cell-annotation/                        ← skill 目录(最终产物)
 ├── SKILL.md                            ← YAML frontmatter(name/description)+ 指令(<500 行理想)
 ├── scripts/                            ← 确定性/重复任务的执行代码(= pipeline,47 op)
-├── references/                         ← 按需加载的文档(SOP / 指标解读 / 陷阱 / KG schema)
+├── references/                         ← 按需加载的文档(SOP / 指标解读 / 陷阱 / KG schema / 参考物种静态名录)
 ├── assets/                             ← 输出用文件(报告模板、工具清单)
 └── evals/                              ← 测试用例 + 断言(evals.json)
 ```
+
+BLAST subject 库**不**放在 skill 目录或 `assets/`。按需下载到用户缓存。规范:`_bmad-output/specs/spec-blastp-homology/SPEC.md`。
 
 **三级渐进加载**:
 
@@ -125,7 +127,7 @@ scripts/*.py         → 每个脚本执行 `--dump-schema` 输出 {subcommand, 
 | A-1 | `step1_prepare.py`:`run`(16 op 单次加载 + 全部 Step1 扩展指标 + 每 op append_log)/`metrics`/`recluster`;**每脚本实现 `--dump-schema`** | tool §5.1 | processed.h5ad + **obs_snapshot.csv + var_snapshot.csv** + qc_metrics.json |
 | B-1 | `step2_markers.py`:de_rank(BH-FDR/AUC/inflation λ)+ pct1_pct2 + filter_markers(漏斗)+ pseudobulk_de + write_markers | tool §5.2 | markers.csv/json(enriched) |
 | B-2 | `step6_validate.py`:marker_expression(Cohen's d/AUC/fold_change)+ violin + global_summary + report + final;**backed 模式按列读**(try/except 回退全量) | tool §5.6 | final_annotations.json + report.md |
-| C-1 | `step3_kg.py`:connect / query_genes(原始 var_names 直接查 KG)/ query_hierarchy(ancestors 入 kg_hits)/ aggregate_candidates / write_hits + `test-connection` | tool §5.3 | kg_hits.json(enriched) |
+| C-1 | `step3c_kg.py`:connect / query_genes(原始 var_names 直接查 KG)/ query_hierarchy(ancestors 入 kg_hits)/ aggregate_candidates / write_hits + `test-connection` | tool §5.3 | kg_hits.json(enriched) |
 | C-2 | `step4_judge.py`:rank_candidates(count_ratio/count_diff/confidence_diff/ancestor_overlap)+ write_annotations(纯 JSON) | tool §5.4 | annotations.json |
 | C-3 | `step5_refine.py`:candidate_autocorr → subcluster → subcluster_de → subcluster_kg(缓存复用)→ marker_overlap(Jaccard)→ type_membership → unknown_overlap → write_refined | tool §5.5 | refined_annotations.json |
 | D-1 | `step7_diagnose.py`:hit_rate/candidate_count/first_second/batch_entropy(**读 obs_snapshot,0 次加载**)/metadata_check/cross_cluster | tool §5.7 | step7_diagnose.json + report.md |

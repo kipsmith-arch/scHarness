@@ -70,7 +70,7 @@
 - de_rank(BH-FDR/AUC/inflation λ)+ pct1_pct2 + filter_markers(漏斗)+ pseudobulk_de
 - 写 markers.csv/json(enriched)
 
-### Story 2.4: step3_kg.py — 知识图谱查询
+### Story 2.4: step3c_kg.py — 知识图谱查询
 - connect / query_genes(原始 var_names)/ query_hierarchy(ancestors)/ aggregate_candidates / write_hits
 - test-connection 子命令
 - SUPPRESS `--uri/--user/--password/--min-confidence/--max-ancestor-hops`(Neo4j 凭据 + KG 调优)

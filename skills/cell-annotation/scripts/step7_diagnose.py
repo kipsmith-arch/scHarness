@@ -133,7 +133,7 @@ def op_cross_cluster(final, markers_json, qc_metrics, hit_rate, first_second,
 def cmd_run(args) -> dict:
     out_dir = common.step_dir(args.project_dir, "step7_diagnose")
     log = common.run_log_path(args.project_dir)
-    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
+    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3c_kg"),
                                        "kg_hits.json"))
     ann = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                         "annotations.json"))

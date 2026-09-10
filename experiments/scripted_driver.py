@@ -34,7 +34,7 @@ def main() -> int:
     ap.add_argument("--raw", default=None, help="Raw h5ad path (passed as --input to step1)")
     ap.add_argument("--organ", default="root")
     ap.add_argument("--species", default=None,
-                    help="Passed to step3_kg__query --species (e.g. sorghum_bicolor)")
+                    help="Passed to step3c_kg__query --species (e.g. sorghum_bicolor)")
     ap.add_argument("--session-id", default=None)
     args = ap.parse_args()
 
@@ -53,13 +53,13 @@ def main() -> int:
             extra["organ"] = args.organ
             if args.raw:
                 extra["input"] = args.raw
-        elif node.id == "step3_kg_precheck.run":
+        elif node.id == "step3a_kg_precheck.run":
             extra["organ"] = args.organ
             extra["target_species"] = args.species or "arabidopsis_thaliana"
-        elif node.id == "step2_cross_species_map.run":
+        elif node.id == "step3b_cross_species_map.run":
             extra["target_species"] = args.species or "arabidopsis_thaliana"
             extra["input"] = os.path.join(args.project_dir, "step2_markers", "markers.json")
-        elif node.id == "step3_kg.query":
+        elif node.id == "step3c_kg.query":
             extra["organ"] = args.organ
             if args.species:
                 extra["species"] = args.species

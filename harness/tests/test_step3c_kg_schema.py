@@ -1,4 +1,4 @@
-"""Tests for the A-class / B-class arg discipline in step3_kg.
+"""Tests for the A-class / B-class arg discipline in step3c_kg.
 
 The cell-annotation skill classifies CLI args into:
 
@@ -10,7 +10,7 @@ The cell-annotation skill classifies CLI args into:
        the LLM is not nudged to set them; CLI / env still overrides at runtime
        via ``common.env_or_default``.
 
-step3_kg is the reference implementation of this split. These tests pin
+step3c_kg is the reference implementation of this split. These tests pin
 the contract so future refactors don't regress (e.g. re-exposing --password
 to the LLM, or hiding --organ from the LLM).
 """
@@ -25,11 +25,11 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPT = PROJECT_ROOT / "skills" / "cell-annotation" / "scripts" / "step3_kg.py"
+SCRIPT = PROJECT_ROOT / "skills" / "cell-annotation" / "scripts" / "step3c_kg.py"
 
 
 def _dump_schema() -> dict:
-    """Run ``python step3_kg.py --dump-schema`` and return the parsed payload."""
+    """Run ``python step3c_kg.py --dump-schema`` and return the parsed payload."""
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), "--dump-schema"],
         capture_output=True, text=True, encoding="utf-8",
@@ -53,7 +53,7 @@ def _by_subcommand(payload: dict) -> dict:
     "name",
     [
         "organ", "species", "species_type", "strict_organ",  # biological decision
-        "ortholog_map",  # SOP-2.5 map consumed by step3
+        "ortholog_map",  # SOP-3 map consumed by step3c_kg query
         "project_dir", "input",  # I/O paths exposed to LLM (decision-point-driven overrides)
     ],
 )

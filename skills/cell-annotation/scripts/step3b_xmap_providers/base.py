@@ -1,9 +1,9 @@
-"""Provider abstraction for step2_cross_species_map (SPEC CAP-2).
+"""Provider abstraction for step3b_cross_species_map (SPEC CAP-2).
 
 Defines:
 - ``MappingRecord``: neutral dataclass representing one mapping result. Each
   provider must produce records of this shape so downstream consumers (LLM,
-  step3_kg) don't depend on provider-specific field names.
+  step3c_kg) don't depend on provider-specific field names.
 - ``BaseCrossSpeciesProvider``: ABC that every provider must subclass.
 - ``PROVIDERS`` registry: maps provider name -> provider class. The CLI's
   ``--provider`` arg dispatches via this registry.
@@ -31,7 +31,7 @@ provider contract is intentionally minimal:
   Downstream consumers should not rely on ``raw``; it's for debugging.
 
 Adding a new provider = writing one file with one class. No changes to CLI,
-no changes to LLM-facing schema, no changes to step3_kg.
+no changes to LLM-facing schema, no changes to step3c_kg.
 """
 
 from __future__ import annotations

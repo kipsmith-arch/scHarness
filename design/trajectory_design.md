@@ -175,7 +175,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | batch_effect | step1_prepare batch_mixing 后 | session | 1 |
 | de_method | step2_markers 前 | session | 1 |
 | marker_quality | step2_markers filter_markers 后 | session | 1 |
-| kg_match | step3_kg query_genes 后 | session | 1 |
+| kg_match | step3c_kg query_genes 后 | session | 1 |
 | candidate_gap | step4_judge rank_candidates 后 | cluster | N(簇数) |
 | candidate_disambiguate | step4_judge rank_candidates 后 | cluster | ≤N(仅并列簇) |
 | refine_effect | step5_refine candidate_autocorr + subcluster + marker_overlap 后 | cluster | ≤N(仅 analyzed 簇) |
@@ -337,8 +337,8 @@ canonical 形式以 SKILL.md 与 trajectory_design.md §5.2 为准;其他形式(
 
 ```
 step1_prepare/processed.h5ad, obs_snapshot.csv, var_snapshot.csv
-step2_markers/markers.csv, markers.json          ← 基因列表,供 step3_kg 读
-step3_kg/kg_hits.json                             ← 候选列表,供 step4_judge 读
+step2_markers/markers.csv, markers.json          ← 基因列表,供 step3c_kg 读
+step3c_kg/kg_hits.json                             ← 候选列表,供 step4_judge 读
 step4_judge/annotations.json                      ← first/second 候选,供 step5_refine 读
 step5_refine/refined_annotations.json             ← 细化结果,供 step6_validate 读
 step6_validate/final_annotations.json, report.md  ← 最终标签
@@ -439,7 +439,7 @@ python scripts/split_by_decision.py --input aggregated.jsonl --output-dir by_dec
 ├── step2_markers/
 │   ├── markers.csv
 │   └── markers.json
-├── step3_kg/
+├── step3c_kg/
 │   ├── kg_hits.json
 │   └── kg_source.txt
 ├── step4_judge/
@@ -635,7 +635,7 @@ python scripts/validate_log.py --project-dir ./output
 {"ts":"2026-07-23T14:05:30Z","seq":9,"type":"judgment","decision_point":"clustering_quality","scope":{"type":"session"},"run_ref":"step1_prepare.leiden_cluster#1","inputs":[{"path":"step1_prepare.leiden_cluster.silhouette_overall.mean","value":0.35},{"path":"step1_prepare.leiden_cluster.n_singleton","value":0}],"output":{"decision":"clustering_accept","confidence":"medium","action":"proceed_to_step2_markers"},"reasoning":"silhouette=0.35 is reasonable (0.25-0.5 range), no singleton clusters. Accepting resolution 0.8."}
 {"ts":"2026-07-23T14:10:00Z","seq":10,"type":"exec","run_id":"step2_markers.de_rank#1","parameters":{"min_pct1":0.5},"metrics":{"de_distribution":{"logfc_mean":1.2,"pval_inflation_lambda":1.1}}}
 {"ts":"2026-07-23T14:10:01Z","seq":11,"type":"exec","run_id":"step2_markers.filter_markers#1","parameters":{"min_pct1":0.5,"min_pct1_pct2":0.25},"metrics":{"n_before_filter":500,"n_markers":30,"filter_efficiency":0.06,"n_grey_zone":15}}
-{"ts":"2026-07-23T14:12:00Z","seq":12,"type":"judgment","decision_point":"marker_quality","scope":{"type":"session"},"run_ref":"step2_markers.filter_markers#1","inputs":[{"path":"step2_markers.filter_markers.n_markers","value":30},{"path":"step2_markers.filter_markers.filter_efficiency","value":0.06}],"output":{"decision":"markers_accept","confidence":"high","action":"proceed_to_step3_kg"},"reasoning":"30 markers per cluster, filter efficiency 6% is reasonable. Accepting."}
+{"ts":"2026-07-23T14:12:00Z","seq":12,"type":"judgment","decision_point":"marker_quality","scope":{"type":"session"},"run_ref":"step2_markers.filter_markers#1","inputs":[{"path":"step2_markers.filter_markers.n_markers","value":30},{"path":"step2_markers.filter_markers.filter_efficiency","value":0.06}],"output":{"decision":"markers_accept","confidence":"high","action":"proceed_to_step3c_kg"},"reasoning":"30 markers per cluster, filter efficiency 6% is reasonable. Accepting."}
 ...
 {"ts":"2026-07-23T15:30:00Z","seq":95,"type":"session_end","final_summary":{"n_clusters":29,"n_unknown":0,"unknown_rate":0.0,"n_unique_labels":27,"run_count":8,"judgment_count":67}}
 ```

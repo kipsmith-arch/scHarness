@@ -63,7 +63,7 @@
 |---|---|---|
 | **step1_prepare** | QC + 过滤 + 归一化 + HVG + PCA + kNN + Leiden 聚类 | qc_threshold / resolution_select / clustering_quality / batch_effect |
 | **step2_markers** | DE 分析 + marker 基因发现 | de_method / marker_quality |
-| **step3_kg** | Neo4j 知识图谱查询(基因→细胞类型) | kg_match |
+| **step3c_kg** | Neo4j 知识图谱查询(基因→细胞类型) | kg_match |
 | **step4_judge** | 簇级别 first/second 候选排名 | candidate_gap / candidate_disambiguate |
 | **step5_refine** | 模糊簇子聚类与判断 | refine_effect / unknown_cluster |
 | **step6_validate** | top marker 表达验证 + 最终标签 | label_confirm |
@@ -71,7 +71,7 @@
 
 ### 3.3 数据流关键约束
 
-- **最小化 h5ad 加载次数**:h5ad 文件 GB 级,完整 pipeline 仅 4 次加载(1 raw + 3 proc);step3_kg / step4_judge / step7_diagnose 0 次加载
+- **最小化 h5ad 加载次数**:h5ad 文件 GB 级,完整 pipeline 仅 4 次加载(1 raw + 3 proc);step3c_kg / step4_judge / step7_diagnose 0 次加载
 - **sidecar 中间文件**:`obs_snapshot.csv`(5 MB)、`var_snapshot.csv` 替代完整 h5ad
 - **环境变量管外部依赖**:Neo4j 凭证经 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` 环境变量配置,优先级 CLI > env > 默认
 - **植物特化**:QC 同时看线粒体(`MT-` 前缀)与叶绿体(`ATCG` 前缀)基因,不用动物参考阈值
@@ -217,7 +217,7 @@
 
 **Loop 宿主代码**(`harness/`,6 文件)
 - `loop.py` / `dispatcher.py` / `skill_loader.py` / `session.py` / `conversation.py` / `notebook.py`
-- 89 个 pytest 全部通过(`harness/tests/`,含 step3_kg schema-discipline 测试)
+- 89 个 pytest 全部通过(`harness/tests/`,含 step3c_kg schema-discipline 测试)
 
 **Skill 包**(`skills/cell-annotation/`)
 - SKILL.md(< 500 行,中文,imperative 句式,含 13 决策点 + 6 陷阱 + 日志指导)
@@ -233,7 +233,7 @@
 |---|---|---|---|
 | `step1_prepare.py` | 777 | metrics / run / recluster | 1× raw(proc 可选) |
 | `step2_markers.py` | 453 | run(wilcoxon / AUC / pseudobulk) | 1× proc |
-| `step3_kg.py` | 485 | query / test-connection | 0 |
+| `step3c_kg.py` | 485 | query / test-connection | 0 |
 | `step4_judge.py` | 214 | run(纯 JSON,LLM 决策视图) | 0 |
 | `step5_refine.py` | 411 | run(自相关 → 子聚类 → 子簇 DE/KG) | 1× proc |
 | `step6_validate.py` | 417 | run / report(backed 模式按列读) | 1× proc(可 0) |

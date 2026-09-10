@@ -90,15 +90,15 @@ def arm3_task(project_dir: str) -> str:
 - project-dir: {project_dir}
 - organism: {ORGANISM}
 - organ: {ORGAN}
-- species（step3_kg --species）: {species_line}
+- species（step3c_kg --species）: {species_line}
 - species-type: {SPECIES_TYPE}
 
 硬性要求：
 1. 第一次调工具前先 write_judgment__session-start。
 2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
 3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
-4. step3_kg__query 必须带 --organ {ORGAN}。
-5. marker 接受后先 step3_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing；single_species 直接查 KG，mixed/cross_species_only 先 step2_cross_species_map__run 再 step3_kg__query --ortholog-map。不要先打空 KG 再补同源。
+4. step3c_kg__query 必须带 --organ {ORGAN}。
+5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing；single_species 直接查 KG，mixed/cross_species_only 先 step3b_cross_species_map__run 再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。
 6. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
 7. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
 8. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
@@ -150,7 +150,7 @@ def preflight() -> None:
     tmp = tempfile.mkdtemp(prefix="b1-preflight-")
     try:
         cmd = [
-            PY, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3_kg.py"),
+            PY, str(REPO_ROOT / "skills" / "cell-annotation" / "scripts" / "step3c_kg.py"),
             "test-connection", "--project-dir", tmp,
         ]
         print(f"{_now()} RUN " + " ".join(cmd), flush=True)

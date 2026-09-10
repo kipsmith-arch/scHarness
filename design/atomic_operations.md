@@ -40,11 +40,17 @@
 | step2_markers.filter_markers | Marker 过滤 | 2 | 6 | 3 |
 | step2_markers.pseudobulk_de | 稀有簇 Pseudobulk DE | 2 | 2 | 2 |
 | step2_markers.write_markers | 写出 markers | 2 | — | — |
-| step3_kg.connect | KG 连接与来源 | 3 KG | 0 | 0 |
-| step3_kg.query_genes | KG 查询(基因→细胞类型) | 3 | 2 | 6 |
-| step3_kg.query_hierarchy | 本体层级查询 | 3 | 0 | 0 |
-| step3_kg.aggregate_candidates | 候选聚合 | 3 | 8 | 6 |
-| step3_kg.write_hits | 写出 KG 命中 | 3 | — | — |
+| step3a_kg_precheck.target_coverage | 本物种 KG 覆盖预检 | 3 查图谱 | 3 | 0 |
+| step3a_kg_precheck.write_report | 写出覆盖档与策略 | 3 | — | — |
+| step3b_cross_species_map.filter_query_fasta | 按 var_snapshot 过滤用户 FASTA | 3 | 2 | 0 |
+| step3b_cross_species_map.query_provider | 同源映射(Ensembl 或 blastp) | 3 | 4 | 2 |
+| step3b_cross_species_map.collapse_best1 | 每参考物种只留 best-1 | 3 | 1 | 0 |
+| step3b_cross_species_map.write_output | 写出 cross_species_map.json | 3 | — | — |
+| step3c_kg.connect | KG 连接与来源 | 3 KG | 0 | 0 |
+| step3c_kg.query_genes | KG 查询(基因→细胞类型) | 3 | 2 | 6 |
+| step3c_kg.query_hierarchy | 本体层级查询 | 3 | 0 | 0 |
+| step3c_kg.aggregate_candidates | 候选聚合 | 3 | 8 | 6 |
+| step3c_kg.write_hits | 写出 KG 命中 | 3 | — | — |
 | step4_judge.rank_candidates | 候选排名(first/second) | 4 判断 | 9 | 4 |
 | step4_judge.write_annotations | 写出注释 | 4 | — | — |
 | step5_refine.candidate_autocorr | 候选倾向自相关(预判) | 5 细化 | 2 | 4 |
@@ -142,16 +148,25 @@ step1_prepare.load_data 加载原始数据
     ════════════════════════════════════════════
                   │
                   ▼
-           step3_kg.connect KG 连接与来源
+           step3a_kg_precheck 本物种 KG 覆盖预检(只出 coverage_tier / strategy,不推荐参考物种)
+                  │
+                  │  single_species → 跳过 3b
+                  │  mixed / cross_species_only → 3b(LLM 从静态名录点名 ≤3 个 ref)
+                  ▼
+           step3b_cross_species_map 同源映射(默认 ensembl_compara;可选 blastp)
+                  │  FASTA 先按 var_snapshot 过滤;每物种 best-1
+                  │  blastp 故障则同组 ref 改道 Ensembl
+                  ▼
+           step3c_kg.connect KG 连接与来源
                   │
                   ▼
-           step3_kg.query_genes KG 查询(基因→细胞类型) ◄── step3_kg.query_hierarchy 本体层级查询(并行)
+           step3c_kg.query_genes KG 查询(基因→细胞类型) ◄── step3c_kg.query_hierarchy 本体层级查询(并行)
                   │
                   ▼
-           step3_kg.aggregate_candidates 候选聚合(per cluster, rank by count + confidence)
+           step3c_kg.aggregate_candidates 候选聚合(per cluster, rank by count + confidence)
                   │
                   ▼
-           step3_kg.write_hits 写出 kg_hits.json
+           step3c_kg.write_hits 写出 kg_hits.json
                   │
     ════════════════════════════════════════════
                   │
@@ -508,11 +523,72 @@ step1_prepare.load_data 加载原始数据
 
 ---
 
-### 阶段 3: 知识图谱查询
+### 阶段 3: 查参考知识(覆盖预检 → 条件同源 → 图谱)
+
+同源映射属于本阶段(提高 KG 命中率),不是 SOP-2。规范见 `_bmad-output/specs/spec-blastp-homology/SPEC.md`。
+
+#### step3a_kg_precheck.target_coverage　本物种 KG 覆盖预检
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 查目标物种在 KG 中带 cell type 的基因数,给出 coverage_tier 与 recommended_strategy(single_species / mixed / cross_species_only)。**不**打分推荐参考物种列表 |
+| **输入** | --target-species, --organ, --species-type |
+| **输出** | coverage_report.json 的覆盖档与策略 |
+| **基础指标** | target_species_genes_with_ct, coverage_tier, recommended_strategy |
+| **候选指标** | (无) |
+| **依赖** | Neo4j;0 h5ad |
+
+#### step3a_kg_precheck.write_report　写出覆盖报告
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 写出 coverage_report.json,供 LLM 做 cross_species_routing。参考物种由 LLM 按亲缘从静态名录点名,最多 3 个 |
+| **输入** | target_coverage 结果 |
+| **输出** | `step3a_kg_precheck/coverage_report.json` |
+| **基础指标** | (汇总) |
+| **依赖** | step3a_kg_precheck.target_coverage |
+
+#### step3b_cross_species_map.filter_query_fasta　按数据集过滤用户 FASTA
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 仅 `--provider blastp`。读 var_snapshot.csv(禁止再 load h5ad),丢掉 header 对不上 var_names 的序列;再与 markers.json 求交 |
+| **输入** | --query-fasta, var_snapshot.csv, markers.json |
+| **输出** | 过滤后的 query 序列集 + 丢弃条数 warning |
+| **基础指标** | n_fasta_seq, n_kept_in_var, n_kept_in_markers |
+| **依赖** | step1_prepare.write_output(sidecar), step2_markers.write_markers |
+
+#### step3b_cross_species_map.query_provider　同源映射
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 把 marker 映射到 ≤3 个参考物种。默认 ensembl_compara(按基因 REST)。blastp:每个 ref 一次批量 blastp;缺库则 GET subject zip。blastp 配置/下载/进程失败则同组 ref 改道 Ensembl,status 仍 ok |
+| **输入** | markers.json, --reference-species, --provider;blastp 另需过滤后 FASTA |
+| **输出** | per_ref 原始 MappingRecord |
+| **基础指标** | n_mapped, hit_rate, provider, warnings |
+| **依赖** | step2_markers.write_markers;blastp 另需 filter_query_fasta |
+
+#### step3b_cross_species_map.collapse_best1　每参考物种 best-1
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 每个 (target_gene, ref_species) 只留 score 最高 1 条。不因一对多丢掉整条 DEG。跨物种的多条都保留。Ensembl 与 BLAST 同一规则 |
+| **输入** | query_provider 的 per_ref 记录 |
+| **输出** | 截断后的映射列表 |
+| **基础指标** | n_ref_genes_per_target_mean |
+| **依赖** | step3b_cross_species_map.query_provider |
+
+#### step3b_cross_species_map.write_output　写出映射
+
+| 属性 | 值 |
+|---|---|
+| **描述** | 写出 cross_species_map.json。blastp 缓存 key 含 query FASTA 摘要 |
+| **输出** | `step3b_cross_species_map/cross_species_map.json` |
+| **依赖** | collapse_best1 |
 
 ---
 
-#### step3_kg.connect　KG 连接与来源
+#### step3c_kg.connect　KG 连接与来源
 
 | 属性 | 值 |
 |---|---|
@@ -525,20 +601,20 @@ step1_prepare.load_data 加载原始数据
 
 ---
 
-#### step3_kg.query_genes　KG 查询(基因→细胞类型)
+#### step3c_kg.query_genes　KG 查询(基因→细胞类型)
 
 | 属性 | 值 |
 |---|---|
-| **描述** | 收集所有簇的所有 marker 基因,批量查 KG:对每个基因返回其关联的细胞类型(本体术语)、置信度、来源。过滤:organ, species, species_type, min_confidence |
-| **输入** | marker 基因列表 + KgQueryConfig (organ, species, species_type, min_confidence, strict_organ) |
+| **描述** | 收集所有簇的所有 marker 基因,批量查 KG:对每个基因返回其关联的细胞类型(本体术语)、置信度、来源。过滤:organ, species, species_type, min_confidence。若传入 `--ortholog-map`,并行查参考物种基因(source_path=ortholog)。confidence 只来自 `marker_of.relation_confidence`,不是 BLAST pident |
+| **输入** | marker 基因列表 + KgQueryConfig (organ, species, species_type, min_confidence, strict_organ);可选 cross_species_map.json |
 | **输出** | gene_to_cts: {gene: [{cell_type, organ, ontology_id, species_type, ontology_type, confidence, source}]} |
 | **基础指标** | overall_hit_rate, n_markers_hit per cluster |
-| **候选指标** | 见 catalog step3_kg.query_genes: n_unique_genes_queried, n_genes_with/without_hits, mapping_multiplicity_per_gene, genes_with_no_kg_entry, mean_candidates_per_gene |
-| **依赖** | step2_markers.write_markers, step3_kg.connect |
+| **候选指标** | 见 catalog step3c_kg.query_genes: n_unique_genes_queried, n_genes_with/without_hits, mapping_multiplicity_per_gene, genes_with_no_kg_entry, mean_candidates_per_gene |
+| **依赖** | step2_markers.write_markers, step3c_kg.connect;可选 step3b_cross_species_map.write_output(`--ortholog-map`) |
 
 ---
 
-#### step3_kg.query_hierarchy　本体层级查询
+#### step3c_kg.query_hierarchy　本体层级查询
 
 | 属性 | 值 |
 |---|---|
@@ -547,12 +623,12 @@ step1_prepare.load_data 加载原始数据
 | **输出** | ancestors: {cell_type: [ancestor_name, ...]} |
 | **基础指标** | ancestors map(需写入输出 JSON) |
 | **候选指标** | (无独立指标,但 ancestors 数据应写入输出供 step4_judge.rank_candidates 使用) |
-| **依赖** | step3_kg.query_genes |
+| **依赖** | step3c_kg.query_genes |
 | **备注** | ancestors 数据需写入 kg_hits.json,供 step4_judge.rank_candidates 的 ancestor_overlap 候选指标使用 |
 
 ---
 
-#### step3_kg.aggregate_candidates　候选聚合
+#### step3c_kg.aggregate_candidates　候选聚合
 
 | 属性 | 值 |
 |---|---|
@@ -560,21 +636,21 @@ step1_prepare.load_data 加载原始数据
 | **输入** | gene_to_cts + 每簇 marker 列表 |
 | **输出** | per_cluster: {n_markers, n_markers_hit, candidates: [{cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources}]} |
 | **基础指标** | candidates: cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources |
-| **候选指标** | 见 catalog step3_kg.aggregate_candidates: n_candidates, marker_coverage, candidate_count_distribution, candidate_ranking_entropy, n_tied_at_top, confidence_distribution, n_unique_cell_types_across_clusters |
-| **依赖** | step3_kg.query_genes |
+| **候选指标** | 见 catalog step3c_kg.aggregate_candidates: n_candidates, marker_coverage, candidate_count_distribution, candidate_ranking_entropy, n_tied_at_top, confidence_distribution, n_unique_cell_types_across_clusters |
+| **依赖** | step3c_kg.query_genes |
 
 ---
 
-#### step3_kg.write_hits　写出 KG 命中
+#### step3c_kg.write_hits　写出 KG 命中
 
 | 属性 | 值 |
 |---|---|
 | **描述** | 将 KG 查询结果 + 候选 + 来源 + 查询配置写出 JSON |
 | **输入** | per_cluster 候选 + kg_source + query_config |
-| **输出** | `step3_kg/kg_hits.json`, `step3_kg/kg_source.txt` |
-| **基础指标** | (汇总 step3_kg.connect~25) |
+| **输出** | `step3c_kg/kg_hits.json`, `step3c_kg/kg_source.txt` |
+| **基础指标** | (汇总 step3c_kg.connect~25) |
 | **候选指标** | (各操作候选在此汇总) |
-| **依赖** | step3_kg.connect~25 |
+| **依赖** | step3c_kg.connect~25 |
 
 ---
 
@@ -591,7 +667,7 @@ step1_prepare.load_data 加载原始数据
 | **输出** | per cluster: {first_candidate, second_candidate, first_count, second_count, first/second_mean_confidence, first/second_supporting_markers} |
 | **基础指标** | first/second candidate, count, mean_confidence, supporting_markers |
 | **候选指标** | 见 catalog step4_judge.rank_candidates: count_ratio, count_diff, confidence_diff, n_tied_at_first, frac_support_captured_by_first, first_second_ancestor_overlap |
-| **依赖** | step3_kg.write_hits |
+| **依赖** | step3c_kg.write_hits |
 
 ---
 
@@ -621,7 +697,7 @@ step1_prepare.load_data 加载原始数据
 | **输出** | per ambiguous cluster: {morans_i, gearys_c, score_distribution, cand1_score_mean, cand2_score_mean} |
 | **基础指标** | (无) |
 | **候选指标** | 见 catalog step5_refine.candidate_autocorr: morans_i, gearys_c, score_distribution, score_bimodality_coefficient, cand1/2_score_mean |
-| **依赖** | step4_judge.write_annotations, step3_kg.write_hits, step1_prepare.knn_graph(kNN 图) |
+| **依赖** | step4_judge.write_annotations, step3c_kg.write_hits, step1_prepare.knn_graph(kNN 图) |
 | **备注** | scanpy 接口:`sc.tl.score_genes(adata, gene_list, score_name)` + `sc.metrics.morans_i(adata, vals=score)`. 倾向分数 x_i = cand1_score - cand2_score. 预判逻辑不写进代码,LLM 根据 morans_i 决定是否触发 subcluster |
 
 ---
@@ -657,12 +733,12 @@ step1_prepare.load_data 加载原始数据
 
 | 属性 | 值 |
 |---|---|
-| **描述** | 对每个子簇的 marker 基因查 KG(复用 step3_kg.query_genes 的 gene_to_cts 缓存),聚合为候选,取 first/second |
-| **输入** | sub_markers + gene_to_cts (from step3_kg.query_genes) |
+| **描述** | 对每个子簇的 marker 基因查 KG(复用 step3c_kg.query_genes 的 gene_to_cts 缓存),聚合为候选,取 first/second |
+| **输入** | sub_markers + gene_to_cts (from step3c_kg.query_genes) |
 | **输出** | sub_results: {sub_cluster_id: {first_candidate, second_candidate, first_count, second_count, markers}} |
 | **基础指标** | first/second candidate + count per sub-cluster |
 | **候选指标** | 见 catalog step5_refine.subcluster_de: n_subclusters_with_distinct_type, sub_count_ratio |
-| **依赖** | step5_refine.subcluster_de, step3_kg.query_genes |
+| **依赖** | step5_refine.subcluster_de, step3c_kg.query_genes |
 
 ---
 
@@ -888,8 +964,8 @@ step1_prepare.py recluster      → step1_prepare.leiden_cluster~14 (重聚类)
 
 step2_markers.py run  → step2_markers.de_rank~21 (不变,但 step2_markers.de_rank 增加 BH-FDR/AUC)
 
-step3_kg.py query    → step3_kg.connect~26 (不变,但 step3_kg.aggregate_candidates 增加 ranking_entropy)
-step3_kg.py test-connection → step3_kg.connect (不变)
+step3c_kg.py query    → step3c_kg.connect~26 (不变,但 step3c_kg.aggregate_candidates 增加 ranking_entropy)
+step3c_kg.py test-connection → step3c_kg.connect (不变)
 
 step4_judge.py run → step4_judge.rank_candidates~28 (不变,但 step4_judge.rank_candidates 增加 count_ratio/ancestor_overlap)
 

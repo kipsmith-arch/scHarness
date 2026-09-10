@@ -29,7 +29,7 @@
    1. [公共参数 `common.py`](#41-公共参数-commonpy)
    2. [step1_prepare.py](#42-step1_preparepy)
    3. [step2_markers.py](#43-step2_markerspy)
-   4. [step3_kg.py](#44-step3_kgpy)
+   4. [step3c_kg.py](#44-step3c_kgpy)
    5. [step4_judge.py](#45-step4_judgepy)
    6. [step5_refine.py](#46-step5_refinepy)
    7. [step6_validate.py](#47-step6_validatepy)
@@ -85,8 +85,10 @@ CLI flag > env var > hardcoded default
 |---|---|
 | step1_prepare | `step1_prepare` |
 | step2_markers | `step2_markers` |
-| step3_kg | `step3_kg` |
-| step4_judge | `step4_judge` |
+| step3a_kg_precheck | `step3a_kg_precheck` |
+| step3b_cross_species_map | `step3b_cross_species_map` |
+| step3c_kg | `step3c_kg` |
+| step4_rank | `step4_rank` |
 | step5_refine | `step5_refine` |
 | step6_validate | `step6_validate` |
 | step7_diagnose | `step7_diagnose` |
@@ -191,11 +193,11 @@ CLI flag > env var > hardcoded default
 
 | 变量 | 类型 | 默认 | 用途 |
 |---|---|---|---|
-| `NEO4J_URI` | str | `"bolt://localhost:7687"` | Neo4j Bolt URI（step3_kg 、build_label_map 使用） |
+| `NEO4J_URI` | str | `"bolt://localhost:7687"` | Neo4j Bolt URI（step3c_kg 、build_label_map 使用） |
 | `NEO4J_USER` | str | `"neo4j"` | Neo4j 用户名 |
 | `NEO4J_PASSWORD` | str | **无默认**（必须显式设置） | Neo4j 密码；不设则连接被拒 |
 
-CLI 覆盖（运维临时调试用）：`step3_kg query` 仍然接受隐藏的 `--uri/--user/--password/--min-confidence/--max-ancestor-hops` 参数（`--help` 可看；`--dump-schema` 不包含）。任务类参数 `--organ` `--species` `--species-type` `--strict-organ` 仍在 schema 中。
+CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 `--uri/--user/--password/--min-confidence/--max-ancestor-hops` 参数（`--help` 可看；`--dump-schema` 不包含）。任务类参数 `--organ` `--species` `--species-type` `--strict-organ` 仍在 schema 中。
 
 #### 未来增加 skill 配置 key 的流程
 
@@ -390,7 +392,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `--project-dir` | str | `"output"` | 项目目录（含 `run_log.jsonl` 与各 step 数据目录） |
 | `--input` | str (path) | `None` | 输入 h5ad 路径；缺省时按 step 约定自动寻找 |
 
-#### `add_neo4j_args(parser)` — 仅 step3_kg 注入
+#### `add_neo4j_args(parser)` — 仅 step3c_kg 注入
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -404,8 +406,10 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 |---|---|---|---|
 | `STEP_DIRS`（硬编码 dict） | step1_prepare | `"step1_prepare"` | step 子目录名 |
 | | step2_markers | `"step2_markers"` | |
-| | step3_kg | `"step3_kg"` | |
-| | step4_judge | `"step4_judge"` | |
+| | step3a_kg_precheck | `"step3a_kg_precheck"` | |
+| | step3b_cross_species_map | `"step3b_cross_species_map"` | |
+| | step3c_kg | `"step3c_kg"` | |
+| | step4_rank | `"step4_rank"` | |
 | | step5_refine | `"step5_refine"` | |
 | | step6_validate | `"step6_validate"` | |
 | | step7_diagnose | `"step7_diagnose"` | |
@@ -508,7 +512,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `multipletests(method="fdr_bh")` | 是 | pvalue 校正 |
 | top-N pseudobulk 输出 | `min(500, n_genes)` | |
 
-### 4.4 step3_kg.py
+### 4.4 step3c_kg.py
 
 **2 个子命令：`query` / `test-connection`**
 
@@ -523,7 +527,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `--strict-organ` | flag | `False` | 严格按 organ 过滤命中 |
 | `--max-ancestor-hops` | int | `3` | ontology_relation 祖先最大跳数；`<=0` 跳过 hierarchy 查询 |
 
-> step3_kg **不做基因 ID 映射**。`adata.var_names` 原样查 KG。TAIR locus → symbol 等 ID 转换需在进入 pipeline 前完成（用户责任）。
+> step3c_kg **不做基因 ID 映射**。`adata.var_names` 原样查 KG。TAIR locus → symbol 等 ID 转换需在进入 pipeline 前完成（用户责任）。
 
 #### `test-connection`
 
@@ -881,7 +885,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | Chroma 索引 | `<notes_path_parent>/notes_chroma/` | `harness/notebook.py:_chroma_dir_for` |
 | step1 产物 | `<project-dir>/step1_prepare/{processed.h5ad, obs_snapshot.csv, var_snapshot.csv, qc_metrics.json, qc_distributions.png}` | `op_write_output` |
 | step2 产物 | `<project-dir>/step2_markers/{markers.csv, markers.json}` | `op_write_markers` |
-| step3 产物 | `<project-dir>/step3_kg/{kg_hits.json, kg_source.txt}` | `op_write_hits` |
+| step3 产物 | `<project-dir>/step3c_kg/{kg_hits.json, kg_source.txt}` | `op_write_hits` |
 | step4 产物 | `<project-dir>/step4_judge/annotations.json` | `op_write_annotations` |
 | step5 产物 | `<project-dir>/step5_refine/refined_annotations.json` | `op_write_refined` |
 | step6 产物 | `<project-dir>/step6_validate/{final_annotations.json, report.md, figures/cluster_*_markers.png}` | `op_write_report` + `op_write_final` + `op_violin_plot` |
@@ -953,9 +957,9 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `step2_markers.py` | `multipletests(method="fdr_bh")` | 是 | |
 | `step2_markers.py` | DE 缺失 AUC 处理 | `None` | |
 | `step2_markers.py` | 灰区定义 | `spec ∈ [0.1, min_diff)` | |
-| `step3_kg.py` | query batching | `500` | |
-| `step3_kg.py` | 缺 confidence 处理 | 视为 `1.0` | |
-| `step3_kg.py` | `--organ` 标准化 | `strip().title()` | `_organ_status` |
+| `step3c_kg.py` | query batching | `500` | |
+| `step3c_kg.py` | 缺 confidence 处理 | 视为 `1.0` | |
+| `step3c_kg.py` | `--organ` 标准化 | `strip().title()` | `_organ_status` |
 | `step4_judge.py` | candidate 精简 | top-15 不带 markers | |
 | `step5_refine.py` | sub PCA solver | `arpack if < min else full` | |
 | `step6_validate.py` | `_confidence_evidence` 三档 | high/medium/low | |

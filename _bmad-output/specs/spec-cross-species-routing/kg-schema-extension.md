@@ -1,7 +1,7 @@
 # KG Schema Extension — 物种命名与 Ensembl 端点路由
 
 > SPEC cross-species-routing 的 KG schema 扩展伴侣。直接合并到 `skills/cell-annotation/references/kg-schema.md`,作为现有"## 物种过滤与命名"小节的补充。
-> LLM 与 LLM 调用 step2_ortholog / step3_kg 时共享该映射表。
+> LLM 与 LLM 调用 step3b_cross_species_map / step3c_kg 时共享该映射表。
 
 ---
 
@@ -25,7 +25,7 @@
 | Protists | `https://rest.protists.ensembl.org` | 小写下划线 |
 | Bacteria | `https://rest.bacteria.ensembl.org` | 小写下划线 |
 
-`step2_ortholog` 按 `species_type` 自动路由,详见下方映射表。
+`step3b_cross_species_map` 按 `species_type` 自动路由,详见下方映射表。
 
 ### 3. KG ↔ Ensembl 物种名规范化表(部分,实测)
 
@@ -78,15 +78,15 @@ def ensembl_rest_host(species_type: str) -> str:
     return ENSEMBL_REST_HOSTS.get(species_type, "https://rest.ensembl.org")
 ```
 
-`step2_ortholog` 自动调用此函数;LLM 不用关心。
+`step3b_cross_species_map` 自动调用此函数;LLM 不用关心。
 
 ### 5. Ensembl 物种收录验证
 
-`step2_ortholog` 在跑具体 marker 前,先调 `GET {host}/info/species` 验证目标物种在该端点是否收录(避免对所有 marker 一个个 404)。若不收录,直接 warning + 不跑 ortholog 查询。
+`step3b_cross_species_map` 在跑具体 marker 前,先调 `GET {host}/info/species` 验证目标物种在该端点是否收录(避免对所有 marker 一个个 404)。若不收录,直接 warning + 不跑 ortholog 查询。
 
 ### 6. species_type 推断
 
-`step3_kg_precheck` 接收 `--target-species` 时,先在 Neo4j 查:
+`step3a_kg_precheck` 接收 `--target-species` 时,先在 Neo4j 查:
 
 ```cypher
 MATCH (g:Gene) WHERE g.Species = $name RETURN DISTINCT g.Species_type AS st LIMIT 1

@@ -1,6 +1,6 @@
 # 工具总览(加载器派生,供人工核对)
 
-> 本文档是 11 个工具的**人工核对快照**:内容整理自 `scripts/*.py --dump-schema` 的实际输出与 `design/atomic_operations.md` 的 op 清单。
+> 本文档是 pipeline 工具的**人工核对快照**:内容整理自 `scripts/*.py --dump-schema` 的实际输出与 `design/atomic_operations.md` 的 op 清单。SOP-3 脚本按执行顺序命名为 3a / 3b / 3c。
 > 加载器(skill_loader.py)不读取本文件——它直接运行 `python <script> --dump-schema` 实时派生工具。**若 scripts 参数或 op 有变更,以重新派生结果为准,并回来更新本表。**
 
 ## TOC
@@ -15,10 +15,10 @@
 
 ## 派生契约
 
-- 工具名 = `{脚本名}__{子命令}`(如 `step1_prepare__run`);11 个工具来自 7 个脚本。
+- 工具名 = `{脚本名}__{子命令}`(如 `step1_prepare__run`);SOP-3 为 `step3a_kg_precheck` → `step3b_cross_species_map`(可选) → `step3c_kg`。
 - 每个工具 stdout 的**最后一行**必须是 JSON:`{"status":"ok","data":{...}}` 或 `{"status":"error",...}`;`data` 内通常含 `run_id`。
-- `run_id` 格式:`{step}.{op}#{attempt}`(如 `step1_prepare.leiden_cluster#1`),重跑追加 `#2`…;judgment 记录用 `run_id` 做 `run_ref`。脚本 stdout 的 `data` 内通常含 `last_exec_run_id`(即最后一条 exec 的 run_id);`step1_prepare__metrics` / `step3_kg__test-connection` / `step6_validate__report` 不返回 run_id。
-- 数据加载纪律:一个子命令 = 一次 h5ad 加载;`step3_kg` / `step4_rank` / `step7_diagnose` 与 `report` 类零加载,只读 JSON 与 sidecar(`obs_snapshot.csv` / `var_snapshot.csv`)。
+- `run_id` 格式:`{step}.{op}#{attempt}`(如 `step1_prepare.leiden_cluster#1`),重跑追加 `#2`…;judgment 记录用 `run_id` 做 `run_ref`。脚本 stdout 的 `data` 内通常含 `last_exec_run_id`(即最后一条 exec 的 run_id);`step1_prepare__metrics` / `step3c_kg__test-connection` / `step6_validate__report` 不返回 run_id。
+- 数据加载纪律:一个子命令 = 一次 h5ad 加载;`step3a_kg_precheck` / `step3b_cross_species_map` / `step3c_kg` / `step4_rank` / `step7_diagnose` 与 `report` 类零加载,只读 JSON 与 sidecar(`obs_snapshot.csv` / `var_snapshot.csv`)。
 - 参数优先级:CLI 显式传参 > 环境变量(如 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`)> 脚本默认值。**不要把密码写死在参数里。**
 
 ## 总览表
@@ -29,21 +29,23 @@
 | 2 | `step1_prepare__run` | 完整预处理:QC → 过滤 → doublet → 归一化 → HVG → PCA → kNN → Leiden → UMAP → 批次检查 | 1× raw | 16 |
 | 3 | `step1_prepare__recluster` | 换分辨率重新聚类(leiden → choose_resolution → umap → write_output) | 1× proc | 4 |
 | 4 | `step2_markers__run` | DE 排序 + pct1/pct2 + marker 过滤 + 稀有簇 pseudobulk | 1× proc | 5 |
-| 5 | `step3_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 | 5 |
-| 6 | `step3_kg__test-connection` | 检查 Neo4j 连通性 | 0 | 1 |
-| 7 | `step4_rank__run` | first/second 候选排名与差距 | 0 | 2 |
-| 8 | `step5_refine__run` | 模糊簇:自相关预判 → 子聚类 → 子簇 DE/KG → 重叠检查 | 1× proc | 8 |
-| 9 | `step6_validate__run` | top-marker 表达验证 + 全局摘要 + 报告 + 最终注释 | 1× proc(backed 可选) | 5 |
-| 10 | `step6_validate__report` | 从 final_annotations.json 重新生成 report.md | 0 | 1 |
-| 11 | `step7_diagnose__run` | 诊断与全局质量测量 | 0 | 6 |
+| 5 | `step3a_kg_precheck__run` | KG 覆盖预检 + 参考物种推荐 | 0 | 3 |
+| 6 | `step3b_cross_species_map__run` | 同源映射(条件,提高 KG 命中率) | 0 | 3 |
+| 7 | `step3c_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 | 5 |
+| 8 | `step3c_kg__test-connection` | 检查 Neo4j 连通性 | 0 | 1 |
+| 9 | `step4_rank__run` | first/second 候选排名与差距 | 0 | 2 |
+| 10 | `step5_refine__run` | 模糊簇:自相关预判 → 子聚类 → 子簇 DE/KG → 重叠检查 | 1× proc | 8 |
+| 11 | `step6_validate__run` | top-marker 表达验证 + 全局摘要 + 报告 + 最终注释 | 1× proc(backed 可选) | 5 |
+| 12 | `step6_validate__report` | 从 final_annotations.json 重新生成 report.md | 0 | 1 |
+| 13 | `step7_diagnose__run` | 诊断与全局质量测量 | 0 | 6 |
 
-唯一 op 合计 47(与 `design/atomic_operations.md` 一致);部分 op 被多个子命令复用(如 `load_data` 在 metrics/run 共用、`qc_plot` 在 metrics/run 共用、`write_output` 在 run/recluster 共用、`connect` 在 query/test-connection 共用、`write_report` 在 validate run/report 共用)。
+唯一 op 合计:原目录 47(与 `design/atomic_operations.md` 一致);SOP-3 扩展另计 `step3a_kg_precheck` 3 op + `step3b_cross_species_map` 3 op。部分 op 被多个子命令复用(如 `load_data` 在 metrics/run 共用、`qc_plot` 在 metrics/run 共用、`write_output` 在 run/recluster 共用、`connect` 在 query/test-connection 共用、`write_report` 在 validate run/report 共用)。
 
 ---
 
 ## 逐工具参数
 
-> 下列参数名 / 类型 / 默认值 / 必填均取自 `--dump-schema` 实况;`req` 列 `*` 表示必填(当前 11 工具全部参数可选,均有默认值)。
+> 下列参数名 / 类型 / 默认值 / 必填均取自 `--dump-schema` 实况;`req` 列 `*` 表示必填。
 
 ### step1_prepare__metrics
 
@@ -103,7 +105,7 @@
 | batch_key | string | `Orig.ident` | 样本列名(pseudobulk 聚合用) |
 | project_dir / input | — | — | 同上 |
 
-### step3_kg__query
+### step3c_kg__query
 
 LLM-facing 参数（任务类，生物决策）：
 
@@ -122,7 +124,7 @@ LLM-facing 参数（任务类，生物决策）：
 | `--min-confidence` | number | `0.0` | `marker_of.relation_confidence` 下限 |
 | `--max-ancestor-hops` | integer | `3` | ontology_relation 祖先最大跳数；设为 0 跳过 hierarchy 查询 |
 
-> 注：step3_kg **不做基因 ID 映射**（TAIR locus → symbol 等）。h5ad 的 `var_names` 原样查 KG。ID 转换由用户上游完成（数据处理责任）。
+> 注：step3c_kg **不做基因 ID 映射**（TAIR locus → symbol 等）。h5ad 的 `var_names` 原样查 KG。ID 转换由用户上游完成（数据处理责任）。
 
 Neo4j 连接 (`skills/cell-annotation/.env`)：
 
@@ -132,7 +134,7 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 | `NEO4J_USER` | string | `neo4j` | Neo4j 用户 |
 | `NEO4J_PASSWORD` | string | 无（必须设） | Neo4j 密码 |
 
-### step3_kg__test-connection
+### step3c_kg__test-connection
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -193,8 +195,10 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 | step1_prepare | run | load_data / compute_qc / qc_distribution / qc_plot / filter_cells / filter_genes / detect_doublets / normalize / select_hvg / pca / knn_graph / leiden_cluster / choose_resolution / umap / batch_mixing / write_output |
 | step1_prepare | recluster | leiden_cluster / choose_resolution / umap / write_output |
 | step2_markers | run | de_rank / pct1_pct2 / pseudobulk_de / filter_markers / write_markers |
-| step3_kg | query | connect / query_genes / query_hierarchy / aggregate_candidates / write_hits |
-| step3_kg | test-connection | connect |
+| step3a_kg_precheck | run | target_coverage / candidate_refs / write_report |
+| step3b_cross_species_map | run | collect_marker_genes / query_provider / write_output |
+| step3c_kg | query | connect / query_genes / query_hierarchy / aggregate_candidates / write_hits |
+| step3c_kg | test-connection | connect |
 | step4_rank | run | rank_candidates / write_annotations |
 | step5_refine | run | candidate_autocorr / subcluster / subcluster_de / subcluster_kg / marker_overlap / type_membership / unknown_overlap / write_refined |
 | step6_validate | run | marker_expression / violin_plot / global_summary / write_report / write_final |
@@ -203,7 +207,7 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 
 ## 核对清单
 
-- [ ] `load_skill('skills/cell-annotation')` → `tool_schemas` 数量 == 11,工具名与上表逐一一致。
+- [ ] `load_skill('skills/cell-annotation')` → 工具名含 `step3a_kg_precheck__run` / `step3b_cross_species_map__run` / `step3c_kg__query`,与上表 SOP-3 三行一致。
 - [ ] 每个工具 stdout 最后一行是 `{"status":"ok"/"error",...}`,且 `data.last_exec_run_id`(如返回)符合 `{step}.{op}#{attempt}`。
 - [ ] 上表 op 去重后 == 47,与 `design/atomic_operations.md` 阶段表逐条对齐。
 - [ ] 每子命令 h5ad 加载次数与"总览表"一致(0 / 1× raw / 1× proc),无新增加载。

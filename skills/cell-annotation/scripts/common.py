@@ -50,7 +50,9 @@ import numpy as np
 STEP_DIRS = {
     "step1_prepare": "step1_prepare",
     "step2_markers": "step2_markers",
-    "step3_kg": "step3_kg",
+    "step3a_kg_precheck": "step3a_kg_precheck",
+    "step3b_cross_species_map": "step3b_cross_species_map",
+    "step3c_kg": "step3c_kg",
     "step4_rank": "step4_rank",
     "step5_refine": "step5_refine",
     "step6_validate": "step6_validate",
@@ -78,6 +80,17 @@ def step_dir(project_dir: str, step: str) -> str:
     """Directory holding one step's data files (created on demand)."""
     if step == "step4_judge":
         raise ValueError("step4_judge 已改名为 step4_rank；拒绝读写 step4_judge/")
+    if step in ("step2_cross_species_map", "step2_ortholog", "step3_cross_species_map"):
+        raise ValueError(
+            "同源映射已归属 SOP-3b / 查图谱；"
+            "请使用 step3b_cross_species_map，拒绝读写旧目录"
+        )
+    if step == "step3_kg_precheck":
+        raise ValueError(
+            "step3_kg_precheck 已改名为 step3a_kg_precheck；拒绝读写旧目录"
+        )
+    if step == "step3_kg":
+        raise ValueError("step3_kg 已改名为 step3c_kg；拒绝读写旧目录")
     d = os.path.join(project_dir, STEP_DIRS.get(step, step))
     os.makedirs(d, exist_ok=True)
     return d
@@ -847,7 +860,7 @@ def add_neo4j_args(parser: argparse.ArgumentParser) -> None:
     LLM is not nudged to set them). At runtime, ``neo4j_config`` resolves
     CLI value > env var > built-in default via ``env_or_default``.
 
-    Note: add_neo4j_args is currently called only by step3_kg. If other
+    Note: add_neo4j_args is currently called only by step3c_kg. If other
     skills start needing Neo4j, keep this in common.py (skill-agnostic).
     """
     parser.add_argument("--uri", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
@@ -960,7 +973,7 @@ def resolve_batch_key(obs_columns, batch_key: Optional[str], default: str = "Ori
 # the bottom of the same file that downstream readers will already be in.
 #
 # SCOPE: only Neo4j connection credentials live in SKILL_DOTENV_KEYS. The
-# cell-annotation skill owns Neo4j access (it connects from step3_kg and
+# cell-annotation skill owns Neo4j access (it connects from step3c_kg and
 # scripts/build_label_map.py); the harness does not know Neo4j exists.
 # ---------------------------------------------------------------------------
 
@@ -1109,7 +1122,7 @@ def normalize_species_name(name: str, species_type: str) -> str:
 
 
 # Ensembl REST base hosts per species division. Plant has its own deployment
-# (rest.plants.ensembl.org); vertebrates share rest.ensembl.org. step2_ortholog
+# (rest.plants.ensembl.org); vertebrates share rest.ensembl.org. step3b_cross_species_map
 # routes by species_type; this is the single source of truth.
 ENSEMBL_REST_HOSTS: dict[str, str] = {
     "Plant": "https://rest.plants.ensembl.org",

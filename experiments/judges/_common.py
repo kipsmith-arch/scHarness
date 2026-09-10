@@ -160,7 +160,7 @@ def materialize_llm_labels(project_dir: str) -> str:
 
 
 def coverage_report(project_dir: str) -> dict:
-    path = os.path.join(project_dir, "step3_kg_precheck", "coverage_report.json")
+    path = os.path.join(project_dir, "step3a_kg_precheck", "coverage_report.json")
     return read_json(path) or {}
 
 
@@ -172,29 +172,29 @@ def routing_accept_from_precheck(project_dir: str) -> dict:
     ref_names = [r.get("species") for r in refs if isinstance(r, dict) and r.get("species")]
     target = report.get("target_species")
     inputs = [
-        {"path": "step3_kg_precheck.coverage_report.recommended_strategy", "value": strategy},
-        {"path": "step3_kg_precheck.coverage_report.recommended_reference_species", "value": ref_names},
+        {"path": "step3a_kg_precheck.coverage_report.recommended_strategy", "value": strategy},
+        {"path": "step3a_kg_precheck.coverage_report.recommended_reference_species", "value": ref_names},
     ]
     need_map = strategy in ("mixed", "cross_species_only") and bool(ref_names) and bool(target)
     driver: dict = {"kind": "proceed", "skip_nodes": [], "node_args": {}}
     if not need_map:
-        driver["skip_nodes"] = ["step2_cross_species_map.run"]
-        action = "run step3_kg__query (single_species; skip map)"
+        driver["skip_nodes"] = ["step3b_cross_species_map.run"]
+        action = "run step3c_kg__query (single_species; skip map)"
         reason = f"routing_accept: strategy={strategy}, skip cross-species map"
     else:
-        map_json = os.path.join(project_dir, "step2_cross_species_map", "cross_species_map.json")
+        map_json = os.path.join(project_dir, "step3b_cross_species_map", "cross_species_map.json")
         markers = os.path.join(project_dir, "step2_markers", "markers.json")
         driver["node_args"] = {
-            "step2_cross_species_map.run": {
+            "step3b_cross_species_map.run": {
                 "target_species": target,
                 "reference_species": ref_names[0],
                 "input": markers,
             },
-            "step3_kg.query": {"ortholog_map": map_json},
+            "step3c_kg.query": {"ortholog_map": map_json},
         }
         action = (
-            f"run step2_cross_species_map --reference-species={ref_names[0]} "
-            f"then step3_kg__query --ortholog-map"
+            f"run step3b_cross_species_map --reference-species={ref_names[0]} "
+            f"then step3c_kg__query --ortholog-map"
         )
         reason = f"routing_accept: strategy={strategy}, map via {ref_names[0]}"
     return {

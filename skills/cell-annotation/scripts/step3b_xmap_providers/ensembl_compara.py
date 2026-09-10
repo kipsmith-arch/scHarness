@@ -1,4 +1,4 @@
-"""Ensembl Compara REST provider for step2_cross_species_map (SPEC CAP-2).
+"""Ensembl Compara REST provider for step3b_cross_species_map (SPEC CAP-2).
 
 Implements ``BaseCrossSpeciesProvider`` against the Ensembl Compara REST API:
 

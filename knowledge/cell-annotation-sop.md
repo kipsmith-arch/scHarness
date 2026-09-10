@@ -4,7 +4,7 @@
 规范单细胞 RNA 测序数据的细胞类型注释流程，确保结果可追溯、可复现、带置信度。
 
 ## 适用范围
-单物种 scRNA-seq 数据（已做完预处理和聚类，拿到 cluster 列表）。跨物种注释需在第 2 步后插入"跨物种基因映射"步骤，见跨物种手册。
+单物种 scRNA-seq 数据（已做完预处理和聚类，拿到 cluster 列表）。本物种在知识图谱覆盖不足时，在 SOP-3 查图谱阶段做同源映射以提高命中率（不是 SOP-2 找 marker 的一部分），见跨物种手册与 `_bmad-output/specs/spec-blastp-homology/SPEC.md`。
 
 ## 输入
 - 已聚类的 scRNA-seq 数据（h5ad 或等价格式）
@@ -69,14 +69,29 @@ SOP-1 预处理 QC → SOP-2 找 marker → SOP-3 查参考知识 → SOP-4 判�
 
 ## SOP-3　查参考知识
 
-**输入**：SOP-2 的 marker 列表
-**操作**：
-1. 选定 organ（必须和数据来源 organ 对齐）。
-2. 在参考数据库/图谱里（PanglaoDB、CellMarker、文献 marker list、知识图谱），按 organ 过滤。
-3. 拿每个 cluster 的 marker 去查它标记什么细胞类型。
-4. 统计每个 cluster 命中多少种候选细胞类型。
+同源映射属于本步，不是 SOP-2。目的是把本物种 marker 对到图谱里已有注释的参考物种基因，从而提高知识图谱命中率。
 
-**输出**：每个 marker → 它标记的细胞类型；每个 cluster → 候选细胞类型列表
+**输入**：SOP-2 的 marker 列表；跨物种且走 BLAST 时另需用户蛋白 FASTA
+**操作**：
+
+### 3a 覆盖预检
+1. 查本物种在 KG 中的 cell type 覆盖，得到 `coverage_tier` 与策略（`single_species` / `mixed` / `cross_species_only`）。
+2. **不**由工具打分推荐参考物种。需要同源时，根据目标物种与静态名录的亲缘自行点名，最多 3 个（名录见手册 / 实现后的 `references/reference-species.md`）。
+3. `single_species`：跳过同源，直接 3c。不要先拿本物种 ID 打空 KG 再补救。
+
+### 3b 同源映射（条件）
+1. 默认可用 Ensembl Compara（只传基因 symbol）。若有 query FASTA、或 Ensembl 不可达、或需要本地比对：用 `blastp`。
+2. BLAST：**只提供 subject 库**（部署后缺库则自动下载）。Query FASTA 由用户提供，先按数据集基因 ID（`var_snapshot`，不二次读 h5ad）过滤，再与 marker 求交。
+3. 每个参考物种只留 **best hit 1 条**；多个参考物种的 hit 都保留。不因一对多丢掉整条 DEG。本 skill 第一版不做 reciprocal best hit。
+4. `blastp` 因没二进制 / 没可用 FASTA / 下载失败：同一组参考物种自动改走 Ensembl，不把流程打成 error。
+5. 映射率等只是指标。理不理想由注释者判断，不设备用数字阈值。
+
+### 3c 查图谱
+1. 选定 organ（必须和数据来源 organ 对齐）。
+2. 查每个 cluster 的 marker（及映出的参考物种基因）标记什么细胞类型。图谱边上的 confidence 是 `relation_confidence`，不是比对相似度。
+3. 统计每个 cluster 命中多少种候选细胞类型。
+
+**输出**：每个 marker → 它标记的细胞类型；每个 cluster → 候选细胞类型列表（可含直接命中与同源命中）
 
 **质量检查**：
 | 检查项 | 合格标准 | 不合格处理 |

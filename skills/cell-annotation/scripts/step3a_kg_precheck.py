@@ -8,7 +8,7 @@ Subcommands:
 Per SPEC cross-species-routing CAP-1:
 - Inputs: --target-species, --organ, --species-type, --project-dir,
           --high-threshold (default 500), --low-threshold (default 50)
-- Output: step3_kg_precheck/coverage_report.json
+- Output: step3a_kg_precheck/coverage_report.json
 - Coverage tiers: high (>= high-threshold genes with CT), medium, low
 - Recommended strategy: single_species / mixed / cross_species_only
 - Recommended reference species: ranked by ct_coverage * 0.5 +
@@ -83,7 +83,7 @@ def _phylo_score(target_species: str, ref_species: str) -> float:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="step3_kg_precheck.py",
+        prog="step3a_kg_precheck.py",
         description="Step 3 precheck — KG coverage for target species (0 h5ad)",
     )
     p.add_argument("--dump-schema", action="store_true", help=argparse.SUPPRESS)
@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_r.add_argument("--target-species", required=True,
                      help="target species in Ensembl/KG format (lower_underscore, e.g. arabidopsis_thaliana)")
     p_r.add_argument("--organ", required=True,
-                     help="target organ (passed through for downstream step3_kg)")
+                     help="target organ (passed through for downstream step3c_kg)")
     p_r.add_argument("--species-type", default="Plant",
                      help="species type for KG/Species_type filter (Plant / Animal / Fungi ...)")
     p_r.add_argument("--project-dir", default="output",
@@ -140,7 +140,7 @@ def op_target_coverage(driver, target_species: str, species_type: str, log_path:
         m["n_target_genes_with_ct"] = int(res["n_genes_with_ct"])
         m["n_target_unique_ct"] = int(res["n_unique_ct"])
         m["n_target_marker_edges"] = int(res["n_edges"])
-    common.exec_record(log_path, "step3_kg_precheck", "target_coverage", params, m)
+    common.exec_record(log_path, "step3a_kg_precheck", "target_coverage", params, m)
     return m
 
 
@@ -174,7 +174,7 @@ def op_candidate_refs(driver, target_species: str, species_type: str, log_path: 
         ct_norm = (r["n_genes"] + r["n_unique_ct"] * 0.3) / (max_ct + max_unique_ct * 0.3)
         phylo = _phylo_score(target_species, r["species"])
         # Ensembl divisibility: assume yes for known divisions; this is
-        # a v1 heuristic. step2_ortholog will validate at runtime.
+        # a v1 heuristic. step3b_cross_species_map will validate at runtime.
         ensembl = 1.0 if species_type in common.ENSEMBL_REST_HOSTS else 0.5
         score = ct_norm * 0.5 + phylo * 0.4 + ensembl * 0.1
         candidates.append({
@@ -204,7 +204,7 @@ def op_candidate_refs(driver, target_species: str, species_type: str, log_path: 
             "max_returned": MAX_RECOMMENDED_REFS,
         },
     }
-    common.exec_record(log_path, "step3_kg_precheck", "candidate_refs", params, m)
+    common.exec_record(log_path, "step3a_kg_precheck", "candidate_refs", params, m)
     return m
 
 
@@ -235,7 +235,7 @@ def _strategy_rationale(target_species: str, tier: str, genes_with_ct: int,
 
 def cmd_run(args) -> dict:
     project_dir = common.env_or_default(args, "project_dir", (), "output")
-    out_dir = common.step_dir(project_dir, "step3_kg_precheck")
+    out_dir = common.step_dir(project_dir, "step3a_kg_precheck")
     log = common.run_log_path(project_dir)
     cfg = common.neo4j_config(args)
     target = args.target_species
@@ -279,7 +279,7 @@ def cmd_run(args) -> dict:
 
     out_path = os.path.join(out_dir, "coverage_report.json")
     common.write_json(out_path, payload)
-    common.exec_record(log, "step3_kg_precheck", "write_report", params,
+    common.exec_record(log, "step3a_kg_precheck", "write_report", params,
                        {"coverage_report_json": out_path})
     return common.ok({
         "coverage_report_json": out_path,

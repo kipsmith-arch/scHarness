@@ -10,7 +10,7 @@
 - 无★ = 基础测量值(n_cells、pct1、logfc 等),pipeline 必须输出
 
 **说明**:本目录只列出有候选指标的操作。以下操作因无独立统计指标(纯 I/O 或格式化操作)而省略:
-`step1_prepare.load_data`(加载)、`step1_prepare.qc_plot`(可视化)、`step1_prepare.write_output`(写出)、`step2_markers.write_markers`、`step3_kg.connect`、`step3_kg.query_hierarchy`、`step3_kg.write_hits`、`step4_judge.write_annotations`、`step5_refine.subcluster_kg`(复用 query_genes 逻辑)、`step5_refine.write_refined`、`step6_validate.violin_plot`、`step6_validate.write_final`、`step6_validate.write_report`。
+`step1_prepare.load_data`(加载)、`step1_prepare.qc_plot`(可视化)、`step1_prepare.write_output`(写出)、`step2_markers.write_markers`、`step3c_kg.connect`、`step3c_kg.query_hierarchy`、`step3c_kg.write_hits`、`step4_judge.write_annotations`、`step5_refine.subcluster_kg`(复用 query_genes 逻辑)、`step5_refine.write_refined`、`step6_validate.violin_plot`、`step6_validate.write_final`、`step6_validate.write_report`。
 
 ### 轨迹指标 vs 产物数据判据(P5 回填,2026-08-11)
 
@@ -266,9 +266,32 @@
 
 ---
 
-## 3. 知识图谱查询阶段(Step 3)
+## 3. 查参考知识阶段(Step 3)
 
-### step3_kg.query_genes　KG 查询
+规范:`_bmad-output/specs/spec-blastp-homology/SPEC.md`。指标只供 LLM 解读,**不用数字阈值自动终止**。
+
+### step3a_kg_precheck.target_coverage　覆盖预检
+
+**操作**:本物种在 KG 中的 cell type 覆盖。不产出参考物种排序。
+
+| 状态 | 指标 | 说明 | 优先级 |
+|---|---|---|---|
+| `[核心]` | coverage_tier, recommended_strategy | high/medium/low;single_species / mixed / cross_species_only | ★★★ |
+| `[核心]` | target_species_genes_with_ct | 本物种带 marker_of 的基因数 | ★★ |
+
+### step3b_cross_species_map.query_provider　同源映射
+
+**操作**:marker → 参考物种基因。默认 Ensembl;可选 blastp(用户 FASTA,subject 库按需下载)。每参考物种 best-1。
+
+| 状态 | 指标 | 说明 | 优先级 |
+|---|---|---|---|
+| `[核心]` | hit_rate, n_mapped, n_unmapped | 映射覆盖;不当成通过线 | ★★★ |
+| `[核心]` | provider, warnings | 是否改道 Ensembl、缺库、FASTA 过滤掉多少 | ★★★ |
+| `[扩展]` | score_distribution, mapping_type_distribution | BLAST 为 pident;Ensembl 为 perc_id | ★★ |
+| `[扩展]` | n_ref_genes_per_target_mean | 截断后应接近「用了几个 ref」(≤3) | ★ |
+| `[扩展]` | n_fasta_dropped_not_in_var | FASTA 与 h5ad 不一致的条数 | ★ |
+
+### step3c_kg.query_genes　KG 查询
 
 **操作**:收集所有 marker 基因,查 KG 获取 gene→cell_type 映射。
 
@@ -280,13 +303,13 @@
 | `[扩展]` | genes_with_no_kg_entry (list) | 供调试 ID 匹配问题 | ★ |
 | `[扩展]` | mean_candidates_per_gene | 每个 marker 平均产生多少候选(噪声水平) | ★ |
 
-### step3_kg.aggregate_candidates　候选聚合
+### step3c_kg.aggregate_candidates　候选聚合
 
 **操作**:per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 排名候选。
 
 | 状态 | 指标 | 说明 | 优先级 |
 |---|---|---|---|
-| `[核心]` | candidates: cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources | — | — |
+| `[核心]` | candidates: cell_type, supporting_markers, marker_count, mean_confidence, min_confidence, sources | mean_confidence 来自图谱边,不是 BLAST | — |
 | `[核心]` | n_candidates per cluster | 候选数量(过多=噪声,过少=KG窄) | ★★★ |
 | `[扩展]` | marker_coverage = n_supporting_markers_unique / n_markers_queried | 有多少比例 marker 支持了候选 | ★★ |
 | `[扩展]` | candidate_count_distribution | marker_count 在候选间的分布(集中 vs 分散) | ★★ |
@@ -531,7 +554,7 @@
 | step1_prepare.umap | UMAP trustworthiness | UMAP 图可信度 |
 | step1_prepare.batch_mixing | per_cluster_batch_entropy + max_batch_fraction | 批次主导检测 |
 | step2_markers.filter_markers | filter_funnel | 过滤透明度 |
-| step3_kg.aggregate_candidates | candidate_ranking_entropy + n_candidates | 候选集中/分散 |
+| step3c_kg.aggregate_candidates | candidate_ranking_entropy + n_candidates | 候选集中/分散 |
 | step4_judge.rank_candidates | count_ratio + ancestor_overlap | 差距量化 |
 | step5_refine.marker_overlap | Jaccard_index | 比 overlap/min 更严格 |
 | step6_validate.global_summary | label_diversity + co_annotation_matrix | 过聚类检测 |

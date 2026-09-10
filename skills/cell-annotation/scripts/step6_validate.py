@@ -296,7 +296,7 @@ def cmd_run(args) -> dict:
                                             "refined_annotations.json"))
     markers = common.read_json(os.path.join(common.step_dir(args.project_dir, "step2_markers"),
                                             "markers.json"))
-    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3_kg"),
+    kg = common.read_json(os.path.join(common.step_dir(args.project_dir, "step3c_kg"),
                                        "kg_hits.json"))
     annotations = common.read_json(os.path.join(common.step_dir(args.project_dir, "step4_rank"),
                                                 "annotations.json"))

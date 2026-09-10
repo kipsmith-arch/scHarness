@@ -7,7 +7,7 @@
 
 - [1. 数据准备阶段(step1_prepare)](#1-数据准备阶段step1_prepare)
 - [2. Marker 发现阶段(step2_markers)](#2-marker-发现阶段step2_markers)
-- [3. 知识图谱查询阶段(step3_kg)](#3-知识图谱查询阶段step3_kg)
+- [3. 知识图谱查询阶段(step3c_kg)](#3-知识图谱查询阶段step3c_kg)
 - [4. 簇判断阶段(step4_rank)](#4-簇判断阶段step4_rank)
 - [5. 细化阶段(step5_refine)](#5-细化阶段step5_refine)
 - [6. 验证阶段(step6_validate)](#6-验证阶段step6_validate)
@@ -300,9 +300,9 @@ Wilcoxon 秩和检验(或 pseudobulk t-test)对每簇 vs 其余做差异表达,�
 
 ---
 
-## 3. 知识图谱查询阶段(step3_kg)
+## 3. 知识图谱查询阶段(step3c_kg)
 
-> 产出文件:`step3_kg/kg_hits.json`(每簇候选细胞类型 + gene_to_cts + ancestors)、`step3_kg/kg_source.txt`(KG 来源)
+> 产出文件:`step3c_kg/kg_hits.json`(每簇候选细胞类型 + gene_to_cts + ancestors)、`step3c_kg/kg_source.txt`(KG 来源)
 
 ### query_genes — KG 查询
 
@@ -578,8 +578,8 @@ per cluster 聚合 gene→cell_type 映射,按 marker_count → mean_confidence 
 
 - `step1_prepare` 的 `qc_metrics.json` 顶部含 `organ` 字段(来自 `--organ`),step6 的 `_meta.organ` 从它继承——不要用写死的 "root" 解读非根组织数据。
 - `choose_resolution` 不再做 knee 静默选定:必须由 `resolution_select` 判断点给出显式 `--target-resolution`。漏传则脚本报错。
-- `step3_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
-- `step3_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
+- `step3c_kg` 的 `kg_version` 是 Neo4j 服务版本(字段 `kg_version_source=neo4j-server`)——KG 本身无版本号,这是溯源代理值;`--species` 现在会作为 `g.Species` 过滤参与查询。
+- `step3c_kg.query_hierarchy` 的查询错误单独存于 `query_errors` 字段,不会混入 `ancestors` 统计。
 - `--max-ancestor-hops 0` 表示跳过层级查询(ancestors 为空);`>=1` 才执行。
 - step6 `final_annotations.json` 的 `_meta.kg_version` 亦为上述代理值;`metadata_check` 只检查字段存在。
 

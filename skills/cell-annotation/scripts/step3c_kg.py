@@ -84,7 +84,7 @@ def _organ_status(organs, target):
     """Classify candidate by organ consistency with the target organ.
 
     ``target`` is the dataset's target organ name, passed through from
-    ``--organ`` on the step3_kg query subcommand. **No default value** —
+    ``--organ`` on the step3c_kg query subcommand. **No default value** —
     callers must pass it explicitly so no organ name is hardcoded here.
     KG Organ strings are normalised via ``target.strip().title()`` to
     match the title-case convention used in the KG (e.g. ``"root" → "Root"``).
@@ -163,7 +163,7 @@ def _priority(status):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="step3_kg.py",
+        prog="step3c_kg.py",
         description="Step 3 知识图谱查询:基因→细胞类型映射、本体层级、候选聚合(0 次 h5ad 加载)",
     )
     parser.add_argument("--dump-schema", action="store_true", help=argparse.SUPPRESS)
@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_q.add_argument("--species-type", default="Plant", help="物种类型过滤(对应 g.Species_type,默认 Plant)")
     p_q.add_argument("--strict-organ", action="store_true", help="严格按 organ 过滤命中")
     p_q.add_argument("--ortholog-map", default=None,
-                     help="path to step2_cross_species_map/cross_species_map.json; "
+                     help="path to step3b_cross_species_map/cross_species_map.json; "
                           "enables ortholog KG path (optional)")
     # B 类(环境/资源):SUPPRESS 隐藏,LLM 不可见,CLI/运维可临时 override
     p_q.add_argument("--min-confidence", type=float, default=argparse.SUPPRESS,
@@ -252,7 +252,7 @@ def op_connect(cfg, log_path, params) -> dict:
                 m["kg_version_source"] = "neo4j-server"
     except Exception:
         pass
-    common.exec_record(log_path, "step3_kg", "connect", params, m)
+    common.exec_record(log_path, "step3c_kg", "connect", params, m)
     return driver, m
 
 
@@ -402,7 +402,7 @@ def op_query_genes(driver, genes, config, log_path, params, ortholog_map=None,
         m.update(_path_hit_stats(gene_to_cts))
         m["ortholog_unavailable"] = not bool(ortholog_map)
         m["ortholog_warnings"] = cmap_warnings
-    common.exec_record(log_path, "step3_kg", "query_genes", params, m)
+    common.exec_record(log_path, "step3c_kg", "query_genes", params, m)
     return gene_to_cts, m
 
 
@@ -416,7 +416,7 @@ def op_query_hierarchy(driver, cell_types, max_hops, log_path, params) -> dict:
         m = {"n_cell_types_queried": len(cell_types),
              "n_cell_types_with_ancestors": 0,
              "skipped": True}
-        common.exec_record(log_path, "step3_kg", "query_hierarchy", params, m)
+        common.exec_record(log_path, "step3c_kg", "query_hierarchy", params, m)
         return ancestors, m
     with driver.session() as s:
         for ct in cell_types:
@@ -432,7 +432,7 @@ def op_query_hierarchy(driver, cell_types, max_hops, log_path, params) -> dict:
     m = {"n_cell_types_queried": len(cell_types),
          "n_cell_types_with_ancestors": int(sum(1 for v in ancestors.values() if v)),
          "query_errors": query_errors}
-    common.exec_record(log_path, "step3_kg", "query_hierarchy", params, m)
+    common.exec_record(log_path, "step3c_kg", "query_hierarchy", params, m)
     return ancestors, m
 
 
@@ -544,7 +544,7 @@ def op_aggregate_candidates(markers_json, gene_to_cts, log_path, params, target)
     }
     m = {"candidate_stats": candidate_stats,
          "n_clusters_with_candidates": int(sum(1 for c in per_cluster if per_cluster[c]["candidates"]))}
-    common.exec_record(log_path, "step3_kg", "aggregate_candidates", params, m)
+    common.exec_record(log_path, "step3c_kg", "aggregate_candidates", params, m)
     return per_cluster, candidate_stats, m
 
 
@@ -562,14 +562,14 @@ def op_write_hits(out_dir, log_path, params, payload) -> dict:
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(src)
     m = {"kg_hits_json": json_path, "kg_source_txt": txt_path}
-    rid = common.exec_record(log_path, "step3_kg", "write_hits", params, m)
+    rid = common.exec_record(log_path, "step3c_kg", "write_hits", params, m)
     m["run_id"] = rid
     return m
 
 
 def cmd_query(args) -> dict:
     project_dir = common.env_or_default(args, "project_dir", (), "output")
-    out_dir = common.step_dir(project_dir, "step3_kg")
+    out_dir = common.step_dir(project_dir, "step3c_kg")
     log = common.run_log_path(project_dir)
     step2_dir = common.step_dir(project_dir, "step2_markers")
     markers = common.read_json(os.path.join(step2_dir, "markers.json"))
