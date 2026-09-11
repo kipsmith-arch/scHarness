@@ -4,7 +4,6 @@ Coverage:
 - arg_spec / --dump-schema discipline
 - coverage_tier classification (high / medium / low)
 - recommended_strategy mapping (single_species / mixed / cross_species_only)
-- phylo_score heuristic
 - end-to-end: CLI invocation against live Neo4j (arabidopsis / sorghum / unknown)
 - graceful failure when Neo4j unreachable (mocked driver)
 """
@@ -31,26 +30,6 @@ import step3a_kg_precheck as precheck  # noqa: E402
 # ---------------------------------------------------------------------------
 # Pure-function tests (no Neo4j needed)
 # ---------------------------------------------------------------------------
-
-class TestPhyloScore:
-    def test_same_genus_returns_one(self):
-        assert precheck._phylo_score("arabidopsis_thaliana", "arabidopsis_lyrata") == 1.0
-
-    def test_same_family_returns_07(self):
-        # both Poaceae (禾本科)
-        assert precheck._phylo_score("oryza_sativa", "zea_mays") == 0.7
-
-    def test_distant_returns_02(self):
-        # arabidopsis is eudicot, oryza is monocot -> distant
-        score = precheck._phylo_score("arabidopsis_thaliana", "oryza_sativa")
-        assert score <= 0.4
-
-    def test_symmetry(self):
-        # Same family should score the same both directions
-        a = precheck._phylo_score("solanum_lycopersicum", "nicotiana_tabacum")
-        b = precheck._phylo_score("nicotiana_tabacum", "solanum_lycopersicum")
-        assert a == b
-
 
 class TestCoverageTier:
     def test_high_at_threshold(self):
@@ -90,19 +69,15 @@ class TestRecommendedStrategy:
 class TestRationale:
     def test_rationale_contains_target_species(self):
         text = precheck._strategy_rationale(
-            "arabidopsis_thaliana", "high", 21299, 8,
-            [{"species": "oryza_sativa"}], "single_species")
+            "arabidopsis_thaliana", "high", 21299, "single_species")
         assert "arabidopsis_thaliana" in text
         assert "21299" in text
 
-    def test_rationale_low_lists_top_refs(self):
+    def test_rationale_low_points_at_static_catalog(self):
         text = precheck._strategy_rationale(
-            "sorghum_bicolor", "low", 0, 3,
-            [{"species": "oryza_sativa"}, {"species": "zea_mays"}, {"species": "arabidopsis_thaliana"}],
-            "cross_species_only")
+            "sorghum_bicolor", "low", 0, "cross_species_only")
         assert "sorghum_bicolor" in text
-        assert "oryza_sativa" in text
-        assert "zea_mays" in text
+        assert "reference-species.md" in text
 
 
 # ---------------------------------------------------------------------------
@@ -212,15 +187,12 @@ class TestEndToEnd:
         data = envelope["data"]
         assert data["coverage_tier"] == "high"
         assert data["recommended_strategy"] == "single_species"
-        assert data["n_recommended_refs"] >= 3
         report_path = Path(data["coverage_report_json"])
         report = json.loads(report_path.read_text(encoding="utf-8"))
         assert report["target_species"] == "arabidopsis_thaliana"
         assert report["target_species_type"] == "Plant"
-        assert "推荐" in report["strategy_rationale"] or "rationale" in report["strategy_rationale"].lower()
-        top_refs = report["recommended_reference_species"]
-        assert all(r["species_type"] == "Plant" for r in top_refs)
-        assert top_refs[0]["score"] >= top_refs[-1]["score"]
+        assert "推荐" in report["strategy_rationale"] or "覆盖" in report["strategy_rationale"]
+        assert "recommended_reference_species" not in report
 
     def test_sorghum_returns_low_tier(self, tmp_path):
         """Sorghum is NOT in KG (Neo4j verified 2026-08). Expect
@@ -245,4 +217,6 @@ class TestEndToEnd:
         assert data["coverage_tier"] == "low"
         assert data["recommended_strategy"] == "cross_species_only"
         assert data["n_target_genes_with_ct"] == 0
-        assert data["n_recommended_refs"] >= 3
+        report = json.loads(Path(data["coverage_report_json"]).read_text(encoding="utf-8"))
+        assert "recommended_reference_species" not in report
+        assert "reference-species.md" in report["strategy_rationale"]

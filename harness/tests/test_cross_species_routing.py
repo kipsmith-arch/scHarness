@@ -39,10 +39,25 @@ def test_routing_accept_wires_map_on_cross_species_only(tmp_path):
     assert out["decision"] == "routing_accept"
     assert out["driver"]["skip_nodes"] == []
     map_args = out["driver"]["node_args"]["step3b_cross_species_map.run"]
-    assert map_args["reference_species"] == "zea_mays"
+    assert map_args["reference_species"] == ["zea_mays", "oryza_sativa"]
     assert map_args["target_species"] == "sorghum_bicolor"
     kg_args = out["driver"]["node_args"]["step3c_kg.query"]
     assert kg_args["ortholog_map"].endswith("cross_species_map.json")
+    assert "zea_mays,oryza_sativa" in out["reasoning"]
+
+
+def test_routing_accept_catalog_fallback_when_3a_omits_refs(tmp_path):
+    project = _write_report(tmp_path, {
+        "recommended_strategy": "cross_species_only",
+        "target_species": "sorghum_bicolor",
+        "target_species_type": "Plant",
+    })
+    out = routing_accept_from_precheck(project)
+    map_args = out["driver"]["node_args"]["step3b_cross_species_map.run"]
+    assert map_args["reference_species"] == [
+        "zea_mays", "oryza_sativa", "arabidopsis_thaliana",
+    ]
+    assert "refs from catalog" in out["reasoning"]
 
 
 def test_missing_report_skips_map(tmp_path):

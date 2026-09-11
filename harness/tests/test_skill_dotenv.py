@@ -1,12 +1,10 @@
 """Tests for the cell-annotation skill's Neo4j credential loader.
 
 The loader is implemented as ``load_skill_dotenv`` inside
-``skills/cell-annotation/scripts/common.py``. Scope: only Neo4j connection
-credentials (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD). KG query tunables
-(``--species-type``, ``--min-confidence``, ``--max-ancestor-hops``)
-are LLM-facing argparse parameters; KG_GENE_MAP_PATH-style env vars are
-intentionally NOT part of SKILL_DOTENV_KEYS. Gene ID mapping was removed
-from the skill (it's a data-processing responsibility now).
+``skills/cell-annotation/scripts/common.py``. Scope: Neo4j connection
+credentials plus BLAST subject-library / query-FASTA paths.
+KG query tunables (``--species-type``, ``--min-confidence``,
+``--max-ancestor-hops``) are LLM-facing argparse parameters.
 """
 
 from __future__ import annotations
@@ -44,6 +42,8 @@ def _add_skill_scripts_to_path():
 # the loader side-effect and pollute env).
 SKILL_KEYS = (
     "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
+    "CELL_ANNOTATION_BLASTDB_DIR", "CELL_ANNOTATION_BLASTDB_URL",
+    "CELL_ANNOTATION_BLASTDB_SHA256", "CELL_ANNOTATION_QUERY_FASTA",
 )
 SKIP_VAR = "CELL_ANNOTATION_SKIP_DOTENV"
 

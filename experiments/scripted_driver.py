@@ -35,6 +35,8 @@ def main() -> int:
     ap.add_argument("--organ", default="root")
     ap.add_argument("--species", default=None,
                     help="Passed to step3c_kg__query --species (e.g. sorghum_bicolor)")
+    ap.add_argument("--query-fasta", default=None,
+                    help="Protein FASTA for step3b (exists → blastp). Also CELL_ANNOTATION_QUERY_FASTA.")
     ap.add_argument("--session-id", default=None)
     args = ap.parse_args()
 
@@ -59,6 +61,9 @@ def main() -> int:
         elif node.id == "step3b_cross_species_map.run":
             extra["target_species"] = args.species or "arabidopsis_thaliana"
             extra["input"] = os.path.join(args.project_dir, "step2_markers", "markers.json")
+            fasta = args.query_fasta or os.environ.get("CELL_ANNOTATION_QUERY_FASTA")
+            if fasta:
+                extra["query_fasta"] = fasta
         elif node.id == "step3c_kg.query":
             extra["organ"] = args.organ
             if args.species:

@@ -92,8 +92,8 @@ canonical path 表与 trajectory_design.md §5.2 一致。
 
 ### 3.7 cross_species_routing(step3a_kg_precheck,SOP-3,session 级)
 - 何时:`marker_quality` 接受之后、`step3c_kg__query` 之前。同源映射属于 SOP-3 查图谱,目的是提高 KG 命中率,不是 SOP-2 找 marker。先调 `step3a_kg_precheck__run`(`--target-species` `--organ` `--species-type`)。
-- 看什么:`step3a_kg_precheck.write_report` / coverage_report 的 `coverage_tier`、`recommended_strategy`(`single_species` / `mixed` / `cross_species_only`)、`recommended_reference_species`(species / kg_genes / score)。
-- 判断要点:`routing_accept` 跟推荐。`single_species` → 直接 `step3c_kg__query`(不要先拿本物种 ID 打空 KG 再补救)。`mixed` / `cross_species_only` → 先 `step3b_cross_species_map__run`(`--target-species` `--reference-species` `--input step2_markers/markers.json`),再 `step3c_kg__query --ortholog-map step3b_cross_species_map/cross_species_map.json`。映射 hit_rate 很低或 warnings 含 DNS/REST 不可达时,可换 reference、或 `routing_force_single` 走直接路径。`routing_multi_reference` 必须在 action 里写出参考物种列表。
+- 看什么:`step3a_kg_precheck.write_report` / coverage_report 的 `coverage_tier`、`recommended_strategy`(`single_species` / `mixed` / `cross_species_only`)。参考物种**不**由 3a 打分推荐,从 `references/reference-species.md` 按亲缘点名,最多 3 个。
+- 判断要点:`routing_accept` 表示接受覆盖策略(是否做同源);参考物种由本判断的 action 写出。`single_species` → 直接 `step3c_kg__query`(不要先拿本物种 ID 打空 KG 再补救)。`mixed` / `cross_species_only` → 先 `step3b_cross_species_map__run`(`--target-species` `--reference-species`(≤3) `--input step2_markers/markers.json`),再 `step3c_kg__query --ortholog-map step3b_cross_species_map/cross_species_map.json`。**用户给了 query FASTA 时工具自动优先 `blastp`**(不必再写 `--provider blastp`;库按需下载;参考物种之间串行,每个物种一次进程并用 `-num_threads`;单次 BLAST 默认 30 分钟超时)。映射失败工具会改道 Ensembl 或返回空 map + warnings,不要当成「注释质量差」的数字闸门。`routing_multi_reference` 必须在 action 里写出参考物种列表(上限 3)。
 - decision 枚举:`routing_accept` / `routing_force_single` / `routing_force_cross` / `routing_multi_reference`
 
 ### 3.8 kg_match(step3c_kg,SOP-3,session 级)
@@ -176,6 +176,7 @@ references 不进系统消息,需要时按需读取(用 read 工具打开对应�
 | 解读某个指标数值的高低(247 个指标的完整解读) | references/metrics.md |
 | 判断前回顾常见误判与反例(按决策点组织) | references/traps.md |
 | 理解 KG 命中结果、ancestors 含义 | references/kg-schema.md |
+| 跨物种选参考物种(亲缘、BLAST 前缀、最多 3 个) | references/reference-species.md |
 
 ## 7. 运行日志(run_log.jsonl)
 

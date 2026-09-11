@@ -15,11 +15,14 @@ This subpackage defines:
 - ``base.py``: ``BaseCrossSpeciesProvider`` ABC, ``MappingRecord`` dataclass,
   provider registry. Any provider implementation must subclass and register.
 - ``ensembl_compara.py``: the Ensembl Compara REST implementation (the default
-  and currently only shipped provider).
+  provider).
+- ``blastp.py``: local BLASTP against a cached subject protein BLASTDB
+  (``--provider blastp``; requires user query FASTA).
 
 The CLI entry is ``step3b_cross_species_map.py`` (sibling of this directory).
-Adding a new provider = adding one file in this directory + one line in
-``base.py``'s ``PROVIDERS`` registry. Callers (LLM, step3c_kg) do not change.
+Adding a new provider = adding one file in this directory; ``@register_provider``
+plus the import in ``base._load_builtin_providers``. Callers (LLM, step3c_kg)
+do not change. Default ``--provider`` remains ``ensembl_compara``.
 
 Why the subpackage is named ``step3b_xmap_providers`` (not
 ``step3b_cross_species_map``): Python forbids a module and a subpackage from

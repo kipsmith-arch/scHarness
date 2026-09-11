@@ -9,6 +9,7 @@
 - [查询语义(step3c_kg__query)](#查询语义step3c_kg__query)
 - [ancestors 与层级判断](#ancestors-与层级判断)
 - [物种过滤与命名](#物种过滤与命名)
+- [参考物种名录](reference-species.md)
 
 ---
 
@@ -84,6 +85,8 @@ The relationships:
 - **默认不设 `KG_SPECIES`**:基因 ID(TAIR locus)本身物种特异,不设 species 过滤即天然隔离,也避免物种名格式不匹配导致 0 命中。
 - 若需要设,必须用 KG 存储格式:**小写 + 下划线**(如 `arabidopsis_thaliana`),不是人类可读名(`Arabidopsis thaliana`)。KG 中 `g.Species` 为精确字符串,带空格的常见名会精确匹配失败。
 - 当前数据集(SRP171040 拟南芥根)对应的 KG 物种值为 `arabidopsis_thaliana`。
+- 跨物种参考物种名录(BLAST 前缀 ↔ KG id)见 [reference-species.md](reference-species.md)。3a 不打分推荐。
+- BLAST `pident` 不是 KG `confidence`。3c 的 confidence 只来自 `marker_of.relation_confidence`。
 
 ## 使用注意
 

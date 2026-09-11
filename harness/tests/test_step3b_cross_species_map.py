@@ -302,7 +302,7 @@ class TestSchemaDiscipline:
                          "min_score", "max_hits_per_gene",
                          "force_refresh",
                          "provider_timeout", "provider_max_retries",
-                         "provider_concurrency", "max_genes"):
+                         "provider_concurrency", "max_genes", "query_fasta"):
             assert required in arg_names, f"missing arg: {required}"
 
     def test_no_suppressed_args(self):

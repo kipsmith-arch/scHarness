@@ -98,15 +98,21 @@ SOP-1 预处理 QC → SOP-2 找 marker → SOP-3 查参考知识（覆盖预检
 **操作**：
 
 ### 3a 覆盖预检
-1. 调 `step3a_kg_precheck__run`（`--target-species` `--organ` `--species-type`），读 `coverage_report.json`：`coverage_tier` / `recommended_strategy` / `recommended_reference_species`。
-2. 写 `cross_species_routing` judgment：`routing_accept`（跟推荐）/ `routing_force_single` / `routing_force_cross` / `routing_multi_reference`。
+1. 调 `step3a_kg_precheck__run`（`--target-species` `--organ` `--species-type`），读 `coverage_report.json`：`coverage_tier` / `recommended_strategy`。
+2. 写 `cross_species_routing` judgment：`routing_accept`（接受覆盖策略：是否做同源）/ `routing_force_single` / `routing_force_cross` / `routing_multi_reference`。参考物种由本判断的 action 写出，从 `references/reference-species.md` 按亲缘点名，最多 3 个；3a **不**输出推荐列表。
 3. `single_species`：跳过同源，直接 3c。
 4. `mixed` / `cross_species_only`：进 3b。
 
 **不要**先用本物种 ID 查空 KG、发现 0 命中后再去同源。
 
 ### 3b 同源映射（条件，提高 KG 命中率）
-调 `step3b_cross_species_map__run`，产出 `step3b_cross_species_map/cross_species_map.json`。映射失败（空表 / DNS）时工具返回空 map + warnings，3c 自动只走直接路径。
+调 `step3b_cross_species_map__run`，产出 `step3b_cross_species_map/cross_species_map.json`。
+
+- 默认 `--provider ensembl_compara`。**提供 `--query-fasta`（或 `CELL_ANNOTATION_QUERY_FASTA`）时自动优先 blastp**，不必再手写 `--provider blastp`。subject 库按需下载；参考物种之间串行，每个物种一次 blastp 进程（进程内 `-num_threads`；单次进程默认超时 30 分钟，`--provider-timeout` 仍为 10 时按此默认）。
+- BLAST 配置/下载/进程失败时工具**内部改道 Ensembl**，对外仍 `status=ok` + warnings。
+- 一对多在 3b 收掉，不留给 3c。
+
+映射失败（空表 / DNS）时工具返回空 map + warnings，3c 自动只走直接路径。理不理想只由 LLM 用现有决策点判断，不设 hit_rate 数字闸门。
 
 ### 3c 查图谱
 1. 选定 organ（必须和数据来源 organ 对齐）。

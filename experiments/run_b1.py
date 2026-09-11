@@ -7,7 +7,8 @@ Usage (from repo root, conda env LM):
     python experiments/run_b1.py --raw dataset/h5ad/PRJNA935359.h5ad \\
         --out output/B1_PRJNA935359 --organism "Sorghum bicolor" \\
         --species sorghum_bicolor --gt-csv experiments/gt_cells_PRJNA935359.csv \\
-        --label-map experiments/label_map_PRJNA935359.json
+        --label-map experiments/label_map_PRJNA935359.json \\
+        --query-fasta dataset/fasta/Sorghum_bicolor.fasta
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ ORGAN = "root"
 SPECIES: str | None = "arabidopsis_thaliana"
 SPECIES_TYPE = "Plant"
 ORGANISM = "Arabidopsis thaliana"
+QUERY_FASTA: str | None = None
 PY = sys.executable
 TOOL_TIMEOUT = 14400
 ARM3_MAX_TURNS = 800
@@ -83,6 +85,16 @@ def wipe_history() -> None:
 def arm3_task(project_dir: str) -> str:
     raw_rel = os.path.relpath(RAW, REPO_ROOT).replace("\\", "/")
     species_line = SPECIES or "(不传 --species，按 SKILL / KG 默认)"
+    if QUERY_FASTA:
+        fasta_rel = os.path.relpath(QUERY_FASTA, REPO_ROOT).replace("\\", "/")
+        fasta_block = (
+            f"- query FASTA: {fasta_rel}\n"
+            "  有可读 FASTA 时 step3b 自动走 blastp（不必再写 --provider blastp）。"
+            "  参考物种从 skills/cell-annotation/references/reference-species.md 按亲缘点名，最多 3 个；"
+            "  高粱用 zea_mays、oryza_sativa、arabidopsis_thaliana。"
+        )
+    else:
+        fasta_block = "- query FASTA: （无；step3b 默认 Ensembl Compara）"
     return f"""请对{ORGANISM} {ORGAN} 单细胞 RNA-seq 做完整细胞类型注释（B1 ③ LLM 臂）。
 
 数据与目录：
@@ -92,13 +104,14 @@ def arm3_task(project_dir: str) -> str:
 - organ: {ORGAN}
 - species（step3c_kg --species）: {species_line}
 - species-type: {SPECIES_TYPE}
+{fasta_block}
 
 硬性要求：
 1. 第一次调工具前先 write_judgment__session-start。
 2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
 3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
 4. step3c_kg__query 必须带 --organ {ORGAN}。
-5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing；single_species 直接查 KG，mixed/cross_species_only 先 step3b_cross_species_map__run 再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。
+5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing。3a 只给覆盖档、不推荐参考物种。single_species 直接查 KG；mixed/cross_species_only 先 step3b_cross_species_map__run（自带 --query-fasta 若上面有 FASTA，并传入 --reference-species）再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。
 6. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
 7. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
 8. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
@@ -184,6 +197,8 @@ def run_arm12(arm: str, project_dir: Path, session_id: str) -> None:
     ]
     if SPECIES:
         cmd.extend(["--species", SPECIES])
+    if QUERY_FASTA:
+        cmd.extend(["--query-fasta", QUERY_FASTA])
     run(cmd)
 
 
@@ -273,7 +288,7 @@ def _refuse_stale_logs() -> None:
 
 
 def main() -> int:
-    global RAW, OUT, GT_CSV, LABEL_MAP, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM
+    global RAW, OUT, GT_CSV, LABEL_MAP, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM, QUERY_FASTA
     ap = argparse.ArgumentParser(description="Wipe B1 history and rerun three arms.")
     ap.add_argument("--no-wipe", action="store_true", help="Keep existing --out (do not delete).")
     ap.add_argument("--skip-preflight", action="store_true")
@@ -285,6 +300,8 @@ def main() -> int:
     ap.add_argument("--organism", default=ORGANISM)
     ap.add_argument("--gt-csv", type=Path, default=GT_CSV)
     ap.add_argument("--label-map", type=Path, default=LABEL_MAP)
+    ap.add_argument("--query-fasta", type=Path, default=None,
+                    help="Protein FASTA; when the file exists, step3b prefers blastp.")
     args = ap.parse_args()
 
     RAW = args.raw if args.raw.is_absolute() else REPO_ROOT / args.raw
@@ -295,6 +312,14 @@ def main() -> int:
     SPECIES = args.species or None
     SPECIES_TYPE = args.species_type
     ORGANISM = args.organism
+    if args.query_fasta:
+        qf = args.query_fasta if args.query_fasta.is_absolute() else REPO_ROOT / args.query_fasta
+        if not qf.is_file():
+            raise SystemExit(f"missing query FASTA: {qf}")
+        QUERY_FASTA = str(qf)
+        os.environ["CELL_ANNOTATION_QUERY_FASTA"] = QUERY_FASTA
+    else:
+        QUERY_FASTA = os.environ.get("CELL_ANNOTATION_QUERY_FASTA") or None
     _bind_paths()
 
     os.chdir(REPO_ROOT)
@@ -313,7 +338,7 @@ def main() -> int:
     log(f"python={PY}")
     if "LM" not in PY.replace("\\", "/"):
         log(f"WARN interpreter may not be conda LM: {PY}")
-    log(f"raw={RAW} out={OUT} organ={ORGAN} species={SPECIES}")
+    log(f"raw={RAW} out={OUT} organ={ORGAN} species={SPECIES} query_fasta={QUERY_FASTA}")
     run_arm12("default", ARM1, "sess-b1-arm1-default")
     run_arm12("rule", ARM2, "sess-b1-arm2-rule")
     run_arm3()

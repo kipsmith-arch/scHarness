@@ -54,6 +54,8 @@
   - stem cell niche ↔ Stem cell niche = synonym
 - `build_label_map.py` 生成初稿(自动查询 KG ancestors),人工定案后锁定版本(写 `_meta.built_from` / `_meta.verified`)。
 
+> **下一步（未开工）:** 停掉按数据集复制 `label_map_*.json`。每套数据只钉 GT 字符串 → `Ontology` 节点；predicted 仍来自注释跑次；relation 评估时用图谱祖先边计算。规划见 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
+
 **D-3 静态 marker 字典(仅 C2/A3 用)** → 生成 `experiments/marker_dict.json`
 - 若 C2/A3 需要"无 KG"基线(见 §3.7):从 `knowledge/*.md` 与 KG 的 marker_resource 抽样,整理一张静态 `{gene: [cell_type,...]}` 字典作为 KG 查询的替代。
 - 若素材不足,退化为"LLM 仅凭自身生物学知识 + markers 标注"(无参考字典)。

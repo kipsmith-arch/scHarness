@@ -164,12 +164,29 @@ def coverage_report(project_dir: str) -> dict:
     return read_json(path) or {}
 
 
+# 3a 只报覆盖档，不再打分推荐参考物种。脚本臂按 species_type 从静态名录取近缘/高覆盖默认。
+_CATALOG_FALLBACK_REFS = {
+    "plant": ["zea_mays", "oryza_sativa", "arabidopsis_thaliana"],
+    "animal": ["mus_musculus", "homo_sapiens"],
+}
+
+
+def _reference_species_from_report(report: dict) -> tuple[list[str], str]:
+    """Return (ref ids, source). Source is 'precheck' or 'catalog'."""
+    raw = report.get("recommended_reference_species") or []
+    named = [r.get("species") for r in raw if isinstance(r, dict) and r.get("species")]
+    if named:
+        return named[:3], "precheck"
+    st = (report.get("target_species_type") or report.get("species_type") or "Plant")
+    key = str(st).strip().lower() or "plant"
+    return list(_CATALOG_FALLBACK_REFS.get(key, _CATALOG_FALLBACK_REFS["plant"])), "catalog"
+
+
 def routing_accept_from_precheck(project_dir: str) -> dict:
-    """①②: follow precheck recommendation. Skip map on single_species."""
+    """①②: follow precheck strategy. Skip map on single_species."""
     report = coverage_report(project_dir)
     strategy = report.get("recommended_strategy") or "single_species"
-    refs = report.get("recommended_reference_species") or []
-    ref_names = [r.get("species") for r in refs if isinstance(r, dict) and r.get("species")]
+    ref_names, ref_source = _reference_species_from_report(report)
     target = report.get("target_species")
     inputs = [
         {"path": "step3a_kg_precheck.coverage_report.recommended_strategy", "value": strategy},
@@ -187,16 +204,20 @@ def routing_accept_from_precheck(project_dir: str) -> dict:
         driver["node_args"] = {
             "step3b_cross_species_map.run": {
                 "target_species": target,
-                "reference_species": ref_names[0],
+                "reference_species": ref_names,
                 "input": markers,
             },
             "step3c_kg.query": {"ortholog_map": map_json},
         }
+        refs_cli = ",".join(ref_names)
         action = (
-            f"run step3b_cross_species_map --reference-species={ref_names[0]} "
+            f"run step3b_cross_species_map --reference-species={refs_cli} "
             f"then step3c_kg__query --ortholog-map"
         )
-        reason = f"routing_accept: strategy={strategy}, map via {ref_names[0]}"
+        reason = (
+            f"routing_accept: strategy={strategy}, map via {refs_cli} "
+            f"(refs from {ref_source})"
+        )
     return {
         "decision": "routing_accept",
         "confidence": "high",

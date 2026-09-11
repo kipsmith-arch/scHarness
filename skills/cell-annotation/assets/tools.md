@@ -29,8 +29,8 @@
 | 2 | `step1_prepare__run` | 完整预处理:QC → 过滤 → doublet → 归一化 → HVG → PCA → kNN → Leiden → UMAP → 批次检查 | 1× raw | 16 |
 | 3 | `step1_prepare__recluster` | 换分辨率重新聚类(leiden → choose_resolution → umap → write_output) | 1× proc | 4 |
 | 4 | `step2_markers__run` | DE 排序 + pct1/pct2 + marker 过滤 + 稀有簇 pseudobulk | 1× proc | 5 |
-| 5 | `step3a_kg_precheck__run` | KG 覆盖预检 + 参考物种推荐 | 0 | 3 |
-| 6 | `step3b_cross_species_map__run` | 同源映射(条件,提高 KG 命中率) | 0 | 3 |
+| 5 | `step3a_kg_precheck__run` | KG 覆盖预检(不推荐参考物种) | 0 | 2 |
+| 6 | `step3b_cross_species_map__run` | 同源映射(条件,提高 KG 命中率;可选 blastp) | 0 | 5 |
 | 7 | `step3c_kg__query` | KG 查询:marker → 候选细胞类型 + 本体祖先 | 0 | 5 |
 | 8 | `step3c_kg__test-connection` | 检查 Neo4j 连通性 | 0 | 1 |
 | 9 | `step4_rank__run` | first/second 候选排名与差距 | 0 | 2 |
@@ -39,7 +39,7 @@
 | 12 | `step6_validate__report` | 从 final_annotations.json 重新生成 report.md | 0 | 1 |
 | 13 | `step7_diagnose__run` | 诊断与全局质量测量 | 0 | 6 |
 
-唯一 op 合计:原目录 47(与 `design/atomic_operations.md` 一致);SOP-3 扩展另计 `step3a_kg_precheck` 3 op + `step3b_cross_species_map` 3 op。部分 op 被多个子命令复用(如 `load_data` 在 metrics/run 共用、`qc_plot` 在 metrics/run 共用、`write_output` 在 run/recluster 共用、`connect` 在 query/test-connection 共用、`write_report` 在 validate run/report 共用)。
+唯一 op 合计:原目录 47(与 `design/atomic_operations.md` 一致);SOP-3 扩展另计 `step3a_kg_precheck` 2 op + `step3b_cross_species_map` 5 op。部分 op 被多个子命令复用(如 `load_data` 在 metrics/run 共用、`qc_plot` 在 metrics/run 共用、`write_output` 在 run/recluster 共用、`connect` 在 query/test-connection 共用、`write_report` 在 validate run/report 共用)。
 
 ---
 
@@ -104,6 +104,37 @@
 | pseudobulk_min_samples | integer | `2` | pseudobulk 每组的样本数下限 |
 | batch_key | string | `Orig.ident` | 样本列名(pseudobulk 聚合用) |
 | project_dir / input | — | — | 同上 |
+
+### step3a_kg_precheck__run
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| target_species | string | (必填) | KG/Ensembl `lower_underscore` 物种 id |
+| organ | string | (必填) | 组织,传给下游 step3c |
+| species_type | string | `Plant` | Plant / Animal / ... |
+| project_dir | string | `output` | 项目目录 |
+| high_threshold | integer | `500` | coverage_tier=high 下限 |
+| low_threshold | integer | `50` | coverage_tier=low 上限 |
+
+不输出 `recommended_reference_species`。参考物种由 LLM 从 `references/reference-species.md` 点名。
+
+### step3b_cross_species_map__run
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| provider | string | `ensembl_compara` | `ensembl_compara` / `blastp` |
+| target_species | string | (必填) | 本物种 KG id |
+| reference_species | string | (必填,可重复) | 参考物种;超过 3 个 warning 并截断 |
+| species_type | string | `Plant` | 供 Ensembl division 路由 |
+| input | string | (必填) | `step2_markers/markers.json` |
+| project_dir | string | `output` | 项目目录 |
+| min_score | number | `30.0` | 丢弃 score 低于此的映射 |
+| max_hits_per_gene | integer | `1` | 每个 (gene, ref) best-N;默认 best-1 |
+| query_fasta | string | `null` | 用户蛋白 FASTA；文件存在时自动优先 blastp（Ensembl 默认被忽略） |
+| force_refresh | boolean | `false` | 忽略缓存 |
+| provider_timeout / provider_max_retries / provider_concurrency / max_genes | — | Ensembl 10s；blastp 1800s（30 min） | provider 调优 / smoke cap。`--provider-timeout` argparse 默认仍是 10（Ensembl REST）；blastp 把这个 10 当成未覆盖，改用 30 分钟。显式传入其它秒数则照用。 |
+
+`blastp` 时读 `step1_prepare/var_snapshot.csv` 过滤 FASTA(不二次 load h5ad)。库按需下载。配置失败改道 Ensembl,仍 `ok`。
 
 ### step3c_kg__query
 
@@ -195,8 +226,8 @@ Neo4j 连接 (`skills/cell-annotation/.env`)：
 | step1_prepare | run | load_data / compute_qc / qc_distribution / qc_plot / filter_cells / filter_genes / detect_doublets / normalize / select_hvg / pca / knn_graph / leiden_cluster / choose_resolution / umap / batch_mixing / write_output |
 | step1_prepare | recluster | leiden_cluster / choose_resolution / umap / write_output |
 | step2_markers | run | de_rank / pct1_pct2 / pseudobulk_de / filter_markers / write_markers |
-| step3a_kg_precheck | run | target_coverage / candidate_refs / write_report |
-| step3b_cross_species_map | run | collect_marker_genes / query_provider / write_output |
+| step3a_kg_precheck | run | target_coverage / write_report |
+| step3b_cross_species_map | run | collect_marker_genes / filter_query_fasta / query_provider / collapse_best1 / write_output |
 | step3c_kg | query | connect / query_genes / query_hierarchy / aggregate_candidates / write_hits |
 | step3c_kg | test-connection | connect |
 | step4_rank | run | rank_candidates / write_annotations |

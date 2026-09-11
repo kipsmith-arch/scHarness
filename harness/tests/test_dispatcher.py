@@ -51,6 +51,26 @@ def test_subprocess_boolean_flag_omitted(echo_runtime, state):
     assert result["data"]["text"] == "hi"
 
 
+def test_subprocess_list_repeats_flag(tmp_path, state):
+    script = tmp_path / "args.py"
+    script.write_text(
+        "import json, sys\n"
+        "print(json.dumps({'status': 'ok', 'data': {'argv': sys.argv[1:]}}))\n",
+        encoding="utf-8",
+    )
+    spec = {
+        "type": "subprocess",
+        "script": str(script),
+        "arg_names": ["reference_species"],
+    }
+    result = dispatch(spec, {"reference_species": ["zea_mays", "oryza_sativa"]}, state)
+    assert result["status"] == "ok"
+    assert result["data"]["argv"] == [
+        "--reference-species", "zea_mays",
+        "--reference-species", "oryza_sativa",
+    ]
+
+
 def test_subprocess_error_on_bad_args(echo_runtime, state):
     # times expects an int; passing "abc" makes argparse fail with exit code 2
     spec = echo_runtime["echo__repeat"]

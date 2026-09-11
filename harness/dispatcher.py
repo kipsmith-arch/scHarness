@@ -44,8 +44,8 @@ def run_subprocess(spec: Dict[str, Any], args: Dict[str, Any]) -> dict:
                 cmd.append(flag)
             continue
         if isinstance(value, (list, tuple)):
-            cmd.append(flag)
-            cmd.extend(str(v) for v in value)
+            for item in value:
+                cmd.extend([flag, str(item)])
             continue
         cmd.extend([flag, str(value)])
 

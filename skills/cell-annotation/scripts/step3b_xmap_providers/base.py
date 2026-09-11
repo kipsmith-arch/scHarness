@@ -163,6 +163,34 @@ class BaseCrossSpeciesProvider(abc.ABC):
         - Not load heavy dependencies eagerly; defer until first ``lookup``.
         """
 
+    def lookup_many(
+        self,
+        target_species: str,
+        ref_species: str,
+        genes: list[str],
+        **opts,
+    ) -> tuple[dict[str, list[MappingRecord]] | None, str | None]:
+        """Look up many genes against one reference species.
+
+        Default: loop ``lookup`` (Ensembl behaviour unchanged). Providers that
+        can batch (BLAST: one process per ref, never per gene) override this.
+        Returns ``({gene: [MappingRecord, ...]}, None)`` or ``(None, error)``.
+        """
+        out: dict[str, list[MappingRecord]] = {}
+        last_err: str | None = None
+        any_ok = False
+        for gene in genes:
+            records, err = self.lookup(target_species, ref_species, gene, **opts)
+            if err:
+                last_err = err
+                out[gene] = []
+                continue
+            any_ok = True
+            out[gene] = records or []
+        if genes and not any_ok and last_err:
+            return None, last_err
+        return out, None
+
 
 # Provider registry — add new providers here. Order is the order they appear
 # in CLI --provider help text. The default is the first entry.
@@ -199,5 +227,6 @@ def get_provider(name: str) -> BaseCrossSpeciesProvider:
 # Eagerly import built-in providers so registration happens at package load.
 def _load_builtin_providers() -> None:
     from . import ensembl_compara  # noqa: F401  -- side-effect: registers
+    from . import blastp  # noqa: F401  -- side-effect: registers
 
 _load_builtin_providers()

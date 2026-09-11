@@ -185,7 +185,7 @@ CLI flag > env var > hardcoded default
 
 以 cell-annotation 为例，配置在 `skills/cell-annotation/.env`（gitignored；模板在同名的 `.env.example`，跟踪进 git）。加载器由 `common.load_skill_dotenv()` 提供，跳过变量为 `CELL_ANNOTATION_SKIP_DOTENV`。
 
-**配置范围**：只放**环境类**参数（Neo4j 连接）——描述“系统怎么连”，不描述“任务目标是什么”。任务类参数（`--organ` `--species` `--species-type` `--strict-organ`）是 LLM 调用时决定的生物决策，仍在 argparse 中。其它调优参数（`--min-confidence` `--max-ancestor-hops`）目前**没有 env 变量**，仅以代码默认 + CLI 临时覆盖。详见 `skills/cell-annotation/SKILL.md` 与 `references/kg-schema.md`。
+**配置范围**：放**环境类**参数（Neo4j 连接、BLAST subject 库路径）。任务类参数（`--organ` `--species` `--species-type` `--strict-organ` `--query-fasta`）是 LLM 调用时决定的，仍在 argparse 中。其它调优参数（`--min-confidence` `--max-ancestor-hops`）目前**没有 env 变量**，仅以代码默认 + CLI 临时覆盖。详见 `skills/cell-annotation/SKILL.md` 与 `references/kg-schema.md`。
 
 > 注：基因名映射（`KG_GENE_MAP_PATH`）从 skill 中移除——该功能属数据处理责任，由用户上游完成。
 
@@ -196,6 +196,10 @@ CLI flag > env var > hardcoded default
 | `NEO4J_URI` | str | `"bolt://localhost:7687"` | Neo4j Bolt URI（step3c_kg 、build_label_map 使用） |
 | `NEO4J_USER` | str | `"neo4j"` | Neo4j 用户名 |
 | `NEO4J_PASSWORD` | str | **无默认**（必须显式设置） | Neo4j 密码；不设则连接被拒 |
+| `CELL_ANNOTATION_BLASTDB_DIR` | str | `~/.cache/sc-harness/cell-annotation/blastdb` | BLAST subject 库解压根（其下为 `prot/`）；仅 `--provider blastp` 使用 |
+| `CELL_ANNOTATION_BLASTDB_URL` | str | xener `blastdb.zip` URL | subject zip；HEAD 为 404，skill 用 GET |
+| `CELL_ANNOTATION_BLASTDB_SHA256` | str | `8dd83c925f8f18d7e3f2cf626ce780548085321ed501805247932c5b56dab1c3` | zip hex；空则拒绝安装 |
+| `CELL_ANNOTATION_QUERY_FASTA` | str | 无 | `--query-fasta` 默认路径 |
 
 CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 `--uri/--user/--password/--min-confidence/--max-ancestor-hops` 参数（`--help` 可看；`--dump-schema` 不包含）。任务类参数 `--organ` `--species` `--species-type` `--strict-organ` 仍在 schema 中。
 

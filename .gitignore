@@ -12,3 +12,4 @@ output/
 _bmad
 .agents
 .pi-subagents/
+*.fasta

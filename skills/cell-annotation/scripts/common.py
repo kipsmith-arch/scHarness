@@ -972,9 +972,8 @@ def resolve_batch_key(obs_columns, batch_key: Optional[str], default: str = "Ori
 # scripts). Inlining keeps the file count low and the side-effect visible at
 # the bottom of the same file that downstream readers will already be in.
 #
-# SCOPE: only Neo4j connection credentials live in SKILL_DOTENV_KEYS. The
-# cell-annotation skill owns Neo4j access (it connects from step3c_kg and
-# scripts/build_label_map.py); the harness does not know Neo4j exists.
+# SCOPE: Neo4j connection credentials AND BLAST subject-library / query-FASTA
+# paths. The harness does not know these keys exist.
 # ---------------------------------------------------------------------------
 
 SKILL_DIR = Path(__file__).resolve().parent.parent  # .../skills/cell-annotation/
@@ -984,6 +983,10 @@ SKILL_DOTENV_KEYS: tuple[str, ...] = (
     "NEO4J_URI",
     "NEO4J_USER",
     "NEO4J_PASSWORD",
+    "CELL_ANNOTATION_BLASTDB_DIR",
+    "CELL_ANNOTATION_BLASTDB_URL",
+    "CELL_ANNOTATION_BLASTDB_SHA256",
+    "CELL_ANNOTATION_QUERY_FASTA",
 )
 SKIP_SKILL_DOTENV_VAR = "CELL_ANNOTATION_SKIP_DOTENV"
 

@@ -98,21 +98,22 @@ Root `.gitignore` ignores `*.json`, `*.csv`, `*.h5ad`, `*.png`, `*.ipynb`, `*.xm
 - `design/implementation_plan.md` (project plan, P1..P7 milestones; current status: P1–P6 done, P7 pending).
 - `design/experiment_design.md` + `design/experiment_implementation.md` (12 experiments, pre-registered decision rules, cell-level eval + cluster-aware bootstrap).
 - `knowledge/` (`cell-annotation-sop.md`, `cross-species-annotation-handbook.md`, `kg_schema.md`, `metrics_interpretation.md`) = source material for the skill's system prompt + references.
-- `_bmad-output/implementation-artifacts/` — frozen-after-approval specs and closure reports; the canonical record of design intent vs shipped state. P5 r2 closure (`p5-evals-round1-closure.md`) and B1 eval (`b1-three-arm-eval.md`) are the most recent deliverables; `deferred-work.md` lists the 4 open non-blockers.
+- `_bmad-output/implementation-artifacts/` — frozen-after-approval specs and closure reports; the canonical record of design intent vs shipped state. P5 r2 closure (`p5-evals-round1-closure.md`) and B1 eval (`b1-three-arm-eval.md`) 是已交付记录；下一步计分规划见 `label-map-ontology-eval.md`（GT 钉图谱）；`deferred-work.md` lists the open non-blockers.
 - `docs/PROJECT_OVERVIEW.md` — résumé-oriented project write-up (architecture, status, keyword matrix for different JD directions).
 
 ## Next steps
 
 The bottleneck is **not** coding or first-time end-to-end run — those are done. Remaining work, ordered by blocking dependency + impact:
 
-1. **Tighten `rule_judge` thresholds** (B1 §3.1 oracle table calibration). Current ② is over-conservative: 31/39 clusters downgraded; this likely inflates ②'s strict_accuracy drop (0.14 vs ①'s 0.92). Targets: re-tune `DIFF_THRESH_FOR_DECISIVE` / `GAP_RATIO_TIED` / "pct1≈pct2 → label_downgraded" rule. Re-run B1 arm2 + arm1; expected: arm2 strict rises meaningfully (target ≥ 0.6), macroF1 delta arm2 vs arm1 stays inconclusive (R3 still holds). Use `experiments/evaluate_cell_level.py` + `bootstrap_test.py` for verification.
-2. **Run the B1 §6 supplementary experiments** (S1 synthetic traps; A/E/N from `design/experiment_design.md`) on the existing arm1/arm2/arm3 outputs. These don't require a new pipeline run, only the existing `run_log.jsonl` + `final_annotations.json`. See `design/experiment_implementation.md` §6.
-3. **B3 / B4 trajectory analysis** on `output/B1/arm3_llm/run_log.jsonl` (inputs[].path frequency → minimal sufficient set; same-decision-point multi-judgment → self-correction pairs). These inform SKILL.md description tuning.
-4. ~~Apply the LLM-tool schema discipline (SUPPRESS `--project-dir` / `--input`) to step1/2/4/5/6/7~~ — **superseded**：按"除 KG 资源类外全部暴露给 LLM"的原则，`--project-dir` / `--input` 及其它所有非 KG 资源类参数有意保留在工具 schema 中供 LLM 传递。SUPPRESS 化目前仅适用于 step3c_kg 的 Neo4j 连接 / KG 服务调优参数，不扩展到其它 step。
-5. **SKILL.md / references iteration** driven by B1 + S1 + N findings; tighten `description` to match real user phrasings seen in arm3 judgments.
-6. **`.skill` packaging (P7 / M7)** — final delivery artifact for the cell-annotation skill.
-7. **Deferred-work clean-up** (only when the cross-organ / cross-dataset scenario actually arrives): organ substring boundary matching, `_organ_status.title()` normalization, `validate_log` cluster-coverage on refine_effect / candidate_disambiguate, organ_status category rename. None of these block the root dataset.
-8. **图谱改为 API、skill 不再直连 Neo4j**（未排期，与 BLASTP 无关）— 脚本现用 Bolt + 内嵌 Cypher；将来凭据与图 schema 留在服务端。清单与建议顺序见 `_bmad-output/implementation-artifacts/future-kg-api.md`。
+1. **标签对照改为 GT 钉图谱 + 评估时算关系**（规划，未开工）。停掉 `label_map.json` / `label_map_PRJNA935359.json` 这种按数据集复制的 predicted×true 表；每套数据只钉 GT→`Ontology` 节点，predicted 来自注释跑次，relation 用图谱层次当场算。改 `evaluate_cell_level.py` 的 `hits[0]`。全文 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
+2. **Tighten `rule_judge` thresholds** (B1 §3.1 oracle table calibration). Current ② is over-conservative: 31/39 clusters downgraded; this likely inflates ②'s strict_accuracy drop (0.14 vs ①'s 0.92). Targets: re-tune `DIFF_THRESH_FOR_DECISIVE` / `GAP_RATIO_TIED` / "pct1≈pct2 → label_downgraded" rule. Re-run B1 arm2 + arm1; expected: arm2 strict rises meaningfully (target ≥ 0.6), macroF1 delta arm2 vs arm1 stays inconclusive (R3 still holds). Use `experiments/evaluate_cell_level.py` + `bootstrap_test.py` for verification.
+3. **Run the B1 §6 supplementary experiments** (S1 synthetic traps; A/E/N from `design/experiment_design.md`) on the existing arm1/arm2/arm3 outputs. These don't require a new pipeline run, only the existing `run_log.jsonl` + `final_annotations.json`. See `design/experiment_implementation.md` §6.
+4. **B3 / B4 trajectory analysis** on `output/B1/arm3_llm/run_log.jsonl` (inputs[].path frequency → minimal sufficient set; same-decision-point multi-judgment → self-correction pairs). These inform SKILL.md description tuning.
+5. ~~Apply the LLM-tool schema discipline (SUPPRESS `--project-dir` / `--input`) to step1/2/4/5/6/7~~ — **superseded**：按"除 KG 资源类外全部暴露给 LLM"的原则，`--project-dir` / `--input` 及其它所有非 KG 资源类参数有意保留在工具 schema 中供 LLM 传递。SUPPRESS 化目前仅适用于 step3c_kg 的 Neo4j 连接 / KG 服务调优参数，不扩展到其它 step。
+6. **SKILL.md / references iteration** driven by B1 + S1 + N findings; tighten `description` to match real user phrasings seen in arm3 judgments.
+7. **`.skill` packaging (P7 / M7)** — final delivery artifact for the cell-annotation skill.
+8. **Deferred-work clean-up** (only when the cross-organ / cross-dataset scenario actually arrives): organ substring boundary matching, `_organ_status.title()` normalization, `validate_log` cluster-coverage on refine_effect / candidate_disambiguate, organ_status category rename. None of these block the root dataset.
+9. **图谱改为 API、skill 不再直连 Neo4j**（未排期，与 BLASTP 无关）— 脚本现用 Bolt + 内嵌 Cypher；将来凭据与图 schema 留在服务端。清单与建议顺序见 `_bmad-output/implementation-artifacts/future-kg-api.md`。
 
 Estimated wall-clock from "P1–P6 done" to "P7 shipped": ~1–2 weeks, mostly items 1, 5, 6.
 

@@ -4,6 +4,8 @@
 **下一步要做的实验/计分改动不写这里。** B1_r3 之后的主动规划见
 `_bmad-output/implementation-artifacts/b1-r3-followup.md`
 （pseudobulk 触发条件重设计；strict 与 confidence 拆开）。
+**标签对照不再按数据集复制 pair 表** 见
+`_bmad-output/implementation-artifacts/label-map-ontology-eval.md`（GT 钉图谱 + 评估时用层次算 relation；规划未开工）。
 **图谱改为 API、skill 不再直连 Neo4j** 见
 `_bmad-output/implementation-artifacts/future-kg-api.md`（未排期，与 BLASTP 无关）。
 
