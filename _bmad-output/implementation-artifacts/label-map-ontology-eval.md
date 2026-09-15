@@ -1,11 +1,11 @@
 # 下一步：标签对照改为「GT 钉图谱 + 评估时算关系」
 
 > 日期: 2026-09-11
-> 状态: **规划，未开工**
+> 状态: **已落地**（评估代码 + 钉表/别名 + 已有 `final_annotations.json` 按层次口径重评，`kg_hierarchy: used`）
 > 触发: PRJNA935359（高粱）B1 重跑后 ③ strict/macro-F1 低于 ①②；对照表按数据集各维护一份，且 `hits[0]` 不按该细胞 GT 选行
 > 前序: `design/experiment_implementation.md` §1.2 D-2；`experiments/evaluate_cell_level.py`；`experiments/label_map.json` / `label_map_PRJNA935359.json`
 
-`deferred-work.md` 只收非阻塞遗留。本项会改评估可比性和 headline 数字，实现/重评以本文为准。
+`deferred-work.md` 只收非阻塞遗留。本项会改评估可比性和 headline 数字，实现/重评以本文为准。**现行评分规范已收进 `design/eval_design.md`；本文保留迁移过程与旧 pair 对照数字。**
 
 ## 背景
 
@@ -57,6 +57,32 @@ Pipeline 输出的是 KG `Ontology.Name`（如 `trichoblast`、`root stele`）�
 5. **回归**
    - 用 `output/B1/` 与 `output/B1_PRJNA935359/` 的 `final_annotations.json` **重评、不重跑 pipeline**。headline 数字会变；报告须并列旧 pair 口径与新层次口径。
    - 单测：同一预测词、不同细胞 GT → 不同 relation；未知预测词 → unmatched；`true: null` 类（procambium）保持 unrelated。
+
+## 落地结果（2026-09-11）
+
+代码与资产：
+
+- `experiments/ontology_eval.py`：按该细胞 GT 算 relation；禁止 `hits[0]`。
+- `experiments/gt_ontology.json` / `gt_ontology_PRJNA935359.json` / `kg_term_aliases.json`
+- `evaluate_cell_level.py` / `bootstrap_test.py` / `run_b1.py` 改为 `--gt-ontology` + `--aliases`
+- `scripts/build_label_map.py` 只起稿钉表（`verified: false`），不再写 pair
+- 旧 `label_map*.json` 留档，传入 `--label-map` 会退出
+- 单测：`harness/tests/test_ontology_eval.py` / `test_evaluate_scoring.py` / `test_build_gt_ontology.py`
+
+重评产物（不覆盖旧 pair 报告）：`output/B1/eval_ontology/`、`output/B1_PRJNA935359/eval_ontology/`。图谱名与钉表对齐：柱根冠钉到 `columella root cap cell`（KG 无 `columella root cap`）。`Stem cell niche` / `G2/M-phase cell` 在图上无对应节点，只靠别名 exact/synonym。
+
+`kg_hierarchy: used`。旧 pair 口径 vs 新层次口径：
+
+| 数据集 | arm | pair strict | 新 strict | pair relaxed | 新 relaxed | pair macro-F1 | 新 macro-F1 |
+|---|---|---|---|---|---|---|---|
+| SRP171040 | ① | 0.9163 | 0.5755 | 0.9163 | 0.5950 | 0.4056 | 0.4878 |
+| SRP171040 | ② | 0.9163 | 0.5755 | 0.9163 | 0.5950 | 0.4056 | 0.4878 |
+| SRP171040 | ③ | 0.9655 | 0.6898 | 0.9655 | 0.7105 | 0.4804 | 0.5749 |
+| PRJNA935359 | ① | 0.9399 | 0.3603 | 0.9578 | 0.3862 | 0.1754 | 0.2064 |
+| PRJNA935359 | ② | 0.9399 | 0.3603 | 0.9578 | 0.3862 | 0.1754 | 0.2064 |
+| PRJNA935359 | ③ | 0.9025 | 0.0784 | 0.9222 | 0.1862 | 0.0356 | 0.0764 |
+
+高粱 1781 个 unmatched 全部是 GT=`Unknown`（不钉节点），不是别名漏了。① 对表皮细词（`root hair cell`）记 subtype；③ synonym 少、subtype 多（2278 vs ① 的 200），strict 被压低、relaxed 从 0.078 升到 0.186。pair 表把错细胞的粗词也写成 synonym，strict 虚高。
 
 ## 成功标准
 

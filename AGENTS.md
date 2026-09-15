@@ -5,7 +5,7 @@
   - **P1 Loop layer** (`harness/`): done — 6 files + 89 pytest, all passing (`python -m pytest`, 89 passed).
   - **P2 Pipeline scripts** (`skills/cell-annotation/scripts/`): code done — 7 `stepN_*.py` + `common.py` (1019 lines) + `write_judgment.py` (252) + `trajectory_schema.py` (22), 4,265 lines total, every script supports `--dump-schema`. **47 atomic ops all implemented and exercised end-to-end** on the 33,956-cell Arabidopsis root h5ad (run artifacts in `output/p2_smoke/`, `output/p2/`, `output/p2v2/`, `output/p2_dbg/`).
   - **P3 Skill packaging** (`skills/cell-annotation/`): done — `SKILL.md` (243 lines, <500) + `references/` (sop / metrics / traps / kg-schema, all with TOC) + `assets/` (2 files). Skill has been load-tested in the r2 P5 closure (see `output/p5_evals_r2/`).
-  - **P4 Data substrate**: done — `experiments/gt_cells.csv` (33,956 rows; barcode → true type) + `experiments/label_map.json` (12 ground-truth types mapped to KG ontology terms, `_meta.verified`).
+  - **P4 Data substrate**: done — `experiments/gt_cells.csv` (33,956 rows; barcode → true type) + `experiments/gt_ontology.json` (12 GT strings pinned to Ontology nodes) + `experiments/kg_term_aliases.json` (global wording variants). Old `label_map.json` pair tables are archive only.
   - **P5 Skill eval loop** (round 1 + r2 closure): done — `skills/cell-annotation/evals/evals.json` (5 cases E-1..E-5) + `output/p5_evals*/run_log.jsonl`. r2 closure report (`_bmad-output/implementation-artifacts/p5-evals-round1-closure.md`): E-1 strict=0.9236 / relaxed=0.9434, E-5 PASS (117 judgments all compliant). r1→r2 fixed a skill knowledge gap (KG species format vs LLM-passed `--species`); see `references/kg-schema.md` "物种过滤与命名" section.
   - **P6 Experiments** (`experiments/`): code done (1,527 lines) **AND executed end-to-end**. B1 three-arm outputs exist at `output/B1/{arm1_default,arm2_rule,arm3_llm}/run_log.jsonl` and `output/B1/eval/{evaluation_report,bootstrap_report,traps_report}.json`. Headline numbers (from `_bmad-output/implementation-artifacts/b1-three-arm-eval.md`):
     | arm | strict | relaxed | macro-F1 | low-conf cells |
@@ -68,10 +68,11 @@ Single-cell RNA-seq cell-type annotation harness driven by an LLM agent. Three l
   - `judges/default_judge.py` (153) — ① Fixed-default judge (no-op, all accept).
   - `judges/rule_judge.py` (314) — ② Rule-based judge; oracle table → if-then. Currently over-conservative — `count_diff >= 3` threshold lets in too many tied-pair cases; needs tightening.
   - `judges/_common.py` (160) — shared helpers for judges.
-  - `evaluate_cell_level.py` (374) — cell-level accuracy / macro-F1 / confusion / purity diagnostics from `final_annotations.json` + `gt_cells.csv` + `label_map.json`.
-  - `bootstrap_test.py` (220) — cluster-aware bootstrap (1000 resamples, 95% CI on macro-F1 delta).
+  - `evaluate_cell_level.py` — cell-level accuracy / macro-F1 / purity from `final_annotations.json` + `gt_cells.csv` + `gt_ontology.json` + `kg_term_aliases.json` (relation from KG hierarchy per this cell's GT; no `hits[0]`).
+  - `ontology_eval.py` — GT-pin + alias + ancestor scoring; offline fallback is alias exact/synonym only (`kg_hierarchy: skipped`).
+  - `bootstrap_test.py` — cluster-aware bootstrap (1000 resamples, 95% CI); uses per_cell `relation` / `mapped_true`.
   - `analyze_traps.py` (179) — trap oracle comparison (per-trap ③ vs ② correctness).
-  - Pre-generated: `gt_cells.csv` (cell barcode → true type, 33,956 rows), `label_map.json` (12 ground-truth types mapped to KG ontology terms, locked version with `_meta.verified`).
+  - Pre-generated: `gt_cells.csv` (cell barcode → true type, 33,956 rows), `gt_ontology.json` (12 GT → Ontology pins), `kg_term_aliases.json`.
   - Outputs: `output/B1/{arm1_default,arm2_rule,arm3_llm}/run_log.jsonl` + `output/B1/eval/{evaluation_report,bootstrap_report,traps_report}.json` (also `evaluation_report.per_cell.json` for per-cell drill-down).
 - Tests live in `harness/tests/` and run via `python -m pytest` (89 passing).
 
@@ -95,17 +96,18 @@ Root `.gitignore` ignores `*.json`, `*.csv`, `*.h5ad`, `*.png`, `*.ipynb`, `*.xm
 - `design/operations_metrics_catalog.md` (247 metrics per op).
 - `design/trajectory_design.md` (LOG — run_log.jsonl format + record types + judgment schema).
 - `design/rag_design.md` (MEM — loop-level notebook, generic, not skill-bound).
+- `design/eval_design.md` (SCORE — cell-level annotation scoring: GT-pin + ontology relation, strict/relaxed).
 - `design/implementation_plan.md` (project plan, P1..P7 milestones; current status: P1–P6 done, P7 pending).
 - `design/experiment_design.md` + `design/experiment_implementation.md` (12 experiments, pre-registered decision rules, cell-level eval + cluster-aware bootstrap).
 - `knowledge/` (`cell-annotation-sop.md`, `cross-species-annotation-handbook.md`, `kg_schema.md`, `metrics_interpretation.md`) = source material for the skill's system prompt + references.
-- `_bmad-output/implementation-artifacts/` — frozen-after-approval specs and closure reports; the canonical record of design intent vs shipped state. P5 r2 closure (`p5-evals-round1-closure.md`) and B1 eval (`b1-three-arm-eval.md`) 是已交付记录；下一步计分规划见 `label-map-ontology-eval.md`（GT 钉图谱）；`deferred-work.md` lists the open non-blockers.
+- `_bmad-output/implementation-artifacts/` — frozen-after-approval specs and closure reports; the canonical record of design intent vs shipped state. P5 r2 closure (`p5-evals-round1-closure.md`) and B1 eval (`b1-three-arm-eval.md`) 是已交付记录；评分规范见 `design/eval_design.md`，钉表迁移记录见 `label-map-ontology-eval.md`；`deferred-work.md` lists the open non-blockers.
 - `docs/PROJECT_OVERVIEW.md` — résumé-oriented project write-up (architecture, status, keyword matrix for different JD directions).
 
 ## Next steps
 
 The bottleneck is **not** coding or first-time end-to-end run — those are done. Remaining work, ordered by blocking dependency + impact:
 
-1. **标签对照改为 GT 钉图谱 + 评估时算关系**（规划，未开工）。停掉 `label_map.json` / `label_map_PRJNA935359.json` 这种按数据集复制的 predicted×true 表；每套数据只钉 GT→`Ontology` 节点，predicted 来自注释跑次，relation 用图谱层次当场算。改 `evaluate_cell_level.py` 的 `hits[0]`。全文 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
+1. **用已有 B1 `final_annotations.json` 按新口径重评**（不重跑 pipeline）。`evaluate_cell_level.py` 已改为 GT 钉表 + 别名 + 图谱层次；报告须并列旧 pair 口径与新层次口径。全文 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
 2. **Tighten `rule_judge` thresholds** (B1 §3.1 oracle table calibration). Current ② is over-conservative: 31/39 clusters downgraded; this likely inflates ②'s strict_accuracy drop (0.14 vs ①'s 0.92). Targets: re-tune `DIFF_THRESH_FOR_DECISIVE` / `GAP_RATIO_TIED` / "pct1≈pct2 → label_downgraded" rule. Re-run B1 arm2 + arm1; expected: arm2 strict rises meaningfully (target ≥ 0.6), macroF1 delta arm2 vs arm1 stays inconclusive (R3 still holds). Use `experiments/evaluate_cell_level.py` + `bootstrap_test.py` for verification.
 3. **Run the B1 §6 supplementary experiments** (S1 synthetic traps; A/E/N from `design/experiment_design.md`) on the existing arm1/arm2/arm3 outputs. These don't require a new pipeline run, only the existing `run_log.jsonl` + `final_annotations.json`. See `design/experiment_implementation.md` §6.
 4. **B3 / B4 trajectory analysis** on `output/B1/arm3_llm/run_log.jsonl` (inputs[].path frequency → minimal sufficient set; same-decision-point multi-judgment → self-correction pairs). These inform SKILL.md description tuning.
