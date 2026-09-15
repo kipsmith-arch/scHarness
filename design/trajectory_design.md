@@ -52,18 +52,18 @@ pipeline 有 47 个原子操作,产出 247 个统计指标;LLM 在 13 个决策�
   "ts": "2026-07-23T14:00:00Z",
   "seq": 1,
   "type": "session_start",
-  "session_id": "sess-20260723-SRP171040",
+  "session_id": "sess-20260723-DS001",
   "dataset": {
-    "id": "SRP171040",
-    "h5ad_path": "dataset/h5ad/SRP171040.h5ad",
-    "n_cells_raw": 33956,
-    "n_genes_raw": 53678,
-    "organism": "Arabidopsis thaliana",
+    "id": "DS001",
+    "h5ad_path": "dataset/h5ad/DS001.h5ad",
+    "n_cells_raw": 10000,
+    "n_genes_raw": 20000,
+    "organism": "example_species",
     "organ": "root",
-    "tissue": "root tip",
-    "genotypes": ["Col-0", "rhd6", "gl2"],
+    "tissue": "example_tissue",
+    "genotypes": ["wt", "mutant_a"],
     "batch_key": "sample",
-    "n_batches": 5
+    "n_batches": 3
   }
 }
 ```
@@ -214,11 +214,11 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 ### 4.2 时间线示例
 
 ```
-seq=1   session_start                         dataset=SRP171040
-seq=2   exec  step1_prepare.compute_qc#1       n_cells=33956, distributions={mt: p99=12.3}
+seq=1   session_start                         dataset=DS001
+seq=2   exec  step1_prepare.compute_qc#1       n_cells=10000, distributions={mt: p99=12.3}
 seq=3   exec  step1_prepare.qc_distribution#1  bimodality=0.3
 seq=4   judgment qc_threshold                  decision=threshold_set, max_mt_pct=15
-seq=5   exec  step1_prepare.filter_cells#1    n_before=33956, n_after=33952
+seq=5   exec  step1_prepare.filter_cells#1    n_before=10000, n_after=9960
 seq=6   exec  step1_prepare.pca#1              variance_explained=[0.08,...]
 seq=7   exec  step1_prepare.leiden_cluster#1   silhouette=0.15, n_singleton=3            ← 太低
 seq=8   judgment resolution_select             decision=resolution_chosen, res=0.8
@@ -624,11 +624,11 @@ python scripts/validate_log.py --project-dir ./output
 ## 12. 一次完整 session 的日志样例
 
 ```jsonl
-{"ts":"2026-07-23T14:00:00Z","seq":1,"type":"session_start","session_id":"sess-001","dataset":{"id":"SRP171040","n_cells_raw":33956,"organism":"Arabidopsis thaliana","organ":"root","batch_key":"sample","n_batches":5}}
-{"ts":"2026-07-23T14:00:01Z","seq":2,"type":"exec","run_id":"step1_prepare.compute_qc#1","parameters":{"organ":"root"},"metrics":{"n_cells":33956,"n_genes":53678}}
+{"ts":"2026-07-23T14:00:00Z","seq":1,"type":"session_start","session_id":"sess-001","dataset":{"id":"DS001","n_cells_raw":10000,"organism":"example_species","organ":"root","batch_key":"sample","n_batches":3}}
+{"ts":"2026-07-23T14:00:01Z","seq":2,"type":"exec","run_id":"step1_prepare.compute_qc#1","parameters":{"organ":"root"},"metrics":{"n_cells":10000,"n_genes":20000}}
 {"ts":"2026-07-23T14:00:01Z","seq":3,"type":"exec","run_id":"step1_prepare.qc_distribution#1","parameters":{},"metrics":{"pct_counts_mt":{"mean":2.1,"p99":12.3,"bimodality":0.3},"n_genes_by_counts":{"median":3200,"bimodality":0.8}}}
 {"ts":"2026-07-23T14:02:00Z","seq":4,"type":"judgment","decision_point":"qc_threshold","scope":{"type":"session"},"run_ref":"step1_prepare.qc_distribution#1","inputs":[{"path":"step1_prepare.qc_distribution.pct_counts_mt.p99","value":12.3},{"path":"step1_prepare.qc_distribution.n_genes_by_counts.bimodality","value":0.8}],"output":{"decision":"threshold_set","confidence":"high","action":"set_max_mt_pct_15"},"reasoning":"p99=12.3, set max_mt_pct=15 to trim tail. n_genes bimodality=0.8 suggests mixed population, set min_genes=300 at valley."}
-{"ts":"2026-07-23T14:03:00Z","seq":5,"type":"exec","run_id":"step1_prepare.filter_cells#1","parameters":{"min_genes":300,"max_mt_pct":15},"metrics":{"n_before":33956,"n_after":33940,"funnel":{"min_genes":{"n_lost":10},"max_mt_pct":{"n_lost":6}}}}
+{"ts":"2026-07-23T14:03:00Z","seq":5,"type":"exec","run_id":"step1_prepare.filter_cells#1","parameters":{"min_genes":300,"max_mt_pct":15},"metrics":{"n_before":10000,"n_after":9960,"funnel":{"min_genes":{"n_lost":10},"max_mt_pct":{"n_lost":6}}}}
 {"ts":"2026-07-23T14:03:01Z","seq":6,"type":"exec","run_id":"step1_prepare.pca#1","parameters":{"n_comps":50},"metrics":{"variance_explained":[0.08,0.05,0.03],"n_pcs_for_80pct":25}}
 {"ts":"2026-07-23T14:03:02Z","seq":7,"type":"exec","run_id":"step1_prepare.leiden_cluster#1","parameters":{"resolution_list":"0.4,0.6,0.8,1.0,1.2"},"metrics":{"resolution_cluster_counts":{"0.4":18,"0.6":24,"0.8":29},"silhouette_overall":{"mean":0.35},"n_singleton":0}}
 {"ts":"2026-07-23T14:05:00Z","seq":8,"type":"judgment","decision_point":"resolution_select","scope":{"type":"session"},"run_ref":"step1_prepare.leiden_cluster#1","inputs":[{"path":"step1_prepare.leiden_cluster.resolution_cluster_counts","value":{"0.4":18,"0.6":24,"0.8":29}}],"output":{"decision":"resolution_chosen","confidence":"medium","action":"target_resolution_0.8"},"reasoning":"cluster count plateaus around 24-29 between res 0.6-0.8. Choosing 0.8 for 29 clusters."}

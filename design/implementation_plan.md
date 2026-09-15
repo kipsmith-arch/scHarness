@@ -11,9 +11,9 @@
 | 资产 | 状态 | 说明 |
 |---|---|---|
 | 设计文档 | ✅ 完备 | `design/` 8 份 + `knowledge/` 4 份:47 原子操作 / 247 指标 / 13 决策点 / 12 实验 |
-| 数据入库 | ✅ 完成 | `dataset/h5ad/SRP171040.h5ad`(33,956 细胞)、`dataset/index/SRP171040.h5ad.csv`(12 真值类型) |
-| 知识图谱 | ✅ 在线 | `NEO4J_*` 可连:195,322 节点 / 466,606 条 `marker_of` 边 |
-| 基因 ID 预处理 | ✅ 就绪（可选资源） | `name_map4Arabidopsis_thaliana_symbol.json`(10,963 条 TAIR→symbol)—— **不再被 skill 调用**,用户按需在 pipeline 上游完成 ID 转换 |
+| 数据入库 | ✅ 完成 | `dataset/h5ad/<dataset_id>.h5ad`、`dataset/index/<dataset_id>.h5ad.csv`(真值类型列) |
+| 知识图谱 | ✅ 在线 | `NEO4J_*` 可连 |
+| 基因 ID 预处理 | ✅ 就绪（可选资源） | 物种基因 ID 对照表—— **不再被 skill 调用**,用户按需在 pipeline 上游完成 ID 转换 |
 | **skill 包** | ⚠️ 冒烟级 | `skills/echo`(标准格式:SKILL.md frontmatter + scripts/ + --dump-schema)已建并跑通;cell-annotation 包未建 |
 | **loop 代码** | ✅ 完成 | `harness/` 6 文件(loop / dispatcher / skill_loader / session / conversation / notebook)已实现,P1 验收通过 |
 | **pipeline 代码** | ❌ 不存在 | `common.py` + 7 个 `stepN_*.py` 未写 |
@@ -183,8 +183,8 @@ scripts/*.py         → 每个脚本执行 `--dump-schema` 输出 {subcommand, 
 
 | # | 任务 | 产出 | 验证 |
 |---|---|---|---|
-| D-1 | `dataset/index/SRP171040.h5ad.csv` → `experiments/gt_cells.csv`(cell_barcode, true_type) | gt_cells.csv | 条码数 == 33,956 且与 h5ad obs_names 100% 对齐 |
-| D-2 | `scripts/build_label_map.py`:预测术语 × 12 真值标签的 exact/synonym/subtype/supertype/unrelated,自动查 KG ancestors 生成初稿 → **人工定案锁定**(_meta.verified) | experiments/label_map.json(核心资产) | 12 类型全覆盖 |
+| D-1 | `dataset/index/<dataset_id>.h5ad.csv` → `experiments/gt_cells.csv`(cell_barcode, true_type) | gt_cells.csv | 条码数与 h5ad obs_names 100% 对齐 |
+| D-2 | `scripts/build_label_map.py`:预测术语 × 真值标签的 exact/synonym/subtype/supertype/unrelated,自动查 KG ancestors 生成初稿 → **人工定案锁定**(_meta.verified) | experiments/label_map.json(核心资产) | 该数据全部真值类型有钉点 |
 | D-3 | `scripts/build_marker_dict.py`:`{gene:[cell_type]}` 静态字典(C2/A3 无 KG 臂用) | experiments/marker_dict.json | 可用性检查 |
 | D-5 | (S1 前置,可延后)`build_scenarios.py`:校验纯簇(占比 ≥90%)+ leiden_override.csv | S1/scenarios.json | 8 用例构造 |
 
@@ -316,7 +316,7 @@ P1 Loop+加载器(4~6d) → P2 scripts(10~15d) → P3 SKILL.md+references(3~5d)
 | M1 Loop ✅ | echo skill(标准格式)跑通;加载器从标准包派生三接口;subprocess/function/builtin 分发正确;笔记本读写 + BM25 兜底可用 |
 | M2 scripts | 47 op 全跑通;4 次 h5ad 加载;`--dump-schema` 全脚本可用;run_log 全 exec 记录;step7 0 加载;sidecars 写出 |
 | M3 Skill 包 | **标准 anatomy 合规**(SKILL.md frontmatter + scripts/references/assets/evals);SKILL.md <500 行;references 有 TOC 且被引用;三接口派生成功 |
-| M4 数据底座 | gt_cells 100% 对齐;label_map 12 类型全映射且人工定案 |
+| M4 数据底座 | gt_cells 100% 对齐;钉表覆盖该数据全部真值类型且人工定案 |
 | M5 Skill 测试 | E-1~E-5 全部断言通过;decision 枚举合法;validate_log 通过 |
 | M6 实验 | B1 三臂 + bootstrap CI + 陷阱分析;S1 battery;A1/E1/B3/B4/C2/N1/N2 产物齐全,逐条对照判定表 |
 | M7 交付 | SKILL v2 + references v2;description 优化完成;`.skill` 打包件;文档与代码一致 |

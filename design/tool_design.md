@@ -20,7 +20,7 @@
 
 | 层级 | 内容 | 大小(本数据集) | 可否分离写出 |
 |---|---|---|---|
-| **FULL** | 完整 AnnData (X + raw.X + obs + var + obsm + obsp) | ~2 GB | 已有 processed.h5ad |
+| **FULL** | 完整 AnnData (X + raw.X + obs + var + obsm + obsp) | GB 级 | 已有 processed.h5ad |
 | **RAW** | raw.X (归一化前的原始 counts,53K 基因) | ~1.5 GB | 嵌在 h5ad 内,无法分离 |
 | **X** | scaled HVG 矩阵 (2K 基因) | ~50 MB | 嵌在 h5ad 内 |
 | **OBS** | 细胞元数据 (leiden, batch, QC 变量等) | ~5 MB | **可分离写出 CSV** |
@@ -100,7 +100,7 @@
 
 ```
 step1_prepare/
-  processed.h5ad          ← 完整 AnnData (~2 GB,只在需要表达矩阵时加载)
+  processed.h5ad          ← 完整 AnnData (GB 级,只在需要表达矩阵时加载)
   qc_metrics.json         ← 全部 Step 1 指标 (enriched, ~50 KB)
   obs_snapshot.csv        ← obs DataFrame (~5 MB) — 新增
   var_snapshot.csv        ← var DataFrame (~500 KB) — 新增
@@ -131,9 +131,9 @@ gene_id,highly_variable,mt,chloroplast,means,dispersions,dispersions_norm,...
 
 ```json
 {
-  "n_cells_before": 33956,
-  "n_cells_after": 33950,
-  "frac_cells_lost": 0.0002,
+  "n_cells_before": 10000,
+  "n_cells_after": 9980,
+  "frac_cells_lost": 0.002,
 
   "qc_variables": {
     "n_genes_by_counts": { "mean":..., "std":..., "skewness":..., "kurtosis":..., "bimodality":..., "percentiles":{...}, "histogram":{...} },
@@ -143,21 +143,21 @@ gene_id,highly_variable,mt,chloroplast,means,dispersions,dispersions_norm,...
   },
 
   "cell_filtering": {
-    "n_before": 33956,
-    "n_after": 33950,
-    "frac_lost": 0.0002,
+    "n_before": 10000,
+    "n_after": 9980,
+    "frac_lost": 0.002,
     "funnel": {
-      "min_genes": { "n_passed": 33952, "n_lost": 4 },
-      "max_mt_pct": { "n_passed": 33951, "n_lost": 1 },
-      "max_cp_pct": { "n_passed": 33950, "n_lost": 1 },
+      "min_genes": { "n_passed": 9990, "n_lost": 8 },
+      "max_mt_pct": { "n_passed": 9985, "n_lost": 5 },
+      "max_cp_pct": { "n_passed": 9980, "n_lost": 5 },
       "n_lost_multiple_criteria": 0
     },
     "distribution_shift": { "n_genes_by_counts": {"delta_median":..., "delta_iqr":..., "ks_stat":...}, ... }
   },
 
   "gene_filtering": {
-    "n_before": 53678,
-    "n_after": 51678,
+    "n_before": 20000,
+    "n_after": 19500,
     "frac_lost": 0.037,
     "n_mt_removed": 7,
     "n_cp_removed": 99
@@ -291,7 +291,7 @@ step7_diagnose.py run      [0× h5ad]       → step7_diagnose.hit_rate~46 (read
 ```
                 ┌─────────────────────────────────────────────────────┐
                 │              raw h5ad (磁盘)                         │
-                │              ~2 GB                                  │
+                │              GB 级                                  │
                 └──────────┬──────────────────────────┬──────────────┘
                            │                          │
                     step1_prepare metrics               step1_prepare run
@@ -955,7 +955,7 @@ def candidate_autocorr(cluster_adata, candidate1_markers, candidate2_markers):
 ```
 <project-dir>/
 ├── step1_prepare/
-│   ├── processed.h5ad           (~2 GB, 只在需要表达矩阵时加载)
+│   ├── processed.h5ad           (GB 级, 只在需要表达矩阵时加载)
 │   ├── qc_metrics.json          (~50 KB, enriched: 全部 Step 1 指标)
 │   ├── obs_snapshot.csv         (~5 MB, 新增: 细胞元数据)
 │   └── var_snapshot.csv         (~500 KB, 新增: 基因元数据)
@@ -996,7 +996,7 @@ pipeline 的外部依赖(知识图谱、BLAST subject 库)通过环境变量配�
 | `NEO4J_USER` | Neo4j 用户名 | `neo4j` | 同上 |
 | `NEO4J_PASSWORD` | Neo4j 密码 | (无默认,必须设置) | 同上 |
 | `CELL_ANNOTATION_BLASTDB_DIR` | subject BLAST 库缓存根 | `~/.cache/sc-harness/cell-annotation/blastdb` | step3b(provider=blastp) |
-| `CELL_ANNOTATION_BLASTDB_URL` | subject zip | xener 公开下载 `blastdb.zip` | ensure_blastdb |
+| `CELL_ANNOTATION_BLASTDB_URL` | subject zip | 公开下载 `blastdb.zip`(URL 走配置,不写进设计文档) | ensure_blastdb |
 | `CELL_ANNOTATION_BLASTDB_SHA256` | zip 校验 | 实现时 pin | ensure_blastdb |
 | `CELL_ANNOTATION_QUERY_FASTA` | 用户蛋白 FASTA 默认路径 | 无 | step3b `--query-fasta` 回落 |
 
@@ -1005,7 +1005,7 @@ pipeline 的外部依赖(知识图谱、BLAST subject 库)通过环境变量配�
 在项目根目录的 `.env` 文件中设置(已被 .gitignore 排除):
 
 ```env
-NEO4J_URI=neo4j://10.224.28.66:7688
+NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password_here
 ```
@@ -1013,7 +1013,7 @@ NEO4J_PASSWORD=your_password_here
 或在运行前 export:
 
 ```bash
-export NEO4J_URI=neo4j://10.224.28.66:7688
+export NEO4J_URI=bolt://localhost:7687
 export NEO4J_USER=neo4j
 export NEO4J_PASSWORD=your_password_here
 ```
@@ -1022,7 +1022,7 @@ export NEO4J_PASSWORD=your_password_here
 
 ```bash
 python scripts/step3c_kg.py query --project-dir ./output --organ root \
-    --uri neo4j://10.224.28.66:7688 --user neo4j --password your_password_here
+    --uri bolt://localhost:7687 --user neo4j --password your_password_here
 ```
 
 ### 10.3 设计原则

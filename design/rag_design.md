@@ -112,7 +112,7 @@ retrieve_notes 返回:
     {
       "note_id": "note-0001",
       "content": "silhouette=0.15 时先别急着调分辨率,查是否发育连续谱;重跑 res 0.8→0.6 后 0.32,accept",
-      "tags": ["clustering_quality", "SRP171040"],
+      "tags": ["clustering_quality", "DS001"],
       "ts": "2026-08-04T14:00:00Z",
       "session_id": "sess-...",
       "score": 0.87
@@ -130,7 +130,7 @@ retrieve_notes 返回:
 ### 3.1 笔记格式(notes.jsonl,NDJSON)
 
 ```json
-{"note_id": "note-0001", "ts": "2026-08-04T14:00:00Z", "session_id": "sess-...", "project_id": "SRP171040", "tags": ["clustering_quality"], "content": "..."}
+{"note_id": "note-0001", "ts": "2026-08-04T14:00:00Z", "session_id": "sess-...", "project_id": "DS001", "tags": ["clustering_quality"], "content": "..."}
 ```
 
 一条笔记 = 一个检索单元。粒度由 LLM 控制:一条可复用的判断/经验写一条,过长时 LLM 自会拆开(工具描述里引导)。

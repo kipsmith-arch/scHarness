@@ -22,7 +22,7 @@
 |---|---|---|
 | 算力 | 仅商业 API(GPT/Claude 等),无 GPU | 砍掉微调实验(D1),轨迹价值改用模式挖掘体现 |
 | 模型 | 可调用多 API 模型 | C4 多模型对比可行,反而支撑"model-agnostic"论点 |
-| 数据 | 当前仅 SRP171040(Arabidopsis root,2GB,12 真值类型) | B1 走细胞级评估 + cluster-aware bootstrap(计分见 `eval_design.md`);跨数据集复现需补充数据集(见 §8) |
+| 数据 | 当前仅一套已入库数据 | B1 走细胞级评估 + cluster-aware bootstrap(计分见 `eval_design.md`);跨数据集复现需补充数据集(见 §8) |
 | 论述侧重 | 方法论:LLM-as-judge 有效性 | B 组为核心,A 组为基线,C/D/E 为支撑 |
 
 ---
@@ -231,7 +231,7 @@ def rule_judge(dp, exec_record, history):
 ③ 显著优于 ② > ①。若 ③≈②,说明 LLM 判断未超越简单阈值,需反思 skill 设计;若 ③≈①,说明判断本身无价值。
 
 #### 输出
-- `experiments/B1/confusion_matrix_{arm}.csv`(12×12,细胞级)
+- `experiments/B1/confusion_matrix_{arm}.csv`(类型×类型,细胞级)
 - `experiments/B1/eval/macro_f1.json`(macro-F1 点估计 + bootstrap CI + per-type Wilcoxon)
 - `experiments/B1/eval/cell_labels_arm{1,2,3}.csv`(逐细胞标签)
 
@@ -373,14 +373,14 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 
 ### 5.1 A1 — 端到端准确率
 
-对比 `step6_validate/final_annotations.json` 与 `dataset/index/SRP171040.h5ad.csv` 的 `Celltype` 列,经 obs_snapshot.csv 展开为逐细胞标签对齐(口径见 `eval_design.md`)。产出 strict / relaxed + 按类型失败模式。识别哪些类型易注释、哪些易错。
+对比 `step6_validate/final_annotations.json` 与该数据集真值表的细胞类型列,经 obs_snapshot.csv 展开为逐细胞标签对齐(口径见 `eval_design.md`)。产出 strict / relaxed + 按类型失败模式。识别哪些类型易注释、哪些易错。
 
 ### 5.2 A3 — 与 baseline 方法对比
 
 | baseline | 来源 | 说明 |
 |---|---|---|
 | Marker 硬匹配 | step3 无 KG 替代 | 用 markers.json 直接 match 已知类型 marker,不查图谱 |
-| CellTypist | 若有植物参考集 | 通用自动注释工具(需确认 Arabidopsis 可用性) |
+| CellTypist | 若有植物参考集 | 通用自动注释工具(需确认目标类群可用性) |
 | SingleR | 若有植物参考集 | 同上,基于参考集 |
 
 对比最终细胞级准确率,定位本 harness 在文献中的位置。若无可用的植物参考集,只做 Marker 硬匹配对比。
@@ -449,11 +449,11 @@ N2: 笔记本调用频次/时机 → 使用分析
 
 ## 8. 单数据集缓解策略
 
-当前仅 SRP171040。B1 细胞级评估(12 类型 + cluster-aware bootstrap)已可独立成立,但跨数据集复现会让结论外部效度更强。
+当前仅一套数据。B1 细胞级评估(该数据的真值类型 + cluster-aware bootstrap)已可独立成立,但跨数据集复现会让结论外部效度更强。
 
 ### 策略
 1. **细胞级评估(已有数据集可立即做)**:按 `eval_design.md` 计分 + `experiment_implementation.md` 的 cluster-aware bootstrap,无需额外数据。细胞级评估避免簇 ID 对齐问题。
-2. **跨数据集复现(需补充)**:找 1-2 个 Arabidopsis root scRNA-seq 数据集(同物种同组织,控制变量),复跑 B1 三臂。候选(Denyer 2019、Wendrich 2020、Ryu 2019 等)的 GEO/SRA 访问号与 h5ad 可得性待联网核实。
+2. **跨数据集复现(需补充)**:找 1-2 个同物种同组织的 scRNA-seq 数据集(控制变量),复跑 B1 三臂。候选数据的公共库访问号与 h5ad 可得性待核实,本文不列出。
 3. **若无法补充数据集**:B1 结论限定为"在该数据集上",并在讨论部分说明单数据集局限;加强 B3/B4 的分析深度作为补偿。
 
 ---

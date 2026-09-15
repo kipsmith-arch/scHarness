@@ -7,7 +7,7 @@
 | 决策 | 选择 | 理由 |
 |---|---|---|
 | B1 评估口径 | **细胞级评估**(三臂完全独立) | 三臂的 qc/resolution/clustering 决策点必然产生不同聚类,簇 ID 配对在逻辑上不成立;细胞级评估避开该矛盾且更贴近端到端质量 |
-| 数据范围 | **单数据集优先**(SRP171040) | 先把方法学实验跑通(细胞级 N=33,956,12 类型);跨数据集复现留作可选阶段 X-8 |
+| 数据范围 | **单数据集优先** | 先把方法学实验跑通(细胞级评估);跨数据集复现留作可选阶段 X-8 |
 | 运行预算 | **精简起步** | B1 三臂各 1 session(①②确定性不耗 API)+ N 组 2+2;固定单一主力模型 |
 | 结论判定 | **预先注册判定规则** | §4 的规则在跑实验前定案,防事后解释/p-hacking |
 
@@ -19,39 +19,26 @@
 
 | 资产 | 路径 | 说明 |
 |---|---|---|
-| raw h5ad | `dataset/h5ad/SRP171040.h5ad` | 已按 `dataset/init.py` 约定处理:X sparse、raw 重建、var_names 为基因符号 |
-| ground truth | `dataset/index/SRP171040.h5ad.csv` | `Seurat_clusters` + `Celltype`,33,956 细胞,12 类型 |
+| raw h5ad | `dataset/h5ad/<dataset_id>.h5ad` | 已按 `dataset/init.py` 约定处理:X sparse、raw 重建、var_names 为基因符号 |
+| ground truth | `dataset/index/<dataset_id>.h5ad.csv` | 含聚类列 + 细胞类型列;条码与 h5ad `obs_names` 对齐 |
 | KG 环境 | `.env` 的 `NEO4J_*` | 已配置;用于 step3c_kg 与标签映射表(§1.2 D-2) |
 
-**12 个真值类型及分布**:Columella root cap 5,640 / Root cortex 4,747 / Root hair 4,743 / Non-hair 4,242 / Root endodermis 3,668 / Pericycle 3,232 / Lateral root cap 2,537 / Phloem 1,753 / Root stele 1,367 / Xylem 1,030 / Meristematic cell 570 / Stem cell niche 427。
+真值类型清单与细胞数分布**不写入设计文档**,以 `experiments/gt_cells.csv` 为准。
 
 ### 1.2 数据构造步骤
 
 **D-1 真值规范化** → 生成 `experiments/gt_cells.csv`(列:`cell_barcode`, `true_type`)
-- 从 `dataset/index/SRP171040.h5ad.csv` 读入,index 即细胞条码(格式 `SRX5074330@@_AAACCTGAGACAGACC-1`)。
-- 校验:条码数 == 33,956;h5ad `obs_names` 与 CSV index 完全一致(init.py 保证)。
+- 从 `dataset/index/<dataset_id>.h5ad.csv` 读入,index 即细胞条码。
+- 校验:条码数与 h5ad `obs_names` 完全一致(init.py 保证)。
 
 **D-2 标签映射表** → 生成 `experiments/label_map.json`(新构造,核心资产)
-- 问题:harness 输出 KG 本体术语(如 "root cap")、真值是人类命名("Columella root cap"),两者粒度/措辞不同,不定义映射就无法算准确率。
-- 机制:对每个预测术语与 12 个真值标签,用 KG 本体(`step3c_kg query_hierarchy` 的 ancestors)+ Plant Ontology 词汇手工核对,判定关系:
-  - `exact` / `synonym` — 同义(大小写/单复数/换词,如 "columella root cap" ~ "Columella root cap")
-  - `subtype` — 预测比真值更具体(预测 "columella root cap"、真值 "root cap")
-  - `supertype` — 预测比真值更宽(预测 "root cap"、真值 "columella root cap")
+- 问题:harness 输出 KG 本体术语、真值是论文命名,两者粒度/措辞不同,不定义对照就无法算准确率。
+- 机制:对每个预测术语与该数据的真值标签,用 KG 本体(`step3c_kg query_hierarchy` 的 ancestors)+ 本体词汇手工核对,判定关系:
+  - `exact` / `synonym` — 同义(大小写/单复数/换词)
+  - `subtype` — 预测比真值更具体
+  - `supertype` — 预测比真值更宽
   - `unrelated`
-- 预填实例(供 D-2 起稿,须经 KG 核对后定案):
-  - columella root cap ↔ Columella root cap = synonym
-  - lateral root cap ↔ Lateral root cap = synonym
-  - root cap → Columella/Lateral root cap = supertype
-  - cortex / root cortex ↔ Root cortex = synonym
-  - root hair (cell) ↔ Root hair = synonym
-  - non-hair root epidermal cell ↔ Non-hair = synonym
-  - endodermis ↔ Root endodermis = synonym
-  - pericycle ↔ Pericycle = synonym
-  - phloem ↔ Phloem = synonym
-  - xylem ↔ Xylem = synonym
-  - stele → Root stele = supertype
-  - meristematic cell ↔ Meristematic cell = synonym
-  - stem cell niche ↔ Stem cell niche = synonym
+- 示意(不是某套数据的完整清单):论文写法 `Root hair` 与 KG `root hair cell` 可为 synonym;预测更粗的父类、GT 为子类则为 supertype。
 - `build_label_map.py` 生成初稿(自动查询 KG ancestors),人工定案后锁定版本(写 `_meta.built_from` / `_meta.verified`)。
 
 > **D-2 现口径:** 规范见 `eval_design.md`。不再按数据集复制 `label_map_*.json` pair 表。每套数据只钉 GT 字符串 → `Ontology` 节点（`experiments/gt_ontology.json` / `gt_ontology_<id>.json`）；全球别名 `experiments/kg_term_aliases.json`；relation 由 `evaluate_cell_level.py` 按该细胞 GT 用图谱祖先边计算。起稿脚本 `scripts/build_label_map.py` 只出待确认钉表。旧 pair 表可留档，不作为计分输入。迁移记录 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
@@ -145,7 +132,7 @@ loop 的 LLM 后端通过配置切换(GPT-4o / Claude / Gemini),同一 skill/pip
 #### 结果解读
 - 主判据:③ vs ② 的 macro-F1 差 + cluster-aware bootstrap 95% CI。
 - 支撑:② vs ①(判断层有无价值)、③ vs ①(下界)。
-- 附报:12×12 confusion、每臂聚类纯度、unknown_rate、逐类型 recall(看哪些类型受益)。
+- 附报:类型×类型 confusion、每臂聚类纯度、unknown_rate、逐类型 recall(看哪些类型受益)。
 - 陷阱点:6 个陷阱(`metrics_interpretation.md` §附)逐点对比 ③/② 的对错(oracle 见下表)。
 
 #### oracle 表(② 规则表的来源,同时供 B4 判据)
@@ -187,16 +174,16 @@ loop 的 LLM 后端通过配置切换(GPT-4o / Claude / Gemini),同一 skill/pip
 
 | 用例 | 构造(合并) | 对应陷阱 | oracle 决策 |
 |---|---|---|---|
-| S-P1 | Xylem(簇16)+ Root hair(簇1) | 无(无关类型) | `ambiguous_true` → 路由 step5 → `refine_effective` |
-| S-P2 | Phloem(簇19)+ Root endodermis(簇8) | 无(无关类型) | 同上 |
-| S-P3 | Meristematic cell(簇23)+ Stem cell niche(簇26)(稀有) | 陷阱3 小样本 | `ambiguous_true`,但须看 count_diff(不因 ratio 就 decisive) |
-| S-N1 | Pericycle(簇4)+ Pericycle(簇6)(同类型) | 反例 | `first_decisive`,不进 step5 |
-| S-N2 | Columella root cap(簇0)+ Lateral root cap(簇10) | 陷阱2 层级本体 | `ambiguous_parent_child`,选更具体,**不进** step5 |
-| S-N3 | Root cortex(簇3)+ Root cortex(簇12)(同类型、不同样本) | 陷阱6 单批次 | 不判 batch_effect、不细分(`first_decisive`) |
-| S-H1 | Root cortex(簇3)+ Root hair(簇1)(中间难度) | 无 | `ambiguous_true` → step5;refine 结果以确定性真值为准 |
-| S-H2 | Xylem+Phloem+Root endodermis 三簇合并 | 无(超融合) | `ambiguous_true` → step5,子簇数 ≥2 应被识别 |
+| S-P1 | 两个无关类型的纯簇 | 无(无关类型) | `ambiguous_true` → 路由 step5 → `refine_effective` |
+| S-P2 | 另两个无关类型的纯簇 | 无(无关类型) | 同上 |
+| S-P3 | 两个稀有类型的纯簇 | 陷阱3 小样本 | `ambiguous_true`,但须看 count_diff(不因 ratio 就 decisive) |
+| S-N1 | 同类型的两个簇 | 反例 | `first_decisive`,不进 step5 |
+| S-N2 | 本体上父子关系的两个类型 | 陷阱2 层级本体 | `ambiguous_parent_child`,选更具体,**不进** step5 |
+| S-N3 | 同类型、不同样本的两个簇 | 陷阱6 单批次 | 不判 batch_effect、不细分(`first_decisive`) |
+| S-H1 | 相邻组织类型的两个簇(中间难度) | 无 | `ambiguous_true` → step5;refine 结果以确定性真值为准 |
+| S-H2 | 三个无关类型合并 | 无(超融合) | `ambiguous_true` → step5,子簇数 ≥2 应被识别 |
 
-> 簇号是 SRP171040 的 Seurat 簇参考;实际以 `build_scenarios.py` 用 gt_cells 校验后的纯 pipeline 簇为准(占比 ≥90%)。
+> 簇选取以 `build_scenarios.py` 用 gt_cells 校验后的纯 pipeline 簇为准(占比 ≥90%)。不绑定某次聚类的簇号。
 
 #### 实验流程
 1. `build_scenarios.py`:校验纯簇 → 生成 `leiden_override.csv`。
@@ -294,14 +281,14 @@ loop 的 LLM 后端通过配置切换(GPT-4o / Claude / Gemini),同一 skill/pip
 - 输入:B1 ③ session 的 `final_annotations.json` + `gt_cells.csv` + `label_map.json`。复用 B1 的评估产物,不新跑。
 
 #### 实验流程
-- `evaluate_cell_level.py` → accuracy / macro-F1 / weighted-F1 + 12×12 confusion + 失败模式分析。
+- `evaluate_cell_level.py` → accuracy / macro-F1 / weighted-F1 + 类型×类型 confusion + 失败模式分析。
 
 #### 结果解读
 - 整体准确率与 F1;逐类型 recall/precision。
-- 失败模式:混淆集中的类型对(如 "Root cortex"↔"Root endodermis")、易注释错的类型、unknown 集中区。
+- 失败模式:混淆集中的相邻组织类型对、易注释错的类型、unknown 集中区。
 
 #### 预期结论与判定规则
-- 预期:大类(Columella root cap 等)高 recall;稀有类型(Meristematic cell / Stem cell niche)易错;unknown 若高需查 KG 覆盖。
+- 预期:高频类型高 recall;稀有类型易错;unknown 若高需查 KG 覆盖。
 - 无硬判定线;作为 B1 的补充上下文,与纯度诊断一起解释"准确率受什么限制"。
 
 ---
@@ -563,6 +550,6 @@ rag_design.md          笔记本(N1/N2/N3 被测对象)
 
 **对 `experiment_design.md` 的修订**(本文档 §1.4/§3.1 取代以下旧条款):
 - 旧"三臂基于同一份 processed.h5ad、簇 ID 对齐、逐簇配对(McNemar)"→ 改为细胞级评估 + cluster-aware bootstrap。
-- 旧"29 簇配对检验 N=29 够用"(§8)→ 12 类型 per-type 配对仅作参考,主判据走 bootstrap。
+- 旧"簇 ID 配对检验"(§8)→ 按真值类型配对仅作参考,主判据走 bootstrap。
 - C2 与 A3 的"Marker 硬匹配基线"合并为同一产物,避免重复实现。
 - **新增 S1 合成场景注入(§3.2)**:把 6 个陷阱操作化为 8 个已知真值的合并用例,为 refine 决策点补统计力;与 B1 陷阱分析共享同一 oracle 表。此为 `experiment_design.md` 之外的新增受控探针,建议同步补入策略文档的 §3 实验总览。

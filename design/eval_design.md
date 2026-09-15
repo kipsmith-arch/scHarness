@@ -93,13 +93,13 @@ final_annotations.json  leiden     → {label, confidence, status}
     "Root cortex": "root cortex",
     "Root epidermis": "root epidermis"
   },
-  "_meta": { "dataset": "PRJNA935359", "verified": true }
+  "_meta": { "dataset": "DS001", "verified": true }
 }
 ```
 
 - 钉的是 **GT 字符串 → 已有 Ontology 节点**,人工确认。搜图谱可以辅助起稿(`scripts/build_label_map.py`),起稿结果不是 predicted 白名单。
 - **不把 `Unknown` 钉到任何细胞类型节点。** 无类型的真值一律 unmatched。
-- 别名例:`trichoblast` → 根毛节点。拟南芥 GT=`Root hair` 时这是 synonym;高粱 GT=`Root epidermis` 时由图上「根毛 ⊂ 表皮」算成 subtype,不再手写 pair。
+- 别名例:`trichoblast` → 根毛节点。细标签数据集 GT 钉到根毛时这是 synonym;粗标签数据集 GT 钉到表皮时由图上「根毛 ⊂ 表皮」算成 subtype,不再手写 pair。
 
 ### 4.2 解析顺序
 
@@ -229,7 +229,7 @@ experiments/
 ├── ontology_eval.py          ← OntologyScorer / Hierarchy / 钉表与别名加载
 ├── evaluate_cell_level.py    ← 多臂细胞级评估(写 evaluation_report.json)
 ├── bootstrap_test.py         ← cluster-aware bootstrap(读 per_cell)
-├── gt_ontology.json          ← 拟南芥钉表
+├── gt_ontology.json          ← 默认数据集钉表
 ├── gt_ontology_<id>.json     ← 其它数据集钉表
 └── kg_term_aliases.json      ← 全球别名
 scripts/build_label_map.py    ← 只起稿钉表,不再写 pair
