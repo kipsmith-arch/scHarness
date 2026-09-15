@@ -369,6 +369,7 @@ tool_design.md                  ← 怎么实现,加载策略 (HOW)
 trajectory_design.md            ← 指标和判断怎么记录 (LOG) — 属于 skill
 rag_design.md                   ← 通用笔记本记忆 (MEM) — loop 内置,不含领域知识
 loop_design.md (本文档)         ← 通用 loop 怎么跑 (RUN) — 不含领域知识
+eval_design.md                  ← 注释对错怎么打分 (SCORE) — 实验层,GT 不进 loop
 ```
 
 ```

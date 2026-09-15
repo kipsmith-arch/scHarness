@@ -54,14 +54,14 @@
   - stem cell niche ↔ Stem cell niche = synonym
 - `build_label_map.py` 生成初稿(自动查询 KG ancestors),人工定案后锁定版本(写 `_meta.built_from` / `_meta.verified`)。
 
-> **下一步（未开工）:** 停掉按数据集复制 `label_map_*.json`。每套数据只钉 GT 字符串 → `Ontology` 节点；predicted 仍来自注释跑次；relation 评估时用图谱祖先边计算。规划见 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
+> **D-2 现口径:** 规范见 `eval_design.md`。不再按数据集复制 `label_map_*.json` pair 表。每套数据只钉 GT 字符串 → `Ontology` 节点（`experiments/gt_ontology.json` / `gt_ontology_<id>.json`）；全球别名 `experiments/kg_term_aliases.json`；relation 由 `evaluate_cell_level.py` 按该细胞 GT 用图谱祖先边计算。起稿脚本 `scripts/build_label_map.py` 只出待确认钉表。旧 pair 表可留档，不作为计分输入。迁移记录 `_bmad-output/implementation-artifacts/label-map-ontology-eval.md`。
 
 **D-3 静态 marker 字典(仅 C2/A3 用)** → 生成 `experiments/marker_dict.json`
 - 若 C2/A3 需要"无 KG"基线(见 §3.7):从 `knowledge/*.md` 与 KG 的 marker_resource 抽样,整理一张静态 `{gene: [cell_type,...]}` 字典作为 KG 查询的替代。
 - 若素材不足,退化为"LLM 仅凭自身生物学知识 + markers 标注"(无参考字典)。
 
 **D-4 细胞身份对齐**
-- 评估时以 `cell_barcode` 为 key 连接:`h5ad obs → obs_snapshot.csv(细胞→leiden)`、`final_annotations.json(leiden→标签)`、`gt_cells.csv(条码→真值)`,展开为逐细胞预测标签。
+- 评估时以 `cell_barcode` 为 key 连接:`h5ad obs → obs_snapshot.csv(细胞→leiden)`、`final_annotations.json(leiden→标签)`、`gt_cells.csv(条码→真值)`,展开为逐细胞预测标签(计分见 `eval_design.md` §3)。
 
 **D-5 合成用例构造(仅 S1 用)** → 生成 `experiments/S1/scenarios.json` + `leiden_override.csv`
 - 目标:把 6 个陷阱(`metrics_interpretation.md` §附)操作化为"已知真值"的合并用例,给真实数据里出现次数很少的 refine 决策点补统计力。
@@ -75,27 +75,22 @@
 
 ### 1.4 评估指标体系(细胞级,被 B1/A1/N1/C2/C4 共用)
 
+**计分公式、关系判定、钉表/别名**以 `eval_design.md` 为准(headline = strict; relaxed 并列; macro-F1 为辅; 把握不进准确率)。本节只保留实验怎么用这些数字。
+
 | 层级 | 指标 | 定义 | 用途 |
 |---|---|---|---|
-| **主** | per-cell macro-F1 | 12 类 F1 的算术平均(对稀有类型公平) | 三臂/多条件比较的主判据 |
-| **主** | per-cell accuracy | 正确细胞 / 总细胞 | 端到端直观指标 |
-| 辅 | weighted-F1 | 按细胞数加权 | 反映真实分布下的端到端质量 |
-| 辅 | 12×12 confusion matrix | 真值×预测 | 失败模式分析 |
-| 辅 | 细分/粗命中率 | 预测落在 label_map 的 subtype/supertype 的比例 | 粒度诊断 |
-| 辅 | unknown 率 | `session_end.final_summary.unknown_rate` | KG 覆盖率 |
-| 统计 | cluster-aware bootstrap 95% CI | 按簇整组重抽样(1000 次),对两条件 macro-F1 差 | 显著性 |
-| 统计 | per-type Wilcoxon | 12 类型配对符号秩检验 | 稳健性参考(不独立下结论) |
+| **headline** | per-cell strict | exact/synonym 细胞占比 | 注释是否点到该细胞 GT 节点 |
+| **并列** | per-cell relaxed | 细胞权重平均(subtype/supertype=0.5) | 同一枝上的粗/细 |
+| 辅 | per-cell macro-F1 | 各类 soft-F1 算术平均 | 类型均衡;`Unknown` 会压低,不作唯一主判据 |
+| 辅 | 混淆 / per-type F1 / relation 直方图 | 真值×预测与细/粗/错枝 | 失败模式 |
+| 辅 | unknown 率 | `session_end.final_summary.unknown_rate` 与 unmatched | KG 覆盖与放弃标注 |
+| 辅 | 聚类纯度 | 各 leiden 簇最大 GT 占比均值 | 准确率上限诊断 |
+| 统计 | cluster-aware bootstrap 95% CI | 按簇整组重抽样(1000 次) | 显著性(见下) |
+| 统计 | per-type Wilcoxon | 类型配对符号秩 | 稳健性参考(不独立下结论) |
 
-**预先注册的计分规则**:
-1. **正确** = 预测标签与真值标签在 label_map 中为 `exact` 或 `synonym`。
-2. **细分命中**(部分正确,单列) = 预测为真值的 `subtype`(比真值更细)。不算入主 macro-F1。
-3. **粗命中**(部分正确,单列) = 预测为真值的 `supertype`(比真值更宽)。不算入主 macro-F1。
-4. **错误** = `unrelated` 或预测为 `unknown`。unknown 按错误计入,并同时单列 unknown 率。
-5. 主指标用**严格口径**(只算 1),辅助报告宽松口径(1+2+3)。
-
-**预先注册的统计口径**:
-- **不用 McNemar 于细胞级**:33,956 细胞非独立(同一簇共享标签),会伪造显著。显著性一律用 **cluster-aware bootstrap**(以簇为抽样单元)。
-- 效应量:macro-F1 差。判定线 **≥ 0.03** 视为有意义(避免巨样本下统计显著但效应可忽略)。
+**B1 预先注册的统计口径**(假说判定,不是评分公式):
+- **不用 McNemar 于细胞级**:同一簇共享标签,细胞非独立。显著性一律 **cluster-aware bootstrap**。
+- 效应量判定线 **≥ 0.03** 且 CI 不含 0 视为有意义。注册时写的是 macro-F1 差;现行报告须同时给出 strict / relaxed 差(口径见 `eval_design.md` §6–§7)。
 - 报告:点估计、bootstrap 95% CI、per-type Wilcoxon p(标注仅参考)。
 
 ---
@@ -488,7 +483,9 @@ loop 的 LLM 后端通过配置切换(GPT-4o / Claude / Gemini),同一 skill/pip
 
 ```
 experiments/
-├── label_map.json                 ← D-2 核心资产(锁定版本)
+├── gt_ontology.json               ← D-2 GT→Ontology 钉表(锁定版本)
+├── kg_term_aliases.json           ← 全球预测词别名
+├── label_map.json                 ← 旧 pair 表(留档,不再计分)
 ├── marker_dict.json               ← D-3(仅 C2/A3)
 ├── gt_cells.csv                   ← D-1 真值
 ├── B1/
@@ -555,6 +552,7 @@ API 用量:③×1 + ⑥补×1 + ⑦×2 = **4 个全 session**,外加 S1 的 8 �
 
 ```
 experiment_design.md   策略层(假设/实验总览)   ← 本文档为其实施层(12 个实验全覆盖)
+eval_design.md         注释对错怎么打分(SCORE);§1.4 指标定义以它为准
 trajectory_design.md   13 决策点 + run_log 格式(B1/B3/B4 数据来源)
 atomic_operations.md   47 原子操作(三臂跑的就是这些 op)
 operations_metrics_catalog.md  247 指标(B3 分析对象)

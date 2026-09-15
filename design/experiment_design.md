@@ -22,7 +22,7 @@
 |---|---|---|
 | 算力 | 仅商业 API(GPT/Claude 等),无 GPU | 砍掉微调实验(D1),轨迹价值改用模式挖掘体现 |
 | 模型 | 可调用多 API 模型 | C4 多模型对比可行,反而支撑"model-agnostic"论点 |
-| 数据 | 当前仅 SRP171040(Arabidopsis root,2GB,12 真值类型) | B1 走细胞级评估 + cluster-aware bootstrap(见 `experiment_implementation.md` §2);跨数据集复现需补充数据集(见 §8) |
+| 数据 | 当前仅 SRP171040(Arabidopsis root,2GB,12 真值类型) | B1 走细胞级评估 + cluster-aware bootstrap(计分见 `eval_design.md`);跨数据集复现需补充数据集(见 §8) |
 | 论述侧重 | 方法论:LLM-as-judge 有效性 | B 组为核心,A 组为基线,C/D/E 为支撑 |
 
 ---
@@ -213,16 +213,12 @@ def rule_judge(dp, exec_record, history):
 1. **动作空间一致**:② 的规则表覆盖的 decision/action 枚举,必须与 ③ SKILL.md 允许 LLM 用的相同(`trajectory_design.md` §3.2 的枚举)。即 ③ 不许干规则表之外的动作,否则 ③ 领先可能是"动作空间更大"而非"判断更聪明"。
 2. **② 须确定性代码**:不用 LLM 跟随规则 prompt——LLM 采样非确定性,会让 ② 不可复现且混入 LLM 方差。
 3. **工具执行路径字面相同**:①②③ 都调 `dispatcher.dispatch(spec, args)` 执行同一 pipeline 脚本,唯一差异是"下一步调哪个 op / 带什么参 / 要不要重试"——这正是被测的决策层。
-4. **评估口径(2026-08 修订)**:三臂改按**细胞级评估**(详见 `experiment_implementation.md` §2)——逐细胞标签 vs 真值计算准确率/F1,不再要求簇 ID 对齐。原"三臂同一份 processed.h5ad、簇 ID 配对"与 qc/resolution/clustering 三个决策点必然改变聚类的设计自相矛盾,已废弃。
+4. **评估口径**:三臂按**细胞级评估**(计分见 `eval_design.md`,实验用法见 `experiment_implementation.md` §1.4)——逐细胞标签 vs 该细胞 GT,不再要求簇 ID 对齐。原"三臂同一份 processed.h5ad、簇 ID 配对"与 qc/resolution/clustering 三个决策点必然改变聚类的设计自相矛盾,已废弃。
 
-#### 指标(2026-08 修订为细胞级,详见 `experiment_implementation.md` §2)
-- **主指标**:per-cell macro-F1(12 类平均)+ per-cell accuracy(预测标签 vs `dataset/index/SRP171040.h5ad.csv` 真值)
-- 统计检验:cluster-aware bootstrap(按簇整组重抽样)对 ③ vs ② 的 macro-F1 差做 95% CI;per-type Wilcoxon 符号秩作稳健性参考(不用细胞级 McNemar——细胞非独立会伪造显著)
-- **辅指标**:
-  - 全局 unknown_rate(`session_end.final_summary.unknown_rate`)
-  - weighted-F1 + 12×12 confusion matrix
-  - 标签粒度诊断:细分/粗命中率(label_map 的 subtype/supertype,计分规则见实施文档 §2.1)
-  - 聚类纯度诊断(每 leiden 簇最大真值类型占比均值)
+#### 指标(细胞级,公式见 `eval_design.md`)
+- **headline**:per-cell strict(exact/synonym);**并列** relaxed(subtype/supertype=0.5)
+- **辅**:macro-F1(不得单独当 headline;`Unknown` 会压低)、unknown_rate、relation 直方图、聚类纯度
+- 统计检验:cluster-aware bootstrap(按簇整组重抽样)对两臂差做 95% CI;per-type Wilcoxon 作参考(不用细胞级 McNemar)
 
 #### 执行
 1. 跑 ① 固定默认 pipeline,得 `output_arm1/` + run_log
@@ -340,7 +336,7 @@ loop 内置笔记本能让 LLM 跨会话复用经验,提升判断质量;且该�
 | ⑦ notebook | 注册 write_note / retrieve_notes + 通用提示指导 | 被测对象 |
 
 比较(每组多个 session):
-- 端到端质量:细胞级准确率/macro-F1(见 `experiment_implementation.md` §2)、unknown_rate
+- 端到端质量:细胞级 strict/relaxed(见 `eval_design.md`)、unknown_rate
 - 判断稳定性:相同指标形态跨 session 的 decision 一致率(⑥ 应天然不稳定,⑦ 靠笔记收敛)
 
 #### N2 — 使用分析(零额外成本,只读 conversation.jsonl)
@@ -377,7 +373,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 
 ### 5.1 A1 — 端到端准确率
 
-对比 `step6_validate/final_annotations.json` 与 `dataset/index/SRP171040.h5ad.csv` 的 `Celltype` 列,经 obs_snapshot.csv 展开为逐细胞标签对齐(口径见 `experiment_implementation.md` §2)。产出整体准确率 + 按类型的混淆矩阵。识别哪些类型易注释、哪些易错(失败模式分析)。
+对比 `step6_validate/final_annotations.json` 与 `dataset/index/SRP171040.h5ad.csv` 的 `Celltype` 列,经 obs_snapshot.csv 展开为逐细胞标签对齐(口径见 `eval_design.md`)。产出 strict / relaxed + 按类型失败模式。识别哪些类型易注释、哪些易错。
 
 ### 5.2 A3 — 与 baseline 方法对比
 
@@ -429,13 +425,15 @@ trajectory_design.md            13 决策点  — B1/B3/B4 的数据来源
 tool_design.md                  pipeline 实现 — 实验的执行载体
 loop_design.md                  通用 loop   — C4 换模型只改 loop 的 LLM 后端
 rag_design.md                   通用笔记本  — N1/N2/N3 的被测对象
+eval_design.md                  注释对错怎么打分 — B1/A/N/C 共用 SCORE
+experiment_implementation.md    实验怎么跑、B1 判定线
 ```
 
 ```
 run_log.jsonl
     │ exec 记录(指标) + judgment 记录(LLM 判断 + inputs + reasoning)
     ▼
-B1: 细胞级准确率/F1 + cluster-aware bootstrap(② vs ③)
+B1: 细胞级 strict/relaxed + cluster-aware bootstrap(② vs ③;公式见 `eval_design.md`)
 B3: inputs[].path 频次统计 → 最小充分集
 B4: 同 decision_point 多 judgment → 自我纠正对 → 改善幅度
 
@@ -454,7 +452,7 @@ N2: 笔记本调用频次/时机 → 使用分析
 当前仅 SRP171040。B1 细胞级评估(12 类型 + cluster-aware bootstrap)已可独立成立,但跨数据集复现会让结论外部效度更强。
 
 ### 策略
-1. **细胞级评估(已有数据集可立即做)**:按 `experiment_implementation.md` §2 的 cluster-aware bootstrap + per-type Wilcoxon 口径(12 类型配对),无需额外数据。细胞级评估避免簇 ID 对齐问题。
+1. **细胞级评估(已有数据集可立即做)**:按 `eval_design.md` 计分 + `experiment_implementation.md` 的 cluster-aware bootstrap,无需额外数据。细胞级评估避免簇 ID 对齐问题。
 2. **跨数据集复现(需补充)**:找 1-2 个 Arabidopsis root scRNA-seq 数据集(同物种同组织,控制变量),复跑 B1 三臂。候选(Denyer 2019、Wendrich 2020、Ryu 2019 等)的 GEO/SRA 访问号与 h5ad 可得性待联网核实。
 3. **若无法补充数据集**:B1 结论限定为"在该数据集上",并在讨论部分说明单数据集局限;加强 B3/B4 的分析深度作为补偿。
 
@@ -482,8 +480,8 @@ X-1~X-3 与系统实现并行;X-4~X-6 在有第一批轨迹后即可启动;X-7 �
 
 ### 10.1 B1 的有效性验证
 - 三臂使用同一份 Rule-based 规则表(②③ 共享),否则 ② 与 ③ 比较的是参数空间而非判断智能。
-- 评估口径:细胞级(2026-08 修订,见 `experiment_implementation.md` §2)。三臂聚类必然不同,不以簇 ID 配对;以逐细胞标签对真值计算,统计用 cluster-aware bootstrap(避免细胞非独立的伪显著)。
-- 报告效应量(macro-F1 差)而非仅 p 值;判定线预先注册在实施文档 §4.1。
+- 评估口径:细胞级(见 `eval_design.md`)。三臂聚类必然不同,不以簇 ID 配对;以逐细胞标签对真值计算,统计用 cluster-aware bootstrap(避免细胞非独立的伪显著)。
+- 报告效应量(strict / relaxed 差,macro-F1 辅报)而非仅 p 值;B1 判定线预先注册在 `experiment_implementation.md` §3.1。
 
 ### 10.2 轨迹分析的可复现性
 - B3/B4 的分析脚本只读 `run_log.jsonl`,不依赖任何中间状态,可重跑复现。
