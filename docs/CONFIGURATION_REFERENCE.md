@@ -764,20 +764,19 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 
 ### 5.4 build_label_map.py
 
+起稿 **GT → Ontology 钉表**，不再生成 predicted×true pair 表。
+
 | 参数 | 类型 | 默认 | 含义 |
 |---|---|---|---|
-| `--out` | str | `"experiments/label_map.json"` | 输出标签映射 JSON |
+| `--true-labels` | list of str | 拟南芥 12 类 | GT 字符串列表 |
+| `--dataset-id` | str | `"SRP171040"` | 写入 `_meta.dataset` |
+| `--out` | str | `"experiments/gt_ontology.json"` | 钉表 JSON（`verified: false`） |
+| `--aliases-out` | str | `None` | 可选：全球别名初稿 |
 | `--uri` | str | `None` → `NEO4J_URI` → `"bolt://localhost:7687"` | Neo4j URI |
 | `--user` | str | `None` → `NEO4J_USER` → `"neo4j"` | Neo4j 用户 |
 | `--password` | str | `None` → `NEO4J_PASSWORD` | Neo4j 密码 |
-| `--max-ancestor-hops` | int | `3` | 查祖先跳数 |
 
-模块级硬编码：
-
-| 常量 | 值 |
-|---|---|
-| `TRUE_LABELS`（12 项） | 见 `scripts/build_label_map.py:23-26` |
-| `PREBUILT`（预填映射，~22 项） | 见 `scripts/build_label_map.py:29-55` |
+模块级硬编码：`TRUE_LABELS` / `PIN_HINTS` / `ALIAS_SEED`（见源码）。`Unknown` 不钉。
 
 ---
 
@@ -813,8 +812,13 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 |---|---|---|---|
 | `--arms` | list of str | **必填**（`nargs="+"`） | 格式 `<name>=<project_dir>`（可多个），如 `arm1=output/B1/arm1_default` |
 | `--gt-csv` | str | `"experiments/gt_cells.csv"` | 真值 CSV |
-| `--label-map` | str | `"experiments/label_map.json"` | 标签映射 JSON |
+| `--gt-ontology` | str | `"experiments/gt_ontology.json"` | GT 字符串 → Ontology.Name 钉表 |
+| `--aliases` | str | `"experiments/kg_term_aliases.json"` | 预测词变体 → 规范 Ontology.Name |
+| `--max-ancestor-hops` | int | `3` | 图谱祖先查询跳数 |
+| `--label-map` | str | 停用 | 传入则非零退出 |
 | `--out` | str | `None` | 评估报告 JSON 路径 |
+
+图谱不可达时只接受别名 exact/synonym，报告 `kg_hierarchy: skipped`。
 
 ### 6.5 bootstrap_test.py
 
@@ -824,7 +828,7 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `--arms` | list of str | **必填**（`nargs="+"`） | 要比较的 arm 名称（按顺序生成 pairwise） |
 | `--n-boot` | int | `1000` | bootstrap 重采样数 |
 | `--seed` | int | `0` | 随机种子 |
-| `--label-map` | str | **必填** | `experiments/label_map.json` 真实映射 |
+| `--label-map` | str | 忽略 | 兼容旧调用；计分用 per_cell.relation |
 | `--out` | str | **必填** | 输出路径 |
 
 ### 6.6 analyze_traps.py

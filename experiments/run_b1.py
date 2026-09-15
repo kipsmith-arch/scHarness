@@ -7,7 +7,7 @@ Usage (from repo root, conda env LM):
     python experiments/run_b1.py --raw dataset/h5ad/PRJNA935359.h5ad \\
         --out output/B1_PRJNA935359 --organism "Sorghum bicolor" \\
         --species sorghum_bicolor --gt-csv experiments/gt_cells_PRJNA935359.csv \\
-        --label-map experiments/label_map_PRJNA935359.json \\
+        --gt-ontology experiments/gt_ontology_PRJNA935359.json \\
         --query-fasta dataset/fasta/Sorghum_bicolor.fasta
 """
 from __future__ import annotations
@@ -35,7 +35,8 @@ ARM3 = OUT / "arm3_llm"
 EVAL = OUT / "eval"
 LOG = OUT / "orchestrator.log"
 GT_CSV = REPO_ROOT / "experiments" / "gt_cells.csv"
-LABEL_MAP = REPO_ROOT / "experiments" / "label_map.json"
+GT_ONTOLOGY = REPO_ROOT / "experiments" / "gt_ontology.json"
+ALIASES = REPO_ROOT / "experiments" / "kg_term_aliases.json"
 ORGAN = "root"
 SPECIES: str | None = "arabidopsis_thaliana"
 SPECIES_TYPE = "Plant"
@@ -157,8 +158,10 @@ def preflight() -> None:
         raise SystemExit(f"missing raw h5ad: {RAW}")
     if not GT_CSV.is_file():
         raise SystemExit(f"missing {GT_CSV}")
-    if not LABEL_MAP.is_file():
-        raise SystemExit(f"missing {LABEL_MAP}")
+    if not GT_ONTOLOGY.is_file():
+        raise SystemExit(f"missing {GT_ONTOLOGY}")
+    if not ALIASES.is_file():
+        raise SystemExit(f"missing {ALIASES}")
     _require_openai_key()
     tmp = tempfile.mkdtemp(prefix="b1-preflight-")
     try:
@@ -262,14 +265,14 @@ def evaluate() -> None:
         f"arm2={ARM2}",
         f"arm3={ARM3}",
         "--gt-csv", str(GT_CSV),
-        "--label-map", str(LABEL_MAP),
+        "--gt-ontology", str(GT_ONTOLOGY),
+        "--aliases", str(ALIASES),
         "--out", str(EVAL / "evaluation_report.json"),
     ])
     run([
         PY, str(REPO_ROOT / "experiments" / "bootstrap_test.py"),
         "--per-cell", str(EVAL / "evaluation_report.per_cell.json"),
         "--arms", "arm1", "arm2", "arm3",
-        "--label-map", str(LABEL_MAP),
         "--out", str(EVAL / "bootstrap_report.json"),
     ])
     run([
@@ -288,7 +291,7 @@ def _refuse_stale_logs() -> None:
 
 
 def main() -> int:
-    global RAW, OUT, GT_CSV, LABEL_MAP, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM, QUERY_FASTA
+    global RAW, OUT, GT_CSV, GT_ONTOLOGY, ALIASES, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM, QUERY_FASTA
     ap = argparse.ArgumentParser(description="Wipe B1 history and rerun three arms.")
     ap.add_argument("--no-wipe", action="store_true", help="Keep existing --out (do not delete).")
     ap.add_argument("--skip-preflight", action="store_true")
@@ -299,15 +302,26 @@ def main() -> int:
     ap.add_argument("--species-type", default=SPECIES_TYPE)
     ap.add_argument("--organism", default=ORGANISM)
     ap.add_argument("--gt-csv", type=Path, default=GT_CSV)
-    ap.add_argument("--label-map", type=Path, default=LABEL_MAP)
+    ap.add_argument("--gt-ontology", type=Path, default=GT_ONTOLOGY,
+                    help="GT 字符串 → Ontology.Name 钉表")
+    ap.add_argument("--aliases", type=Path, default=ALIASES,
+                    help="预测词变体 → 规范 Ontology.Name")
+    ap.add_argument("--label-map", type=Path, default=None,
+                    help="已停用;传入则报错")
     ap.add_argument("--query-fasta", type=Path, default=None,
                     help="Protein FASTA; when the file exists, step3b prefers blastp.")
     args = ap.parse_args()
 
+    if args.label_map:
+        raise SystemExit(
+            "error: --label-map pair 表已停用。改用 --gt-ontology 与 --aliases"
+        )
+
     RAW = args.raw if args.raw.is_absolute() else REPO_ROOT / args.raw
     OUT = args.out if args.out.is_absolute() else REPO_ROOT / args.out
     GT_CSV = args.gt_csv if args.gt_csv.is_absolute() else REPO_ROOT / args.gt_csv
-    LABEL_MAP = args.label_map if args.label_map.is_absolute() else REPO_ROOT / args.label_map
+    GT_ONTOLOGY = args.gt_ontology if args.gt_ontology.is_absolute() else REPO_ROOT / args.gt_ontology
+    ALIASES = args.aliases if args.aliases.is_absolute() else REPO_ROOT / args.aliases
     ORGAN = args.organ
     SPECIES = args.species or None
     SPECIES_TYPE = args.species_type

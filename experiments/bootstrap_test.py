@@ -45,12 +45,12 @@ WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5,
           "unrelated": 0.0, "unmatched": 0.0}
 
 
-def _cluster_strict_relaxed_macro(cells: list[dict], label_map: dict, true_labels: list[str]) -> dict:
+def _cluster_strict_relaxed_macro(cells: list[dict], true_labels: list[str]) -> dict:
     """Compute strict / relaxed / macro-F1 from a list of cell dicts.
 
     Identical semantics to evaluate_cell_level.evaluate_arm (relation weight
-    only; confidence is not in the formula). label_map is the real
-    {raw: [{true, relation}]} mapping, not a bootstrap-time approximation.
+    only; confidence is not in the formula). Uses per_cell relation +
+    mapped_true written at eval time (no pair-table hits[0]).
     """
     tp = {t: 0.0 for t in true_labels}
     fp = {t: 0.0 for t in true_labels}
@@ -67,18 +67,12 @@ def _cluster_strict_relaxed_macro(cells: list[dict], label_map: dict, true_label
             strict_hits += 1
         score_sum += cell_w
         if rel in STRICT_HIT or rel in PARTIAL_HIT:
-            hits = label_map.get(c["raw"], [])
-            if not hits:
-                fn[c["true"]] += 1.0
-                continue
-            mapped_true = hits[0]["true"]
-            if mapped_true == c["true"]:
-                tp[mapped_true] += cell_w
-            else:
-                fp[mapped_true] += cell_w
-                fn[c["true"]] += cell_w
+            tp[c["true"]] += cell_w
         else:
             fn[c["true"]] += 1.0
+            mapped_true = c.get("mapped_true")
+            if mapped_true and mapped_true in fp and mapped_true != c["true"]:
+                fp[mapped_true] += 1.0
     f1s = []
     for t in true_labels:
         p = tp[t] / (tp[t] + fp[t]) if (tp[t] + fp[t]) else 0.0
@@ -92,7 +86,7 @@ def _cluster_strict_relaxed_macro(cells: list[dict], label_map: dict, true_label
 
 
 def cluster_aware_bootstrap(arm_cells: dict[str, list[dict]],
-                            label_map: dict, n_boot: int = 1000,
+                            n_boot: int = 1000,
                             seed: int = 0) -> dict:
     """Cluster-aware bootstrap for strict / relaxed / macroF1 across arms.
 
@@ -121,7 +115,7 @@ def cluster_aware_bootstrap(arm_cells: dict[str, list[dict]],
             for _ in range(len(leidens)):
                 lid = rng.choice(leidens)
                 sample.extend(arm_by_leiden[arm][lid])
-            m = _cluster_strict_relaxed_macro(sample, label_map, all_true_labels)
+            m = _cluster_strict_relaxed_macro(sample, all_true_labels)
             for k, v in m.items():
                 boot_metrics[arm][k].append(v)
 
@@ -177,8 +171,8 @@ def main() -> int:
                     help="要比较的 arm 名称(按顺序生成 pairwise)")
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--label-map", required=True,
-                    help="experiments/label_map.json 真实映射(避免 bootstrap 用近似)")
+    ap.add_argument("--label-map", default=None,
+                    help="已停用; per_cell 已含 relation/mapped_true")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -187,14 +181,11 @@ def main() -> int:
     if any(arm not in bundle for arm in args.arms):
         raise SystemExit(f"--arms 缺失 arm;可用: {list(bundle.keys())}")
 
-    label_map: dict[str, list[dict]] = {}
-    with open(args.label_map, encoding="utf-8") as f:
-        lm = json.load(f)
-    for e in lm.get("entries", []):
-        label_map.setdefault(e["predicted"], []).append(
-            {"true": e["true"], "relation": e["relation"]})
+    if args.label_map:
+        print("[bootstrap] WARNING: --label-map 已忽略;计分用 per_cell.relation",
+              file=sys.stderr)
 
-    result = cluster_aware_bootstrap(arm_cells, label_map, n_boot=args.n_boot, seed=args.seed)
+    result = cluster_aware_bootstrap(arm_cells, n_boot=args.n_boot, seed=args.seed)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 

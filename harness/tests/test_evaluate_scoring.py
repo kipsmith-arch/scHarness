@@ -1,11 +1,15 @@
-"""B1 scoring: strict/relaxed from label–map only (b1-r3-followup.md §2)."""
+"""B1 scoring: strict/relaxed from GT-pin + hierarchy (b1-r3-followup.md §2)."""
 from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 
-from experiments.evaluate_cell_level import evaluate_arm, load_gt, load_label_map
+import pytest
+
+from experiments.evaluate_cell_level import evaluate_arm, load_gt, main
+from experiments.ontology_eval import Hierarchy, OntologyScorer
 
 
 def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
@@ -15,11 +19,32 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
         w.writerows(rows)
 
 
+def _scorer() -> OntologyScorer:
+    return OntologyScorer(
+        pins={
+            "Lateral Root Cap": "lateral root cap",
+            "Root stele": "root stele",
+            "Root cortex": "root cortex",
+        },
+        aliases={
+            "lateral root cap": "lateral root cap",
+            "root stele": "root stele",
+        },
+        hierarchy=Hierarchy.from_maps(
+            {"lateral root cap", "root stele", "root cortex"},
+            {
+                "lateral root cap": set(),
+                "root stele": set(),
+                "root cortex": set(),
+            },
+        ),
+    )
+
+
 def test_low_confidence_exact_counts_as_strict(tmp_path):
     obs = tmp_path / "obs_snapshot.csv"
     gt = tmp_path / "gt.csv"
     ann = tmp_path / "final_annotations.json"
-    lmap = tmp_path / "label_map.json"
 
     _write_csv(obs, ["cell_id", "leiden"], [
         {"cell_id": "c0", "leiden": "0"},
@@ -38,16 +63,10 @@ def test_low_confidence_exact_counts_as_strict(tmp_path):
             "2": {"label": "lateral root cap", "confidence": "high", "status": "decisive"},
         }
     }), encoding="utf-8")
-    lmap.write_text(json.dumps({
-        "_meta": {"verified": True},
-        "entries": [
-            {"predicted": "lateral root cap", "true": "Lateral Root Cap", "relation": "synonym"},
-        ],
-    }), encoding="utf-8")
 
-    label_map, meta = load_label_map(str(lmap))
-    gt_map = load_gt(str(gt))
-    report = evaluate_arm("arm_t", str(tmp_path), str(obs), str(ann), label_map, meta, gt_map)
+    report = evaluate_arm(
+        "arm_t", str(tmp_path), str(obs), str(ann), _scorer(), load_gt(str(gt)),
+    )
 
     by_cell = {c["cell"]: c for c in report["per_cell"]}
     assert by_cell["c0"]["is_strict_correct"] is True
@@ -59,3 +78,42 @@ def test_low_confidence_exact_counts_as_strict(tmp_path):
     assert report["relaxed_accuracy"] == 0.6667
     assert report["low_conf_rate"] == 0.6667
     assert report["confidence_distribution"].get("low") == 2
+
+
+def test_evaluate_arm_scores_against_this_cell_gt(tmp_path):
+    obs = tmp_path / "obs_snapshot.csv"
+    gt = tmp_path / "gt.csv"
+    ann = tmp_path / "final_annotations.json"
+    _write_csv(obs, ["cell_id", "leiden"], [
+        {"cell_id": "stele", "leiden": "0"},
+        {"cell_id": "cortex", "leiden": "0"},
+    ])
+    _write_csv(gt, ["cell_barcode", "true_type"], [
+        {"cell_barcode": "stele", "true_type": "Root stele"},
+        {"cell_barcode": "cortex", "true_type": "Root cortex"},
+    ])
+    ann.write_text(json.dumps({
+        "annotations": {
+            "0": {"label": "root stele", "confidence": "high", "status": "decisive"},
+        }
+    }), encoding="utf-8")
+
+    report = evaluate_arm(
+        "arm_t", str(tmp_path), str(obs), str(ann), _scorer(), load_gt(str(gt)),
+    )
+    by_cell = {c["cell"]: c for c in report["per_cell"]}
+    assert by_cell["stele"]["relation"] == "synonym"
+    assert by_cell["stele"]["is_strict_correct"] is True
+    assert by_cell["cortex"]["relation"] == "unrelated"
+    assert by_cell["cortex"]["is_strict_correct"] is False
+    assert report["strict_accuracy"] == 0.5
+
+
+def test_label_map_cli_is_rejected(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [
+        "evaluate_cell_level.py",
+        "--arms", "arm1=output/missing",
+        "--label-map", "experiments/label_map.json",
+    ])
+    with pytest.raises(SystemExit, match="--label-map"):
+        main()
