@@ -34,7 +34,7 @@ context: []
 - N1. 不删 `step4_judge.py` / `step5_refine.py` / `step1_prepare.py` 已存在的任何字段 — 只删"重复副本"(如 `write_final.n_unknown` 与 `global_summary.n_unknown` 同时存在时,只保留 `global_summary.n_unknown` 并在 SKILL.md 引导 LLM 走 global_summary)。
 - N2. 不重写 SKILL.md 任何决策点章节的"判断要点"段 — 只改"看什么"段的 path 列。
 - N3. 不调 LLM API — Story 6.10 是 SKILL.md 文本 + 代码 schema + 验收分析,不重跑 LLM session。
-- N4. 不重写 `experiments/evaluate_cell_level.py` / `scripts/validate_log.py` / `harness/tests/` — 本 story 不改评估与测试基础设施。
+- N4. 不重写 `experiments/evaluate_cell_level.py` / `scripts/validate_log.py` / `annot_harness/tests/` — 本 story 不改评估与测试基础设施。
 - N5. 不接受 h5ad 不可用降级方案 — h5ad 必须现场在(否则 HALT)。
 
 ## I/O & Edge-Case Matrix
@@ -57,7 +57,7 @@ context: []
 - `skills/cell-annotation/scripts/step5_refine.py` — **改** — `op_write_refined` 输出 metrics 字段中,`write_refined.n_analyzed` 与 `summary.n_analyzed` 合并到 `summary.n_analyzed` 一处
 - `skills/cell-annotation/scripts/step1_prepare.py` — **改** — `op_write_output` 输出 metrics 字段中,`n_cells_raw` 不再单独写,合并到 `write_output.n_cells`
 - `skills/cell-annotation/scripts/step6_validate.py` — **不改** — 当前 `global_summary.n_unknown` 与 `write_final.n_unknown` 并存是有意(SKILL.md 引导 LLM 用哪条),不需要改代码层
-- `harness/tests/test_trajectory_schema.py` — **不改** — 仅在 Step 4 review 发现真问题时才动
+- `annot_harness/tests/test_trajectory_schema.py` — **不改** — 仅在 Step 4 review 发现真问题时才动
 - `experiments/B3_metric_usage.py` / `experiments/B3_minimal_set.py` — **不改** — 验收时直接复用
 - `_bmad-output/implementation-artifacts/story-6-10-closure.md` — **新建** — 最终 closure 报告
 - `output/B1/arm3_llm/run_log.jsonl` 等 3 个 — **不改**(旧 run_log),仅在新重跑时用新 schema 产出新 run_log

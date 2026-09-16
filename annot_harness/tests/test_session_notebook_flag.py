@@ -1,4 +1,4 @@
-"""NB_ON / NB_OFF for harness.session (spec-b1-three-arm-rerun). No LLM, no h5ad."""
+"""NB_ON / NB_OFF for annot_harness.session (spec-b1-three-arm-rerun). No LLM, no h5ad."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from harness.loop import LOOP_BASE_PROMPT, LOOP_BASE_PROMPT_NO_NOTEBOOK, NOTEBOOK_TOOL_SCHEMAS
-from harness.session import (
+from annot_harness.loop import LOOP_BASE_PROMPT, LOOP_BASE_PROMPT_NO_NOTEBOOK, NOTEBOOK_TOOL_SCHEMAS
+from annot_harness.session import (
     build_session_messages,
     merge_session_tools,
     merged_tool_names,
@@ -102,7 +102,7 @@ def test_resume_empty_conversation_starts_fresh(tmp_path):
 
 
 def test_dump_skill_no_notebook_omits_notes(capsys, tmp_path):
-    from harness.session import main
+    from annot_harness.session import main
 
     echo = Path(__file__).resolve().parent.parent.parent / "skills" / "echo"
     rc = main([
@@ -118,7 +118,7 @@ def test_dump_skill_no_notebook_omits_notes(capsys, tmp_path):
 
 
 def test_dump_skill_default_lists_notes(capsys, tmp_path):
-    from harness.session import main
+    from annot_harness.session import main
 
     echo = Path(__file__).resolve().parent.parent.parent / "skills" / "echo"
     rc = main(["--skill", str(echo), "--project-dir", str(tmp_path), "--dump-skill"])

@@ -156,7 +156,7 @@ def test_load_skill_dotenv_skip_disables(monkeypatch):
 
 
 def test_load_skill_dotenv_missing_python_dotenv(monkeypatch):
-    """Missing python-dotenv: silent no-op (matches harness/config.py)."""
+    """Missing python-dotenv: silent no-op (matches annot_harness/config.py)."""
     original_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):

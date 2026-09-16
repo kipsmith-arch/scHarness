@@ -18,7 +18,7 @@ skill-creator 的 evals 约定)。加载器不读本目录,零运行时影响。
 **E-1 端到端**(消耗 LLM API,Ask First 确认后执行):
 
 ```
-python -m harness.session --skill skills/cell-annotation \
+python -m annot_harness.session --skill skills/cell-annotation \
     --project-dir output/p5_evals --task "<E-1 的 prompt>"
 ```
 
@@ -27,7 +27,7 @@ python -m harness.session --skill skills/cell-annotation \
 **E-2~E-4 单决策点 mini-session**(低成本,只喂该决策点指标快照):
 
 ```
-python -m harness.session --skill skills/cell-annotation \
+python -m annot_harness.session --skill skills/cell-annotation \
     --project-dir output/p5_evals_E2 --task "<E-2 的 prompt>"
 ```
 

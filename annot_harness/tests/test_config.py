@@ -1,7 +1,7 @@
-"""Tests for ``harness.config`` — the project-root .env loader.
+"""Tests for ``annot_harness.config`` — the project-root .env loader.
 
 These tests are isolated from the rest of the harness: they do NOT import
-``harness.config`` at module top (the package __init__ would otherwise auto-
+``annot_harness.config`` at module top (the package __init__ would otherwise auto-
 load .env on first import and make test ordering nondeterministic). Each test
 re-imports the module with the desired environment under monkeypatch.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-# Inlined mirror of harness.config.RECOGNIZED_KEYS — we cannot import it from
+# Inlined mirror of annot_harness.config.RECOGNIZED_KEYS — we cannot import it from
 # the module itself because that import would trigger the eager load_dotenv
 # bootstrap and pollute os.environ before the test can control it.
 _RECOGNIZED_KEYS = (
@@ -34,7 +34,7 @@ _DUMMY = "CFG_TEST_KEY"
 
 
 def _drop_harness_modules() -> None:
-    for name in [n for n in list(sys.modules) if n == "harness" or n.startswith("harness.")]:
+    for name in [n for n in list(sys.modules) if n == "annot_harness" or n.startswith("annot_harness.")]:
         sys.modules.pop(name, None)
 
 
@@ -60,7 +60,7 @@ def _reload_config(monkeypatch, env_overrides: dict | None = None,
     the next import sees a pristine environment.
     """
     # Clear the package init side-effect too: drop all harness modules.
-    # This must run BEFORE any `import harness.config`, otherwise the module
+    # This must run BEFORE any `import annot_harness.config`, otherwise the module
     # gets cached and a second import won't re-run the bootstrap.
     _drop_harness_modules()
 
@@ -72,13 +72,14 @@ def _reload_config(monkeypatch, env_overrides: dict | None = None,
         for k, v in env_overrides.items():
             monkeypatch.setenv(k, v)
     if skip_dotenv:
-        monkeypatch.setenv("SC_HARNESS_SKIP_DOTENV", "1")
+        monkeypatch.setenv("ANNOT_HARNESS_SKIP_DOTENV", "1")
     else:
+        monkeypatch.delenv("ANNOT_HARNESS_SKIP_DOTENV", raising=False)
         monkeypatch.delenv("SC_HARNESS_SKIP_DOTENV", raising=False)
 
     # This import is now the FIRST time the module is loaded since we
     # cleared sys.modules, so the bootstrap runs under our controlled env.
-    import harness.config  # noqa: F401, E402  (triggers auto-load)
+    import annot_harness.config  # noqa: F401, E402  (triggers auto-load)
 
 
 def test_load_dotenv_picks_up_arbitrary_keys(monkeypatch):
@@ -90,7 +91,7 @@ def test_load_dotenv_picks_up_arbitrary_keys(monkeypatch):
         _drop_harness_modules()
         monkeypatch.delenv(_DUMMY, raising=False)
         monkeypatch.delenv("ANOTHER_DUMMY", raising=False)
-        import harness.config  # noqa: E402
+        import annot_harness.config  # noqa: E402
         import os
         assert os.environ[_DUMMY] == "from-dotenv"
         assert os.environ["ANOTHER_DUMMY"] == "also-loaded"
@@ -111,7 +112,7 @@ def test_load_dotenv_file_wins_over_existing_env(monkeypatch):
     try:
         _drop_harness_modules()
         monkeypatch.setenv(_DUMMY, "from-shell")
-        import harness.config  # noqa: E402  -- bootstrap runs now
+        import annot_harness.config  # noqa: E402  -- bootstrap runs now
         import os
         assert os.environ[_DUMMY] == "from-dotenv"
     finally:
@@ -129,7 +130,7 @@ def test_load_dotenv_shell_fills_gap_when_file_missing(monkeypatch):
         _drop_harness_modules()
         monkeypatch.delenv("ANOTHER_DUMMY", raising=False)
         monkeypatch.setenv(_DUMMY, "from-shell")  # not in .env
-        import harness.config  # noqa: E402
+        import annot_harness.config  # noqa: E402
         import os
         assert os.environ[_DUMMY] == "from-shell"
         assert os.environ["ANOTHER_DUMMY"] == "from-dotenv"
@@ -148,8 +149,8 @@ def test_load_dotenv_override_true_overwrites(monkeypatch):
     try:
         _drop_harness_modules()
         monkeypatch.setenv(_DUMMY, "from-shell")
-        import harness.config  # noqa: E402
-        harness.config.load_dotenv(override=True)
+        import annot_harness.config  # noqa: E402
+        annot_harness.config.load_dotenv(override=True)
         import os
         assert os.environ[_DUMMY] == "from-dotenv"
     finally:
@@ -157,7 +158,7 @@ def test_load_dotenv_override_true_overwrites(monkeypatch):
 
 
 def test_skip_dotenv_disables_loading(monkeypatch):
-    """SC_HARNESS_SKIP_DOTENV=1 keeps os.environ clean of .env values."""
+    """ANNOT_HARNESS_SKIP_DOTENV=1 keeps os.environ clean of .env values."""
     env_path, backup = _write_env(f"{_DUMMY}=from-dotenv\n")
     try:
         monkeypatch.delenv(_DUMMY, raising=False)
@@ -194,7 +195,7 @@ def test_harness_package_init_triggers_dotenv(monkeypatch):
     try:
         monkeypatch.delenv(_DUMMY, raising=False)
         _drop_harness_modules()
-        import harness.notebook  # noqa: F401  -- deep import, no direct config ref
+        import annot_harness.notebook  # noqa: F401  -- deep import, no direct config ref
         import os
         assert os.environ[_DUMMY] == "from-package-init"
     finally:
@@ -202,11 +203,11 @@ def test_harness_package_init_triggers_dotenv(monkeypatch):
 
 
 def test_get_helper_is_os_environ_get(monkeypatch):
-    """harness.config.get(key, default) is a thin wrapper around os.environ.get."""
+    """annot_harness.config.get(key, default) is a thin wrapper around os.environ.get."""
     monkeypatch.setenv(_DUMMY, "via-get")
     _drop_harness_modules()
-    import harness.config  # noqa: E402
-    assert harness.config.get(_DUMMY) == "via-get"
-    assert harness.config.get(_DUMMY, "fallback") == "via-get"
-    assert harness.config.get("UNSET_KEY_XYZ", "fallback") == "fallback"
-    assert harness.config.get("UNSET_KEY_XYZ") is None
+    import annot_harness.config  # noqa: E402
+    assert annot_harness.config.get(_DUMMY) == "via-get"
+    assert annot_harness.config.get(_DUMMY, "fallback") == "via-get"
+    assert annot_harness.config.get("UNSET_KEY_XYZ", "fallback") == "fallback"
+    assert annot_harness.config.get("UNSET_KEY_XYZ") is None

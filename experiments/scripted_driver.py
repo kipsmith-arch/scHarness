@@ -1,4 +1,4 @@
-"""B1 scripted driver CLI — wraps harness.scripted_driver + cell-annotation DAG.
+"""B1 scripted driver CLI — wraps annot_harness.scripted_driver + cell-annotation DAG.
 
 Usage:
     python experiments/scripted_driver.py \\
@@ -20,8 +20,8 @@ from dataclasses import replace
 from experiments.cell_annotation_dag import CELL_ANNOTATION_DAG  # noqa: E402
 from experiments.judges.default_judge import DefaultJudge  # noqa: E402
 from experiments.judges.rule_judge import RuleJudge  # noqa: E402
-from harness.scripted_driver import ScriptedRunError, run_scripted  # noqa: E402
-from harness.skill_loader import load_skill  # noqa: E402
+from annot_harness.scripted_driver import ScriptedRunError, run_scripted  # noqa: E402
+from annot_harness.skill_loader import load_skill  # noqa: E402
 
 
 def main() -> int:

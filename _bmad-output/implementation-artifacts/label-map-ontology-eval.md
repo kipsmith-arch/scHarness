@@ -67,7 +67,7 @@ Pipeline 输出的是 KG `Ontology.Name`（如 `trichoblast`、`root stele`）�
 - `evaluate_cell_level.py` / `bootstrap_test.py` / `run_b1.py` 改为 `--gt-ontology` + `--aliases`
 - `scripts/build_label_map.py` 只起稿钉表（`verified: false`），不再写 pair
 - 旧 `label_map*.json` 留档，传入 `--label-map` 会退出
-- 单测：`harness/tests/test_ontology_eval.py` / `test_evaluate_scoring.py` / `test_build_gt_ontology.py`
+- 单测：`annot_harness/tests/test_ontology_eval.py` / `test_evaluate_scoring.py` / `test_build_gt_ontology.py`
 
 重评产物（不覆盖旧 pair 报告）：`output/B1/eval_ontology/`、`output/B1_PRJNA935359/eval_ontology/`。图谱名与钉表对齐：柱根冠钉到 `columella root cap cell`（KG 无 `columella root cap`）。`Stem cell niche` / `G2/M-phase cell` 在图上无对应节点，只靠别名 exact/synonym。
 

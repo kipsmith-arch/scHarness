@@ -43,7 +43,7 @@
 3. `label_unknown` 仍按 unknown/unmatched 计（没有细胞类型可对）。`label_downgraded` **保留原标签**，只降低展示用把握。
 4. 实现处：`experiments/evaluate_cell_level.py`（`bootstrap_test.py` / `calibrate_thresholds.py` 同步）。`design/` 备忘录不改。
 
-**已做:** 公式与回归测试（`harness/tests/test_evaluate_scoring.py`）。随 2026-09-07 全量重跑写入 `output/B1/eval/`：
+**已做:** 公式与回归测试（`annot_harness/tests/test_evaluate_scoring.py`）。随 2026-09-07 全量重跑写入 `output/B1/eval/`：
 
 | arm | strict | relaxed | macro-F1 | low_conf cells |
 |---|---|---|---|---|

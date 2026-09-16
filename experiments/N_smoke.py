@@ -11,7 +11,7 @@
     N1 input: ⑥ = B1 arm3_llm final_annotations.json
               ⑦ = 没有现成的 session — 报告里 note 标注"待 notebook-on 重跑"
 
-依赖: 仅 stdlib + harness.conversation.load_conversation(读 conversation.jsonl)
+依赖: 仅 stdlib + annot_harness.conversation.load_conversation(读 conversation.jsonl)
 
 输出:
     `output/N3/smoke_test.log`      — N3 通过/失败 + 跨 session 检索命中证据
@@ -121,7 +121,7 @@ def run_n3(echo_dir: str, out_path: str) -> dict:
 def run_n2(conv_path: str, run_log_path: str, out_path: str) -> dict:
     """N2: notebook tool usage frequency and timing in a real LLM session.
 
-    p5_evals_r2 is the same skill+dataset as B1 arm3_llm but goes through harness.session
+    p5_evals_r2 is the same skill+dataset as B1 arm3_llm but goes through annot_harness.session
     (LangGraph loop), so conversation.jsonl is captured — tool_calls appear as the
     assistant's structured output.
     """
@@ -170,7 +170,7 @@ def run_n2(conv_path: str, run_log_path: str, out_path: str) -> dict:
         "n_exec_in_run_log": sum(1 for r in run_log if r.get("type") == "exec"),
         "meta": {
             "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-            "session_kind": "real LLM session via harness.session (p5_evals_r2 = closest analogue to B1 arm3_llm with conversation)",
+            "session_kind": "real LLM session via annot_harness.session (p5_evals_r2 = closest analogue to B1 arm3_llm with conversation)",
         },
     }
 
@@ -206,7 +206,7 @@ def run_n1(six_path: str, out_path: str) -> dict:
     payload = {
         "status": "partial",
         "reason": "⑦ (notebook-on) data not produced in this story — requires re-running "
-                  "B1 arm3 with notebook tool enabled via harness.session. Story 6.7 ships "
+                  "B1 arm3 with notebook tool enabled via annot_harness.session. Story 6.7 ships "
                   "the comparison scaffold + decision template; ⑦ data deferred to a follow-up.",
         "six_baseline": {
             "source": six_path,
@@ -214,7 +214,7 @@ def run_n1(six_path: str, out_path: str) -> dict:
             "note": "B1 arm3_llm final_annotations.json is the ⑥ no-notebook baseline.",
         },
         "seven_status": {
-            "action_required": "Run `python -m harness.session --skill skills/cell-annotation "
+            "action_required": "Run `python -m annot_harness.session --skill skills/cell-annotation "
                                "--project-dir output/N1_on --task <prompt with notebook enabled>`, "
                                "then evaluate with `experiments/evaluate_cell_level.py`.",
             "estimated_llm_calls": "1 full session + judgement costs",

@@ -627,7 +627,7 @@ class TestCliBlastp:
 def _live_blast_ready() -> bool:
     pin = Path(os.environ.get(
         "CELL_ANNOTATION_BLASTDB_DIR",
-        str(Path.home() / ".cache" / "sc-harness" / "cell-annotation" / "blastdb"),
+        str(Path.home() / ".cache" / "annot-harness" / "cell-annotation" / "blastdb"),
     )) / "prot" / "Arabidopsis_thaliana.pin"
     return shutil.which("blastp") is not None and pin.is_file()
 

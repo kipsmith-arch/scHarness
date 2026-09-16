@@ -13,7 +13,7 @@ CLI:
         --case experiments/S1/case_P1/llm_judgment.json  # 写 output
 
 LLM 调用方式:
-    - 通过 harness.session.run_session 的 low-level 入口: 给定 skill + 一个 user task,
+    - 通过 annot_harness.session.run_session 的 low-level 入口: 给定 skill + 一个 user task,
       该 task 把 case 决策点指标作为 system prompt 上下文, 让 LLM 调用 write_judgment.add
     - 复用 harness 的 loop 不增加重复代码
 
@@ -97,13 +97,13 @@ def main() -> int:
 
     # Real invocation — single-turn LLM call (no LangGraph loop, no notebook).
     # Why direct ChatOpenAI: S1 tests a single refine-effect decision point;
-    # spinning up the full harness.session loop adds 20+ rounds of tool calls
+    # spinning up the full annot_harness.session loop adds 20+ rounds of tool calls
     # which drown the signal in noise and waste ~80k tokens per case.
     # Ensure harness package importable when called from project root
     _repo_root = REPO_ROOT
     if _repo_root not in sys.path:
         sys.path.insert(0, _repo_root)
-    from harness.config import load_dotenv
+    from annot_harness.config import load_dotenv
     load_dotenv()
     model_name = args.model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
 

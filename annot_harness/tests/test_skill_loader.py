@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.skill_loader import SkillError, load_skill, summarize_skill
+from annot_harness.skill_loader import SkillError, load_skill, summarize_skill
 
 ECHO_SKILL = Path(__file__).resolve().parent.parent.parent / "skills" / "echo"
 

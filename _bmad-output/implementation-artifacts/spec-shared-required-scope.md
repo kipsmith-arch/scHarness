@@ -46,7 +46,7 @@ context: []
 - [x] `skills/cell-annotation/scripts/trajectory_schema.py` -- 定义并导出唯一的 `REQUIRED_SCOPE` 映射 -- 消除跨目录同源拷贝
 - [x] `skills/cell-annotation/scripts/write_judgment.py` -- 导入共享映射并删除本地定义 -- 保持现有 `_validate_add` 行为
 - [x] `scripts/validate_log.py` -- 通过稳定路径导入共享映射并删除本地定义 -- 保持现有日志校验行为
-- [x] `harness/tests/test_trajectory_schema.py` -- 新增 pytest 回归测试(共享表形状、双调用方一致、粒度违规拒写/报 ERROR、合规日志通过) -- 防止规则漂移,纳入项目现有测试套件
+- [x] `annot_harness/tests/test_trajectory_schema.py` -- 新增 pytest 回归测试(共享表形状、双调用方一致、粒度违规拒写/报 ERROR、合规日志通过) -- 防止规则漂移,纳入项目现有测试套件
 - [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- 在验证完成后将对应条目标记 resolved -- 反映 deferred 清理结果
 - [x] `AGENTS.md` -- 更新 repo status / directory map / 测试基础设施描述 -- 反映 harness 已实现与 pytest 套件真实状态
 

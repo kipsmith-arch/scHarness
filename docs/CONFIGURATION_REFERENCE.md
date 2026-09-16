@@ -2,7 +2,7 @@
 
 > 本文档汇总本仓库所有可配置项（CLI 参数 + 环境变量 + 硬编码常量）及其默认值、优先级和取值范围。
 >
-> 收集范围：`harness/`、`skills/cell-annotation/scripts/`、`scripts/`（root 层）、`experiments/`、`pytest.ini`、`.env`、`dataset/init.py`。
+> 收集范围：`annot_harness/`、`skills/cell-annotation/scripts/`、`scripts/`（root 层）、`experiments/`、`pytest.ini`、`.env`、`dataset/init.py`。
 >
 > 不计入：Python 模块内部局部常量（仅在函数体内使用、不通过任何接口暴露的配置）。
 
@@ -19,12 +19,12 @@
    2. [skill 配置（cell-annotation 示例）](#22-skill-配置cell-annotation-示例)
    3. [进程级临时变量](#23-进程级临时变量)
 3. [harness 层（agent loop）](#3-harness-层agent-loop)
-   0. [harness/config.py — harness 自身配置的 dotenv 加载器](#30-harnessconfigpy--harness-自身配置的-dotenv-加载器)
-   1. [harness/session.py — CLI `python -m harness.session`](#31-harnesssessionpy--cli-python--m-harnesssession)
-   2. [harness/notebook.py — 笔记本 / RAG](#32-harnessnotebookpy--笔记本--rag)
-   3. [harness/dispatcher.py — 工具分发](#33-harnessdispatcherpy--工具分发)
-   4. [harness/skill_loader.py — 技能加载](#34-harnessskill_loaderpy--技能加载)
-   5. [harness/loop.py — Agent 状态](#35-harnesslooppy--agent-状态)
+   0. [annot_harness/config.py — harness 自身配置的 dotenv 加载器](#30-harnessconfigpy--harness-自身配置的-dotenv-加载器)
+   1. [annot_harness/session.py — CLI `python -m annot_harness.session`](#31-harnesssessionpy--cli-python--m-harnesssession)
+   2. [annot_harness/notebook.py — 笔记本 / RAG](#32-harnessnotebookpy--笔记本--rag)
+   3. [annot_harness/dispatcher.py — 工具分发](#33-harnessdispatcherpy--工具分发)
+   4. [annot_harness/skill_loader.py — 技能加载](#34-harnessskill_loaderpy--技能加载)
+   5. [annot_harness/loop.py — Agent 状态](#35-harnesslooppy--agent-状态)
 4. [cell-annotation skill — 流水线脚本](#4-cell-annotation-skill--流水线脚本)
    1. [公共参数 `common.py`](#41-公共参数-commonpy)
    2. [step1_prepare.py](#42-step1_preparepy)
@@ -99,7 +99,7 @@ CLI flag > env var > hardcoded default
 
 | 项 | 值 | 含义 |
 |---|---|---|
-| `testpaths` | `harness/tests` | pytest 收集目录 |
+| `testpaths` | `annot_harness/tests` | pytest 收集目录 |
 | `addopts` | `-q` | 默认静默模式 |
 | `smoke` marker | (无配置) | 标记需要外部 LLM API 的测试（手动跑） |
 
@@ -109,13 +109,13 @@ CLI flag > env var > hardcoded default
 
 环境变量按“拥有者”分成两层：
 
-- **harness 自身配置**（§2.1）——项目级，只服务 `harness/` 包。**`harness/config.py` 是唯一入口**。
+- **harness 自身配置**（§2.1）——项目级，只服务 `annot_harness/` 包。**`annot_harness/config.py` 是唯一入口**。
 - **skill 配置**（§2.2）——以 skill 为单位，各 skill 自负责。cell-annotation 的 Neo4j 连接 / KG 查询参数 / gene-mapping 文件路径都在这里。
 - **进程级临时变量**（§2.3）——运行时透传，不走配置文件。
 
 ### 2.1 harness 自身配置
 
-由 `<project-root>/.env` 管理（gitignored）与 `<project-root>/.env.example` 模板（跟踪进 git）。`harness/__init__.py` 在导入时调用 `harness/config.py:load_dotenv()` 一次性加载。完整规则见 `harness/config.py:load_dotenv`。
+由 `<project-root>/.env` 管理（gitignored）与 `<project-root>/.env.example` 模板（跟踪进 git）。`annot_harness/__init__.py` 在导入时调用 `annot_harness/config.py:load_dotenv()` 一次性加载。完整规则见 `annot_harness/config.py:load_dotenv`。
 
 ```
 读取顺序：.env.example  （提供默认值的模板，跟踪进 git）
@@ -125,13 +125,13 @@ CLI flag > env var > hardcoded default
         os.environ     （shell / 父进程设置的运行时变量，优先级最高）
 ```
 
-> CI / 测试跳过自动加载：`export SC_HARNESS_SKIP_DOTENV=1`（在任何 `harness` 导入之前设置）。
+> CI / 测试跳过自动加载：`export ANNOT_HARNESS_SKIP_DOTENV=1`（在任何 `harness` 导入之前设置；旧名 `SC_HARNESS_SKIP_DOTENV` 仍可用）。
 >
 > `.env.example` 提供全部受支持 key 的清单与示例值。**默认不提供 `OPENAI_API_KEY` 等敏感项的默认值**——代码在没有显式值时不会被加载，避免硬编码。
 
 #### LLM / OpenAI 兼容网关
 
-来自 `harness/session.py:build_llm`：
+来自 `annot_harness/session.py:build_llm`：
 
 | 变量 | 类型 | 默认 | 用途 |
 |---|---|---|---|
@@ -145,7 +145,7 @@ CLI flag > env var > hardcoded default
 
 #### 笔记本 / RAG
 
-来自 `harness/session.py`（`build_llm`）：
+来自 `annot_harness/session.py`（`build_llm`）：
 
 | 变量 | 类型 | 默认 | 用途 |
 |---|---|---|---|
@@ -159,7 +159,7 @@ CLI flag > env var > hardcoded default
 
 ### 笔记本 / RAG
 
-来自 `harness/notebook.py`、`harness/session.py`：
+来自 `annot_harness/notebook.py`、`annot_harness/session.py`：
 
 | 变量 | 类型 | 默认 | 用途 |
 |---|---|---|---|
@@ -196,7 +196,7 @@ CLI flag > env var > hardcoded default
 | `NEO4J_URI` | str | `"bolt://localhost:7687"` | Neo4j Bolt URI（step3c_kg 、build_label_map 使用） |
 | `NEO4J_USER` | str | `"neo4j"` | Neo4j 用户名 |
 | `NEO4J_PASSWORD` | str | **无默认**（必须显式设置） | Neo4j 密码；不设则连接被拒 |
-| `CELL_ANNOTATION_BLASTDB_DIR` | str | `~/.cache/sc-harness/cell-annotation/blastdb` | BLAST subject 库解压根（其下为 `prot/`）；仅 `--provider blastp` 使用 |
+| `CELL_ANNOTATION_BLASTDB_DIR` | str | `~/.cache/annot-harness/cell-annotation/blastdb` | BLAST subject 库解压根（其下为 `prot/`）；仅 `--provider blastp` 使用 |
 | `CELL_ANNOTATION_BLASTDB_URL` | str | xener `blastdb.zip` URL | subject zip；HEAD 为 404，skill 用 GET |
 | `CELL_ANNOTATION_BLASTDB_SHA256` | str | `8dd83c925f8f18d7e3f2cf626ce780548085321ed501805247932c5b56dab1c3` | zip hex；空则拒绝安装 |
 | `CELL_ANNOTATION_QUERY_FASTA` | str | 无 | `--query-fasta` 默认路径 |
@@ -207,10 +207,10 @@ CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 
 
 1. 在 skill 自己的 `<skill>/.env.example` 加 key + 注释
 2. 在 skill 的 `scripts/common.py:SKILL_DOTENV_KEYS` 元组同步
-3. **不要**加到 `harness/config.py:RECOGNIZED_KEYS` ——harness 不需要知道
+3. **不要**加到 `annot_harness/config.py:RECOGNIZED_KEYS` ——harness 不需要知道
 4. skill 脚本运行时读 `os.environ.get(...)`（同 `harness` 的读取模式）
 5. 如果该参数**仅环境类**（服务/资源调优、不带生物决策），在 argparse 中加 `help=argparse.SUPPRESS` 隐藏（`common.arg_spec` 会自动跳过），CLI 仍可临时覆盖。
-6. 写 `harness/tests/test_<skill>_dotenv.py` 验证加载逻辑
+6. 写 `annot_harness/tests/test_<skill>_dotenv.py` 验证加载逻辑
 
 ### 2.3 进程级临时变量
 
@@ -232,17 +232,17 @@ CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 
 
 | 变量 | 类型 | 默认 | 用途 | 引用 |
 |---|---|---|---|---|
-| `SC_HARNESS_SKIP_DOTENV` | enum | `0` | `=1` 时 `harness/config.py` 跳过整个 dotenv 加载逻辑，跳到从调用者使用 `harness.config.load_dotenv(override=True)` 才能改变环境。CI、单元测试、以及不希望 .env 被隐式读取的场景必须设。 | `harness/config.py` |
+| `ANNOT_HARNESS_SKIP_DOTENV` | enum | `0` | `=1` 时 `annot_harness/config.py` 跳过整个 dotenv 加载逻辑，跳到从调用者使用 `annot_harness.config.load_dotenv(override=True)` 才能改变环境。CI、单元测试、以及不希望 .env 被隐式读取的场景必须设。旧名 `SC_HARNESS_SKIP_DOTENV` 同等生效。 | `annot_harness/config.py` |
 
 ---
 
 ## 3. harness 层（agent loop）
 
-### 3.0 harness/config.py — harness 自身配置的 dotenv 加载器
+### 3.0 annot_harness/config.py — harness 自身配置的 dotenv 加载器
 
 **仅负责 harness 包自己的配置**（LLM 网关 4 项 + 笔记本/RAG 2 项 = 6 项；详见 §2.1）。Skill 配置不是 harness 的责任——cell-annotation 的 Neo4j 连接、KG 参数等由 skill 自己的 `scripts/common.py:load_skill_dotenv()` 加载（详见 §2.2）。harness 保持 domain-agnostic。
 
-`harness/__init__.py` 导入 `config` 子模块，触发一次性的加载。
+`annot_harness/__init__.py` 导入 `config` 子模块，触发一次性的加载。
 
 | API | 用途 |
 |---|---|
@@ -252,13 +252,13 @@ CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 
 
 加载逻辑：
 
-1. 如果 `SC_HARNESS_SKIP_DOTENV=1`，立即返回 `[]`。
+1. 如果 `ANNOT_HARNESS_SKIP_DOTENV=1`（或旧名 `SC_HARNESS_SKIP_DOTENV=1`），立即返回 `[]`。
 2. 记录入口时哪些 RECOGNIZED_KEYS 已在 `os.environ`（“shell pre-existing”）。
 3. 读取 `.env.example`：仅填充 *未* 设置的 key；记录哪些 key 被模板填充了。
 4. 读取 `.env`：填充未设置的 key；**升级** 被模板填充的 key；但**绝不覆盖** shell pre-existing 的 key。
 5. `override=True` 时：重新读取两个文件，以文件覆盖一切（CI / 测试专用）。
 
-加载器项目根定位：`Path(__file__).resolve().parent.parent`——**不**依赖 `sys.path`。`import harness.config` 唯一的前提是调用者的 `sys.path` 能看到 `harness/` 包的父目录。harness 包内的模块由 `harness/__init__.py` 负责；外部脚本（`build_label_map.py`）不导入它，从父进程 / shell 获取环境。Skill 脚本不读 harness 配置（它们不需要），由自己的 `scripts/common.py:load_skill_dotenv()` 负责 skill 配置加载（§2.2）。
+加载器项目根定位：`Path(__file__).resolve().parent.parent`——**不**依赖 `sys.path`。`import annot_harness.config` 唯一的前提是调用者的 `sys.path` 能看到 `annot_harness/` 包的父目录。harness 包内的模块由 `annot_harness/__init__.py` 负责；外部脚本（`build_label_map.py`）不导入它，从父进程 / shell 获取环境。Skill 脚本不读 harness 配置（它们不需要），由自己的 `scripts/common.py:load_skill_dotenv()` 负责 skill 配置加载（§2.2）。
 
 文件名 / 路径：
 
@@ -267,12 +267,12 @@ CLI 覆盖（运维临时调试用）：`step3c_kg query` 仍然接受隐藏的 
 | `<project-root>/.env.example` | 跟踪进 git 的模板，提供推荐默认值 |
 | `<project-root>/.env` | gitignored；本地用户秘密（如 Neo4j 密码） |
 
-### 3.1 harness/session.py — CLI `python -m harness.session`
+### 3.1 annot_harness/session.py — CLI `python -m annot_harness.session`
 
 CLI 入口：
 
 ```
-python -m harness.session --skill <path> --project-dir <path> [其它]
+python -m annot_harness.session --skill <path> --project-dir <path> [其它]
 ```
 
 | 参数 | 类型 | 默认 | 说明 |
@@ -292,7 +292,7 @@ python -m harness.session --skill <path> --project-dir <path> [其它]
 | `DEFAULT_MODEL` | `"gpt-4o-mini"` | 见上 `--model` 优先级链 |
 | session_id 格式 | `"sess-{YYYYMMDD-HHMMSS}-{rand:04d}"` | 自动生成 |
 
-### 3.2 harness/notebook.py — 笔记本 / RAG
+### 3.2 annot_harness/notebook.py — 笔记本 / RAG
 
 模块级常量：
 
@@ -310,7 +310,7 @@ BM25 参数（硬编码）：
 | `b` | `0.75` |
 | IDF 平滑 | `+1`（`(N - df + 0.5) / (df + 0.5) + 1`） |
 
-笔记本工具参数（来自 `NOTEBOOK_TOOL_SCHEMAS`，`harness/loop.py`）：
+笔记本工具参数（来自 `NOTEBOOK_TOOL_SCHEMAS`，`annot_harness/loop.py`）：
 
 #### `write_note`
 
@@ -333,14 +333,14 @@ BM25 参数（硬编码）：
 top_k = int(args.get("top_k", 5) or 5)  # False / 0 都会被替换为 5
 ```
 
-### 3.3 harness/dispatcher.py — 工具分发
+### 3.3 annot_harness/dispatcher.py — 工具分发
 
 | 常量 / 参数 | 值 | 含义 |
 |---|---|---|
 | `subprocess timeout` | `float(spec.get("timeout", 3600))` 秒 | 单次工具子进程超时；可在工具的 `tool_runtime` 中覆盖；skill 包内 7 个 step 脚本 + `write_judgment.py` 均未指定，故全部默认 3600s |
 | `PYTHONIOENCODING` 注入 | `"utf-8"` | 仅当未设置时注入 |
 
-### 3.4 harness/skill_loader.py — 技能加载
+### 3.4 annot_harness/skill_loader.py — 技能加载
 
 模块级常量：
 
@@ -356,7 +356,7 @@ top_k = int(args.get("top_k", 5) or 5)  # False / 0 都会被替换为 5
 f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名冲突
 ```
 
-### 3.5 harness/loop.py — Agent 状态
+### 3.5 annot_harness/loop.py — Agent 状态
 
 仅两段文字常量（prompt 字面量）：
 
@@ -888,9 +888,9 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | 类型 | 路径 | 来源 |
 |---|---|---|
 | 轨迹 | `<project-dir>/run_log.jsonl` | `common.run_log_path` |
-| 会话记录 | `<project-dir>/conversation.jsonl` | `harness/conversation.py` |
-| 笔记本 | `<project-dir>/notes.jsonl` 或 `$RAG_NOTES_DIR` | `harness/session.py:98` |
-| Chroma 索引 | `<notes_path_parent>/notes_chroma/` | `harness/notebook.py:_chroma_dir_for` |
+| 会话记录 | `<project-dir>/conversation.jsonl` | `annot_harness/conversation.py` |
+| 笔记本 | `<project-dir>/notes.jsonl` 或 `$RAG_NOTES_DIR` | `annot_harness/session.py:98` |
+| Chroma 索引 | `<notes_path_parent>/notes_chroma/` | `annot_harness/notebook.py:_chroma_dir_for` |
 | step1 产物 | `<project-dir>/step1_prepare/{processed.h5ad, obs_snapshot.csv, var_snapshot.csv, qc_metrics.json, qc_distributions.png}` | `op_write_output` |
 | step2 产物 | `<project-dir>/step2_markers/{markers.csv, markers.json}` | `op_write_markers` |
 | step3 产物 | `<project-dir>/step3c_kg/{kg_hits.json, kg_source.txt}` | `op_write_hits` |
@@ -926,11 +926,11 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 | `--subcluster-resolution` | `0.5` | step5 |
 | `--min-cells` (subcluster gate) | `100` | step5 |
 | DEFAULT_MODEL | `"gpt-4o-mini"` | harness |
-| DEFAULT_EMBEDDING_MODEL | `"all-MiniLM-L6-v2"` | harness/notebook |
-| subprocess timeout (skill tools) | `3600` 秒 | harness/dispatcher |
-| `--dump-schema` timeout | `120` 秒 | harness/skill_loader |
-| OPENAI_MAX_RETRIES | `6` | harness/session |
-| BM25 `k1` / `b` | `1.5` / `0.75` | harness/notebook |
+| DEFAULT_EMBEDDING_MODEL | `"all-MiniLM-L6-v2"` | annot_harness/notebook |
+| subprocess timeout (skill tools) | `3600` 秒 | annot_harness/dispatcher |
+| `--dump-schema` timeout | `120` 秒 | annot_harness/skill_loader |
+| OPENAI_MAX_RETRIES | `6` | annot_harness/session |
+| BM25 `k1` / `b` | `1.5` / `0.75` | annot_harness/notebook |
 | NEO4J_URI 默认 | `"bolt://localhost:7687"` | common / build_label_map（与 `.env` 实际值 `neo4j://10.224.28.66:7688` 不一致；`.env` 优先） |
 | NEO4J_USER 默认 | `"neo4j"` | common / build_label_map |
 | EXPECTED_N（gt cells） | `33956` | build_gt_cells |
@@ -981,5 +981,5 @@ f"{script_stem}__{subcommand}"  # 双下划线连接，避免与 step.op 命名�
 
 - 设计文档：`design/tool_design.md`（§10 CLI flags > env > defaults）、`design/loop_design.md`（§5 loop 结构）、`design/trajectory_design.md`（§3.1 REQUIRED_SCOPE 由来）
 - AGENTS.md 第一节的 "Repo status" 与 "Gitignore gotchas" 给出与本文档交叉的环境信息（数据集路径 / gitignore 行为）
-- `harness/loop.py` 的 `NOTEBOOK_TOOL_SCHEMAS` 是循环层工具 schema 唯一来源
+- `annot_harness/loop.py` 的 `NOTEBOOK_TOOL_SCHEMAS` 是循环层工具 schema 唯一来源
 - `skills/cell-annotation/scripts/common.py` 是所有 step 脚本共享的 argparse 扩展点

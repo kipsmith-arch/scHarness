@@ -147,7 +147,7 @@ def _last_json_object(text: str) -> dict:
 
 
 def _require_openai_key() -> None:
-    import harness.config  # noqa: F401 — load root .env
+    import annot_harness.config  # noqa: F401 — load root .env
 
     if not os.environ.get("OPENAI_API_KEY"):
         raise SystemExit("OPENAI_API_KEY missing; halt (Ask First: OpenAI gateway)")
@@ -206,15 +206,15 @@ def run_arm12(arm: str, project_dir: Path, session_id: str) -> None:
 
 
 def run_arm3() -> None:
-    from harness.session import run_session
-    from harness.skill_loader import load_skill
+    from annot_harness.session import run_session
+    from annot_harness.skill_loader import load_skill
 
     ARM3.mkdir(parents=True, exist_ok=True)
     skill = load_skill(str(REPO_ROOT / "skills" / "cell-annotation"))
     for spec in skill.tool_runtime.values():
         spec["timeout"] = max(float(spec.get("timeout") or 0), TOOL_TIMEOUT)
     rel = os.path.relpath(ARM3, REPO_ROOT).replace("\\", "/")
-    log(f"RUN harness.session arm3_llm notebook=False max_turns={ARM3_MAX_TURNS}")
+    log(f"RUN annot_harness.session arm3_llm notebook=False max_turns={ARM3_MAX_TURNS}")
     os.environ["RAG_EMBEDDING"] = "off"
     try:
         run_session(

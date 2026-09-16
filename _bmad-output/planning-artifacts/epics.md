@@ -1,4 +1,4 @@
-# Epics — scHarness 项目里程碑
+# Epics — annotHarness 项目里程碑
 
 > 这是 `design/implementation_plan.md` 中 P1–P7 里程碑的 BMAD 风格 epic 拆分。
 > 每个里程碑视为一个 epic,里程碑内的 task (L-/A-/B-/C-/D-/S-/I-/T-) 视为 story。
@@ -11,23 +11,23 @@
 
 **目标**:实现领域无关的 LangGraph runner,能加载任意"标准 skill 包",用最小 echo skill 完成冒烟。
 
-**范围**:`harness/`(loop.py / dispatcher.py / skill_loader.py / session.py / conversation.py / notebook.py / config.py)+ `skills/echo/` 冒烟 + 89 pytest 全过。
+**范围**:`annot_harness/`(loop.py / dispatcher.py / skill_loader.py / session.py / conversation.py / notebook.py / config.py)+ `skills/echo/` 冒烟 + 89 pytest 全过。
 
 **依赖**:无。
 
 **里程碑验收(M1)**:echo skill 跑通;加载器派生三接口;subprocess/function/builtin 分发正确;笔记本读写 + BM25 兜底可用;`python -m pytest` 89 passed。
 
-### Story 1.1: harness/loop.py + dispatcher.py — 通用循环
+### Story 1.1: annot_harness/loop.py + dispatcher.py — 通用循环
 - 实现 LangGraph StateGraph(agent→tools→END)+ dispatcher 三型分发
 - stdout 最后一行 JSON 契约
 - 单元测试覆盖
 
-### Story 1.2: harness/skill_loader.py — 标准 skill 包加载器
+### Story 1.2: annot_harness/skill_loader.py — 标准 skill 包加载器
 - 读 SKILL.md frontmatter(name/description)+ body→system_prompt
 - 扫描 scripts/ → 派生 tool_schemas(LLM 面)+ tool_runtime(loop 面)
 - 单一事实源 = 脚本 argparse(`--dump-schema`)
 
-### Story 1.3: harness/session.py + conversation.py — 会话入口与对话落盘
+### Story 1.3: annot_harness/session.py + conversation.py — 会话入口与对话落盘
 - run_session 入口
 - conversation.jsonl 写入
 - 单元测试
@@ -36,7 +36,7 @@
 - SKILL.md frontmatter + scripts/echo.py + `--dump-schema`
 - 验证 loop 换 skill 不改代码(领域无关证明)
 
-### Story 1.5: harness/notebook.py — 笔记本 + BM25 兜底
+### Story 1.5: annot_harness/notebook.py — 笔记本 + BM25 兜底
 - write_note / retrieve_notes + notes.jsonl + 向量索引(可插拔)
 - 无 embedding 时 BM25 兜底;RAG_NOTES_DIR
 - N3 冒烟

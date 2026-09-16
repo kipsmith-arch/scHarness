@@ -15,7 +15,7 @@
 | 知识图谱 | ✅ 在线 | `NEO4J_*` 可连 |
 | 基因 ID 预处理 | ✅ 就绪（可选资源） | 物种基因 ID 对照表—— **不再被 skill 调用**,用户按需在 pipeline 上游完成 ID 转换 |
 | **skill 包** | ⚠️ 冒烟级 | `skills/echo`(标准格式:SKILL.md frontmatter + scripts/ + --dump-schema)已建并跑通;cell-annotation 包未建 |
-| **loop 代码** | ✅ 完成 | `harness/` 6 文件(loop / dispatcher / skill_loader / session / conversation / notebook)已实现,P1 验收通过 |
+| **loop 代码** | ✅ 完成 | `annot_harness/` 6 文件(loop / dispatcher / skill_loader / session / conversation / notebook)已实现,P1 验收通过 |
 | **pipeline 代码** | ❌ 不存在 | `common.py` + 7 个 `stepN_*.py` 未写 |
 | **实验代码** | ❌ 不存在 | `scripts/`、`experiments/` 未建 |
 | 依赖环境 | ⚠️ 基本齐 | langgraph/scanpy/neo4j/sentence-transformers/sklearn/statsmodels/leidenalg 均可用;**scrublet 未安装** |
@@ -49,7 +49,7 @@ BLAST subject 库**不**放在 skill 目录或 `assets/`。按需下载到用户
 
 1. **SKILL.md 只写"怎么干 + 何时读什么"**。247 指标解读全文(~545 行)、SOP 全文放 `references/`,按决策点按需读;SKILL.md 保持精简。→ B3 实验("哪些指标常驻 prompt、哪些按需查询")的结论天然落地,无需事后重构。
 2. **`tool_schemas` / `tool_runtime` 是从 `scripts/` 派生的视图,不是手写顶层文件**。脚本的 argparse 是工具声明的单一事实源;加载器聚合生成两样东西,杜绝"schema 与 argparse 漂移"。
-3. **description 是触发机制**。skill 不绑定 scHarness——任何 skill-aware agent 都能加载;loop 只是"能加载任何标准 skill 的宿主"(用 echo skill 证明)。
+3. **description 是触发机制**。skill 不绑定 annotHarness——任何 skill-aware agent 都能加载;loop 只是"能加载任何标准 skill 的宿主"(用 echo skill 证明)。
 4. **skill 的开发走 skill-creator 循环**:草稿 → 测试 prompt(evals/evals.json)→ with-skill vs baseline → 迭代 → description 优化 → 打包。
 
 ---
@@ -66,7 +66,7 @@ P4 数据底座(D-1~D-5)──────────────────�
 
 | 阶段 | 名称 | 对应 skill-creator 环节 | 关键产出 | 里程碑 |
 |---|---|---|---|---|
-| **P1** | Loop 宿主 + 标准 skill 加载器 | —(宿主) | `harness/` 6 文件(含加载器)+ 笔记本 | M1:echo skill(标准格式)跑通 |
+| **P1** | Loop 宿主 + 标准 skill 加载器 | —(宿主) | `annot_harness/` 6 文件(含加载器)+ 笔记本 | M1:echo skill(标准格式)跑通 |
 | **P2** | Pipeline = skill 的 scripts/ | scripts 层 | `common.py` + 7 脚本 + `--dump-schema` 自描述 | M2:47 op 全跑通、schema 可派生 |
 | **P3** | SKILL.md + references + description | 写草稿 | 标准 skill 包(scripts 入住) | M3:包结构合规、三接口派生成功 |
 | **P4** | 实验数据底座 | 测试前置 | `experiments/gt_cells.csv` + `label_map.json` | M4:评估口径就绪 |
@@ -87,11 +87,11 @@ P4 数据底座(D-1~D-5)──────────────────�
 
 | # | 任务 | 产出 |
 |---|---|---|
-| L-1 | `harness/loop.py`(LangGraph StateGraph:agent→tools→END)+ `dispatcher.py`(subprocess/function/builtin 分发,stdout 最后一行 JSON 契约) | 通用循环 |
-| L-2 | **`harness/skill_loader.py`**:按标准格式加载 skill——读 frontmatter(name/description)、body→system_prompt;扫描 `scripts/` 发现工具;聚合各脚本的 schema 声明 → 派生 `tool_schemas`(LLM 面)+ `tool_runtime`(loop 面) | 标准 skill 加载器 |
-| L-3 | `harness/session.py`(run_session 入口)+ `conversation.py`(conversation.jsonl) | 会话入口 |
+| L-1 | `annot_harness/loop.py`(LangGraph StateGraph:agent→tools→END)+ `dispatcher.py`(subprocess/function/builtin 分发,stdout 最后一行 JSON 契约) | 通用循环 |
+| L-2 | **`annot_harness/skill_loader.py`**:按标准格式加载 skill——读 frontmatter(name/description)、body→system_prompt;扫描 `scripts/` 发现工具;聚合各脚本的 schema 声明 → 派生 `tool_schemas`(LLM 面)+ `tool_runtime`(loop 面) | 标准 skill 加载器 |
+| L-3 | `annot_harness/session.py`(run_session 入口)+ `conversation.py`(conversation.jsonl) | 会话入口 |
 | L-4 | **最小 echo skill 冒烟(标准格式)**:`skills/echo/`(SKILL.md frontmatter + scripts/echo.py + `--dump-schema`)验证加载器、三型分发、通用性——loop 换 skill 不改代码 | 通用性验证 |
-| L-5 | `harness/notebook.py`:write_note / retrieve_notes + notes.jsonl + 向量索引(可插拔)+ **BM25 兜底**;loop 注册内置工具 + base_prompt 拼接 + `RAG_NOTES_DIR` | 笔记本(含 N3 冒烟) |
+| L-5 | `annot_harness/notebook.py`:write_note / retrieve_notes + notes.jsonl + 向量索引(可插拔)+ **BM25 兜底**;loop 注册内置工具 + base_prompt 拼接 + `RAG_NOTES_DIR` | 笔记本(含 N3 冒烟) |
 | L-6 | 同步修订 loop_design.md(职责/架构图/State 补笔记本字段;skill 接口改述为"从标准包派生") | 文档一致 |
 
 ### 3.2 加载器派生规则(核心设计)

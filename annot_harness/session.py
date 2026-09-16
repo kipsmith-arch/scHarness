@@ -5,7 +5,7 @@ run_session() ties everything together:
     loop -> save conversation.jsonl.
 
 Also provides a CLI for smoke tests and evals:
-    python -m harness.session --skill skills/echo --project-dir output/echo_test \
+    python -m annot_harness.session --skill skills/echo --project-dir output/echo_test \
         --task "echo hello" --model deepseek-v4-flash
 """
 

@@ -37,7 +37,7 @@
   summary: REQUIRED_SCOPE 在 write_judgment.py 与 validate_log.py 各持一份同源拷贝,跨目录无共享模块/无测试,可能漂移
   evidence: 评审发现;当前靠注释互指防漂移,未做单元测试;加 pytest golden test 或抽到独立 schema 模块后可彻底防止
   status: resolved
-  resolved: '2026-08-11'  # REQUIRED_SCOPE 已抽取至 trajectory_schema.py 共享模块;write_judgment/validate_log 均导入之;harness/tests/test_trajectory_schema.py 5 项回归全绿(pytest 57 passed)
+  resolved: '2026-08-11'  # REQUIRED_SCOPE 已抽取至 trajectory_schema.py 共享模块;write_judgment/validate_log 均导入之;annot_harness/tests/test_trajectory_schema.py 5 项回归全绿(pytest 57 passed)
   next_action: 无
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-p5-r2-organ-filter-judgment-granularity.md`
@@ -62,7 +62,7 @@
     - `_organ_status`: now classifies per-field (not per-token) because a
       field like "Stem|Root|Leaf" is a single multi-organ cell type that
       applies to all three organs.
-    Added harness/tests/test_step3_kg_organ_status.py with 42 tests pinning
+    Added annot_harness/tests/test_step3_kg_organ_status.py with 42 tests pinning
     the new boundary contract, including the D-2 regression case
     (target="root", organ="Rootstock" -> "mismatch", was "root" pre-fix).
   next_action: 无

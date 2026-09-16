@@ -148,25 +148,25 @@ sibling / 邻层没有祖先边,就是 unrelated,不给部分分。
 
 ### 6.1 细胞权重
 
-| 关系 | 权重 \(w\) |
+| 关系 | 权重 $w$ |
 |---|---|
 | exact / synonym | 1.0 |
 | subtype / supertype | 0.5 |
 | unrelated / unmatched | 0.0 |
 
-\(w = 0.5\) 是预先约定的部分分:**同一条本体枝上的粗/细既不当满分,也不当零分。** 不是 hop 数、不是图距离、不是生物学常数。1 hop 与 3 hop 同为 0.5。改权重或按 hop 衰减视为评分版本变更,须改本文档并重评,不得只改代码。
+$w = 0.5$ 是预先约定的部分分:**同一条本体枝上的粗/细既不当满分,也不当零分。** 不是 hop 数、不是图距离、不是生物学常数。1 hop 与 3 hop 同为 0.5。改权重或按 hop 衰减视为评分版本变更,须改本文档并重评,不得只改代码。
 
 `confidence` 另有诊断权重(high/medium=1, low=0.5),**只写入 per_cell,不进入下面任何准确率或 F1。**
 
 ### 6.2 汇总(N = 可对齐的细胞数)
 
-\[
+$$
 \mathrm{strict} = \frac{1}{N}\sum_i \mathbf{1}[w_i = 1]
-\]
+$$
 
-\[
+$$
 \mathrm{relaxed} = \frac{1}{N}\sum_i w_i
-\]
+$$
 
 - **headline = strict**。表示「预测节点与该细胞 GT 节点是同一/同义」。
 - **relaxed 必须与 strict 并列报告**,不可只报其中一个。
@@ -174,10 +174,10 @@ sibling / 邻层没有祖先边,就是 unrelated,不给部分分。
 
 ### 6.3 macro-F1(辅)
 
-对每个真值类型 \(t\):
+对每个真值类型 $t$:
 
-- 细胞权重 \(w_i>0\) 记入该类 TP(累加 \(w_i\))
-- \(w_i=0\) 记入该类 FN(+1)
+- 细胞权重 $w_i>0$ 记入该类 TP(累加 $w_i$)
+- $w_i=0$ 记入该类 FN(+1)
 - 预测节点映射回某个**其它**钉住的 GT 名时,记入那一类 FP
 
 每类算 soft F1,再对类型做算术平均。`Unknown` 作为一类时 F1 恒为 0,会系统性压低 macro-F1。**因此 macro-F1 不得单独当 headline**,只作类型均衡的辅指标。
@@ -233,8 +233,8 @@ experiments/
 ├── gt_ontology_<id>.json     ← 其它数据集钉表
 └── kg_term_aliases.json      ← 全球别名
 scripts/build_label_map.py    ← 只起稿钉表,不再写 pair
-harness/tests/test_ontology_eval.py
-harness/tests/test_evaluate_scoring.py
+annot_harness/tests/test_ontology_eval.py
+annot_harness/tests/test_evaluate_scoring.py
 ```
 
 CLI 要点:`evaluate_cell_level.py --gt-ontology ... --aliases ...`;传入 `--label-map` 必须退出。报告写 `kg_hierarchy`。per_cell 另存,供 bootstrap 与失败分析。

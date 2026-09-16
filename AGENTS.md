@@ -2,7 +2,7 @@
 
 ## Repo status
 - **P1–P6 code-complete AND run end-to-end on real data; P7 (.skill packaging + SKILL iteration) pending.** Concrete status (verified `2026-08`):
-  - **P1 Loop layer** (`harness/`): done — 6 files + 89 pytest, all passing (`python -m pytest`, 89 passed).
+  - **P1 Loop layer** (`annot_harness/`): done — 6 files + 89 pytest, all passing (`python -m pytest`, 89 passed).
   - **P2 Pipeline scripts** (`skills/cell-annotation/scripts/`): code done — 7 `stepN_*.py` + `common.py` (1019 lines) + `write_judgment.py` (252) + `trajectory_schema.py` (22), 4,265 lines total, every script supports `--dump-schema`. **47 atomic ops all implemented and exercised end-to-end** on the 33,956-cell Arabidopsis root h5ad (run artifacts in `output/p2_smoke/`, `output/p2/`, `output/p2v2/`, `output/p2_dbg/`).
   - **P3 Skill packaging** (`skills/cell-annotation/`): done — `SKILL.md` (243 lines, <500) + `references/` (sop / metrics / traps / kg-schema, all with TOC) + `assets/` (2 files). Skill has been load-tested in the r2 P5 closure (see `output/p5_evals_r2/`).
   - **P4 Data substrate**: done — `experiments/gt_cells.csv` (33,956 rows; barcode → true type) + `experiments/gt_ontology.json` (12 GT strings pinned to Ontology nodes) + `experiments/kg_term_aliases.json` (global wording variants). Old `label_map.json` pair tables are archive only.
@@ -17,13 +17,13 @@
   - **P7 SKILL iteration + `.skill` packaging**: ⏳ pending — driven by evals + B1 feedback; description tuning; final `.skill` bundle.
   - **基因 ID 映射（TAIR locus → symbol 等）从 skill 中移除**：`name_map4Arabidopsis_thaliana_symbol.json` 仍随仓,但 step3c_kg 不再读、不再映射。ID 转换是数据处理责任,由用户在 pipeline 上游完成。
   - **两层配置分离**（已落地）：
-    - `harness/config.py`：负责 harness 包自身配置（LLM gateway + RAG toggles；6 项 key），加载项目根 `.env`。任何 `from harness.X import ...` 触发加载。Disable：`export SC_HARNESS_SKIP_DOTENV=1`。
+    - `annot_harness/config.py`：负责 harness 包自身配置（LLM gateway + RAG toggles；6 项 key），加载项目根 `.env`。任何 `from annot_harness.X import ...` 触发加载。Disable：`export ANNOT_HARNESS_SKIP_DOTENV=1`。
     - `skills/cell-annotation/scripts/common.py:load_skill_dotenv()`：负责 cell-annotation skill 的**环境类**配置（Neo4j 连接、KG 服务调优；3 项 key：`NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`），加载 `skills/cell-annotation/.env`（gitignored）。任何 step 脚本 import `common` 时触发。Disable：`export CELL_ANNOTATION_SKIP_DOTENV=1`。
     - **harness 完全不知道 cell-annotation skill 的存在**（domain-agnostic）。未来增加 skill时该 skill 自己拥有并加载自己的 `.env`，harness 不变。
     - **凭据归属（实现状态）**：根 `.env` 仅含 harness 自身 key（`OPENAI_*` + `RAG_*`）。Neo4j 凭据已在 `skills/cell-annotation/.env`，**不在**根 `.env`。两文件互不重叠（harness loader 也会把根 `.env` 的 unknown key 装入 `os.environ`，所以历史把 Neo4j 放根 `.env` 也能跑，但违反"harness 不知道 skill 存在"的设计原则）。
-    - 完整 key 清单：`harness/config.py:RECOGNIZED_KEYS` (harness) / `skills/cell-annotation/scripts/common.py:SKILL_DOTENV_KEYS` (skill)。文档 `docs/CONFIGURATION_REFERENCE.md` §2 / §3.0。
-    - **LLM 工具参数 vs skill 配置 区分原则**：除 step3c_kg 的 KG 服务/资源参数外，其它所有 argparse 参数**全部暴露给 LLM**——LLM 通过 SOP 决策点（`qc_threshold` / `marker_quality` / `resolution_select` / `refine_effect` / `label_confirm` 等）主动调整阈值、选择分辨率、切换 DE 方法、选 obs 列名 / 物种特异正则等。**已 SUPPRESS 化的只有 step3c_kg 的 KG 资源类参数**：`--uri` / `--user` / `--password`（Neo4j 连接凭据，harness 完全不知道其存在）+ `--min-confidence` / `--max-ancestor-hops`（KG 服务调优）。这些 SUPPRESS 让 LLM 工具 schema 不暴露它们、CLI 可手动临时覆盖，从代码默认值回落（参考 `harness/tests/test_step3c_kg_schema.py`）。helper `common.env_or_default(args, name, env_keys, default, cast)` 已实现；`common.arg_spec` 已把 SUPPRESS 化的 action 从 tool schema 里剔除——可直接套用。
-- Test tooling: `pytest.ini` (`testpaths = harness/tests`), `harness/tests/conftest.py`, **89 tests passing** (`python -m pytest`), including 14 for step3c_kg schema discipline (4 task + 2 path A-class visible; 5 KG-resource B-class hidden; 3 loader / runtime contract) and 7 for the skill `.env` loader. Don't assume tests don't work — run them. `.opencode/package.json` only pins the opencode plugin and that dir is gitignored.
+    - 完整 key 清单：`annot_harness/config.py:RECOGNIZED_KEYS` (harness) / `skills/cell-annotation/scripts/common.py:SKILL_DOTENV_KEYS` (skill)。文档 `docs/CONFIGURATION_REFERENCE.md` §2 / §3.0。
+    - **LLM 工具参数 vs skill 配置 区分原则**：除 step3c_kg 的 KG 服务/资源参数外，其它所有 argparse 参数**全部暴露给 LLM**——LLM 通过 SOP 决策点（`qc_threshold` / `marker_quality` / `resolution_select` / `refine_effect` / `label_confirm` 等）主动调整阈值、选择分辨率、切换 DE 方法、选 obs 列名 / 物种特异正则等。**已 SUPPRESS 化的只有 step3c_kg 的 KG 资源类参数**：`--uri` / `--user` / `--password`（Neo4j 连接凭据，harness 完全不知道其存在）+ `--min-confidence` / `--max-ancestor-hops`（KG 服务调优）。这些 SUPPRESS 让 LLM 工具 schema 不暴露它们、CLI 可手动临时覆盖，从代码默认值回落（参考 `annot_harness/tests/test_step3c_kg_schema.py`）。helper `common.env_or_default(args, name, env_keys, default, cast)` 已实现；`common.arg_spec` 已把 SUPPRESS 化的 action 从 tool schema 里剔除——可直接套用。
+- Test tooling: `pytest.ini` (`testpaths = annot_harness/tests`), `annot_harness/tests/conftest.py`, **89 tests passing** (`python -m pytest`), including 14 for step3c_kg schema discipline (4 task + 2 path A-class visible; 5 KG-resource B-class hidden; 3 loader / runtime contract) and 7 for the skill `.env` loader. Don't assume tests don't work — run them. `.opencode/package.json` only pins the opencode plugin and that dir is gitignored.
 - **Known runtime risks** (from `implementation_plan.md` §11 and design docs): `scrublet` import verified on the dev box — `python -c "import scrublet"` returns OK; the h5ad is ~2 GB so full-load runs need real memory and time budget. The 4 items in `_bmad-output/implementation-artifacts/deferred-work.md` (organ substring match false positives; `_organ_status.title()` normalization; `validate_log` cluster-coverage on refine_effect / candidate_disambiguate; organ_status category naming `root/partial/unknown/mismatch` vs `match/partial/unknown/mismatch`) are non-blocking for the root dataset but matter for cross-organ portability.
 - **Verification habit**: this project mixes "design says X" and "code does X" — they can drift. Before stating a status claim, `ls` / `wc -l` / `grep` to confirm. AGENTS.md itself has historically understated the breadth of completed code AND overstated the "not yet run" status — this revision reflects what actually shipped. Do not infer status from prose summaries; check `output/B1/eval/`, `output/p5_evals_r2/`, and `_bmad-output/implementation-artifacts/` for hard evidence.
 
@@ -46,7 +46,7 @@ Single-cell RNA-seq cell-type annotation harness driven by an LLM agent. Three l
 - `dataset/init.py` ingestion conventions: force `adata.X` sparse; rebuild `adata.raw` for old scanpy versions (when `_index` is in `raw.var`); reject numeric `var_names` (must be gene symbols). Ground-truth labels live in `dataset/index/*.csv` (columns `Seurat_clusters`, `Celltype`, pulled out of the h5ad).
 
 ## Directory map
-- `harness/` — domain-agnostic loop package (real code: `loop.py`, `dispatcher.py`, `skill_loader.py`, `notebook.py`, `session.py`, `conversation.py`) + `harness/tests/` (pytest suite, 89 tests).
+- `annot_harness/` — domain-agnostic loop package (real code: `loop.py`, `dispatcher.py`, `skill_loader.py`, `notebook.py`, `session.py`, `conversation.py`) + `annot_harness/tests/` (pytest suite, 89 tests).
 - `skills/cell-annotation/` — the skill package: `SKILL.md` (<500 lines, Chinese, 13 decision points + 6 traps + log guide), `references/` (sop / metrics / traps / kg-schema), `assets/` (report templates), `evals/evals.json` (gitignored test fixtures), and `scripts/`:
   - `common.py` (1019 lines) — 9 generic functions (`describe_distribution`, `filter_funnel`, `effect_size`, `pairwise_overlap`, `batch_mixing`, `cluster_quality`, `variance_explained`, `resolution_stability`, `candidate_autocorr`) + `append_log` / `next_run_id` / `current_metrics` / `dump_schema` / `arg_spec` / JSON envelope (`ok` / `fail` / `emit`) + `add_common_args` / `add_neo4j_args` + `env_or_default` (SUPPRESS-aware CLI > env > default reader) + `load_skill_dotenv`.
   - `step1_prepare.py` (777) — subcommands `metrics` (1× raw load, pre-filter distributions), `run` (1× raw load, all 16 ops + obs_snapshot.csv / var_snapshot.csv sidecars), `recluster` (1× proc load).
@@ -74,15 +74,15 @@ Single-cell RNA-seq cell-type annotation harness driven by an LLM agent. Three l
   - `analyze_traps.py` (179) — trap oracle comparison (per-trap ③ vs ② correctness).
   - Pre-generated: `gt_cells.csv` (cell barcode → true type, 33,956 rows), `gt_ontology.json` (12 GT → Ontology pins), `kg_term_aliases.json`.
   - Outputs: `output/B1/{arm1_default,arm2_rule,arm3_llm}/run_log.jsonl` + `output/B1/eval/{evaluation_report,bootstrap_report,traps_report}.json` (also `evaluation_report.per_cell.json` for per-cell drill-down).
-- Tests live in `harness/tests/` and run via `python -m pytest` (89 passing).
+- Tests live in `annot_harness/tests/` and run via `python -m pytest` (89 passing).
 
 ## External deps
 - **Neo4j knowledge graph**：凭据 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`在 `skills/cell-annotation/.env`（gitignored，根 `.gitignore` 的 `.env` 模式自然匹配该路径）设置，**不在**项目根 `.env`。模板 `skills/cell-annotation/.env.example` 跟踪进 git（默认值 `bolt://localhost:7687` / `neo4j` / 空密码）。优先级：CLI flags > `.env` > `.env.example` > 硬编码默认。绝不硬编码密码。（`design/tool_design.md` §10）
-- **`docs/CONFIGURATION_REFERENCE.md` §2.1 / §2.2 / §3.0** 列出全部 env var（harness 自身 vs skill 配置）。loader 逻辑：`harness/config.py` （harness 自身）、`skills/cell-annotation/scripts/common.py:load_skill_dotenv()` （cell-annotation 专用）。
+- **`docs/CONFIGURATION_REFERENCE.md` §2.1 / §2.2 / §3.0** 列出全部 env var（harness 自身 vs skill 配置）。loader 逻辑：`annot_harness/config.py` （harness 自身）、`skills/cell-annotation/scripts/common.py:load_skill_dotenv()` （cell-annotation 专用）。
 
 ## Gitignore gotchas
 Root `.gitignore` ignores `*.json`, `*.csv`, `*.h5ad`, `*.png`, `*.ipynb`, `*.xmind`, `*.ai`, `.env`, `.opencode*`. Consequences:
-- Tracked content is essentially only `*.md` (under `design/`, `knowledge/`, `_bmad-output/implementation-artifacts/`), `readme.md`, `AGENTS.md`, `.gitignore`, `pytest.ini`, `harness/**/*.py`, `skills/cell-annotation/scripts/*.py`, `skills/cell-annotation/SKILL.md`, `skills/cell-annotation/references/*.md`, `skills/cell-annotation/assets/*.md`, `skills/cell-annotation/.env.example`, `scripts/*.py`, `dataset/init.py`.
+- Tracked content is essentially only `*.md` (under `design/`, `knowledge/`, `_bmad-output/implementation-artifacts/`), `readme.md`, `AGENTS.md`, `.gitignore`, `pytest.ini`, `annot_harness/**/*.py`, `skills/cell-annotation/scripts/*.py`, `skills/cell-annotation/SKILL.md`, `skills/cell-annotation/references/*.md`, `skills/cell-annotation/assets/*.md`, `skills/cell-annotation/.env.example`, `scripts/*.py`, `dataset/init.py`.
 - The `.env` pattern in root `.gitignore` also matches `skills/cell-annotation/.env` (gitignore patterns are anchored at repo root but match anywhere) — verified via `git check-ignore -v skills/cell-annotation/.env`. So skill-level secrets are auto-protected without an additional rule.
 - `name_map4Arabidopsis_thaliana_symbol.json`, `dataset/h5ad/*.h5ad`, `dataset/index/*.csv`, `output/`, `skills/cell-annotation/.env`, `skills/cell-annotation/evals/evals.json`, and `.opencode/` all exist locally but are NOT tracked. New `.json`/`.csv` files you create are ignored unless force-added.
 
@@ -119,4 +119,4 @@ The bottleneck is **not** coding or first-time end-to-end run — those are done
 
 Estimated wall-clock from "P1–P6 done" to "P7 shipped": ~1–2 weeks, mostly items 1, 5, 6.
 
-Tests: `harness/tests/` — run `python -m pytest` (89 passing). `harness/tests/conftest.py` documents fixtures (FakeEmbedder replaces the real embedding model).
+Tests: `annot_harness/tests/` — run `python -m pytest` (89 passing). `annot_harness/tests/conftest.py` documents fixtures (FakeEmbedder replaces the real embedding model).

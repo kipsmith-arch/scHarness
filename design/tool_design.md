@@ -995,7 +995,7 @@ pipeline 的外部依赖(知识图谱、BLAST subject 库)通过环境变量配�
 | `NEO4J_URI` | Neo4j 连接地址 | `bolt://localhost:7687` | step3c_kg.py, step3a_kg_precheck.py, step5_refine.py |
 | `NEO4J_USER` | Neo4j 用户名 | `neo4j` | 同上 |
 | `NEO4J_PASSWORD` | Neo4j 密码 | (无默认,必须设置) | 同上 |
-| `CELL_ANNOTATION_BLASTDB_DIR` | subject BLAST 库缓存根 | `~/.cache/sc-harness/cell-annotation/blastdb` | step3b(provider=blastp) |
+| `CELL_ANNOTATION_BLASTDB_DIR` | subject BLAST 库缓存根 | `~/.cache/annot-harness/cell-annotation/blastdb` | step3b(provider=blastp) |
 | `CELL_ANNOTATION_BLASTDB_URL` | subject zip | 公开下载 `blastdb.zip`(URL 走配置,不写进设计文档) | ensure_blastdb |
 | `CELL_ANNOTATION_BLASTDB_SHA256` | zip 校验 | 实现时 pin | ensure_blastdb |
 | `CELL_ANNOTATION_QUERY_FASTA` | 用户蛋白 FASTA 默认路径 | 无 | step3b `--query-fasta` 回落 |

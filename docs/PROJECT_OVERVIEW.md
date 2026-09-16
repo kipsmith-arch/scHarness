@@ -1,4 +1,4 @@
-# scHarness 项目文档(简历撰写参考)
+# annotHarness 项目文档(简历撰写参考)
 
 > 本文档基于项目设计文档与代码整理,目的是便于根据不同岗位 JD 挑选合适的素材编写简历。
 > 项目仍在实施过程中,文档反映设计规划与已完成部分的现状。
@@ -7,7 +7,7 @@
 
 ## 1. 一句话项目介绍
 
-**scHarness** 是一个面向单细胞 RNA 测序(scRNA-seq)细胞类型注释的 **LLM 驱动 Agent 框架**,核心思想是把"细胞类型判断"这件事拆成 **47 个原子操作 + 247 个量化指标 + 13 个决策点**,让大语言模型在 pipeline 关键节点上做出可追溯、可审计、可用于微调训练的智能判断。
+**annotHarness**（细胞注释 harness）面向 scRNA-seq 细胞类型注释：把判断拆成 **47 个原子操作 + 247 个量化指标 + 13 个决策点**，让大语言模型在 pipeline 关键节点上做出可追溯、可审计、可用于微调训练的智能判断。
 
 ---
 
@@ -80,7 +80,7 @@
 
 ## 4. 关键技术设计
 
-### 4.1 Loop 设计(`harness/`)
+### 4.1 Loop 设计(`annot_harness/`)
 
 **核心原则**:**极简通用,不做上下文管理,只记轨迹**。
 
@@ -88,7 +88,7 @@
 - 工具分发器(`dispatcher.py`)支持三种执行方式:`subprocess`(CLI 脚本)、`function`(Python 函数)、`builtin`(loop 内置笔记本)
 - 标准 skill 包加载器(`skill_loader.py`):从 SKILL.md YAML frontmatter + scripts/`--dump-schema` 自动派生 `system_prompt` / `tool_schemas` / `tool_runtime`,避免手工 JSON 漂移
 - 内置笔记本(`notebook.py`):Chroma 向量库持久化 + BM25 兜底,跨会话检索经验
-- 测试套件 57 个测试通过(`pytest.ini` + `harness/tests/`)
+- 测试套件 57 个测试通过(`pytest.ini` + `annot_harness/tests/`)
 
 **关键接口契约**:subprocess 工具 stdout 最后一行输出 JSON `{"status":"ok","data":{...}}` 或 `{"status":"error",...}`,loop 原样透传给 LLM。
 
@@ -215,9 +215,9 @@
 - Neo4j 知识图谱在线(基因 ID 标记)
 - 基因 ID 映射资源(可选上游使用):`name_map4Arabidopsis_thaliana_symbol.json`(10,963 条)——不再被 skill 调用
 
-**Loop 宿主代码**(`harness/`,6 文件)
+**Loop 宿主代码**(`annot_harness/`,6 文件)
 - `loop.py` / `dispatcher.py` / `skill_loader.py` / `session.py` / `conversation.py` / `notebook.py`
-- 89 个 pytest 全部通过(`harness/tests/`,含 step3c_kg schema-discipline 测试)
+- 89 个 pytest 全部通过(`annot_harness/tests/`,含 step3c_kg schema-discipline 测试)
 
 **Skill 包**(`skills/cell-annotation/`)
 - SKILL.md(< 500 行,中文,imperative 句式,含 13 决策点 + 6 陷阱 + 日志指导)
@@ -355,7 +355,7 @@
 | KG 规模 | 195,322 节点 / 466,606 `marker_of` 边 |
 | 单 session 预期 judgment 数 | ~67 条(29 簇 × 2 + 9 + 8) |
 | 单 session 预期 token 上限 | ≤ 40 万 |
-| 测试覆盖 | 61 个 pytest 通过(`harness/tests/`) |
+| 测试覆盖 | 61 个 pytest 通过(`annot_harness/tests/`) |
 | Cell-annotation scripts 代码量 | 4,092 行(`common.py` 840 + 7 个 stepN 脚本 2,978 + trajectory_schema 22 + write_judgment 252) |
 | Pipeline 脚本子命令数(每脚本 `--dump-schema` 派生) | step1: 3 / step2: 1 / step3: 2 / step4: 1 / step5: 1 / step6: 2 / step7: 1 |
 | common.py 通用函数数 | 9(describe_distribution / filter_funnel / effect_size / pairwise_overlap / batch_mixing / cluster_quality / variance_explained / resolution_stability / candidate_autocorr) |
@@ -369,7 +369,7 @@
 ## 11. 项目文件结构速查
 
 ```
-scHarness/
+annotHarness/
 ├── design/                          ← 全部设计文档(8 份)
 │   ├── loop_design.md               ← 通用 Loop 设计
 │   ├── tool_design.md               ← 47 op + 4 次 h5ad 加载
@@ -381,7 +381,7 @@ scHarness/
 │   ├── experiment_design.md         ← 12 实验方法学设计
 │   └── experiment_implementation.md ← 实验实施方案 + 预注册判定
 ├── knowledge/                       ← 领域知识(给 SKILL.md references 用)
-├── harness/                         ← Loop 宿主代码(已完成)
+├── annot_harness/                         ← Loop 宿主代码(已完成)
 │   ├── loop.py / dispatcher.py / skill_loader.py
 │   ├── session.py / conversation.py / notebook.py
 │   └── tests/                       ← 57 测试

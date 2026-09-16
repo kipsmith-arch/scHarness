@@ -2,7 +2,7 @@
 
 Inputs (NDJSON):
     --conversation output/<dir>/conversation.jsonl
-        真实 LLM session 对话流(来自 harness.session)。`{role, content, tool_calls?}`
+        真实 LLM session 对话流(来自 annot_harness.session)。`{role, content, tool_calls?}`
     --run-log output/<dir>/run_log.jsonl
         pipeline 决策记录。含 `session_start` / `session_end` 标记(用于墙钟)
         + `judgment` 记录(用于 per-decision-point 轮次聚合)

@@ -12,8 +12,8 @@ context:
   - design/operations_metrics_catalog.md
   - design/implementation_plan.md
   - skills/echo/scripts/echo.py
-  - harness/skill_loader.py
-  - harness/dispatcher.py
+  - annot_harness/skill_loader.py
+  - annot_harness/dispatcher.py
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -71,7 +71,7 @@ context:
 - `skills/cell-annotation/scripts/step6_validate.py` -- marker_expression~write_final(5 op)+ report
 - `skills/cell-annotation/scripts/step7_diagnose.py` -- hit_rate~cross_cluster(6 op)
 - `knowledge/metrics_interpretation.md` -- E-1:新指标解读补全
-- `dataset/init.py`、`harness/skill_loader.py`、`skills/echo/scripts/echo.py` -- 契约参照(只读)
+- `dataset/init.py`、`annot_harness/skill_loader.py`、`skills/echo/scripts/echo.py` -- 契约参照(只读)
 - `name_map4Arabidopsis_thaliana_symbol.json` -- step3 `--gene-key` 用 TAIR→symbol 映射(只读)
 
 ## Tasks & Acceptance
@@ -91,7 +91,7 @@ context:
 - Given 原始 h5ad, when `step1_prepare.py run` 执行, then 产出 processed.h5ad + obs_snapshot.csv + var_snapshot.csv + qc_metrics.json,run_log 含 step1 全部 16 op 的 exec 记录。
 - Given processed.h5ad, when `step2_markers.py run` 执行, then 产出 markers.csv/markers.json,run_log 含 5 条 step2 exec 记录,de_rank 指标含 BH_adjusted_pval/AUC。
 - Given 无 h5ad 输入, when `step7_diagnose.py run` 执行, then 只读 obs_snapshot.csv + JSON 产出 step7_diagnose.json + report.md,run_log 含 6 条 step7 exec 记录(0 次 h5ad 加载)。
-- Given 任意 stepN 脚本, when 执行 `--dump-schema`, then stdout 末行为合法 JSON 且 `harness/skill_loader.load_skill("skills/cell-annotation")` 聚合成功、覆盖全部子命令。
+- Given 任意 stepN 脚本, when 执行 `--dump-schema`, then stdout 末行为合法 JSON 且 `annot_harness/skill_loader.load_skill("skills/cell-annotation")` 聚合成功、覆盖全部子命令。
 - Given 已存在的 run_log.jsonl, when 重跑同操作, then 追加 `#attempt+1` 记录,旧记录不被修改(append-only)。
 - Given 完整数据集, when 顺序执行全 pipeline(step1→7), then 总 h5ad 加载次数 ≤ 4,47 op 全部有 exec 记录。
 - Given 全部新指标, when 更新 knowledge/metrics_interpretation.md, then run_log 中出现的指标字段均有解读条目。
@@ -102,7 +102,7 @@ context:
 
 **attempt 续跑:** `next_run_id(log_path, step, op)` 扫描既有 `{step}.{op}#N` 记录取 max(N)+1;纯追加,永不覆盖。`append_log` 自动补 `ts`(ISO8601 UTC)与 `seq`(行数+1)。
 
-**dump-schema 契约(参照 skills/echo/scripts/echo.py):** 每个子命令的 argparse action 内省为 `{name,type,required,default,help}`;`--dump-schema` 时 stdout 只打印一行 JSON。加载器(harness/skill_loader.py)已实现聚合与 `{script_stem}__{subcommand}` 命名,脚本只需遵守输出格式。
+**dump-schema 契约(参照 skills/echo/scripts/echo.py):** 每个子命令的 argparse action 内省为 `{name,type,required,default,help}`;`--dump-schema` 时 stdout 只打印一行 JSON。加载器(annot_harness/skill_loader.py)已实现聚合与 `{script_stem}__{subcommand}` 命名,脚本只需遵守输出格式。
 
 **基因前缀:** 植物特化——叶绿体 `^(ATCG)`、线粒体 `^(ATMG|MT-)`(CLI 可覆盖);`pct_counts_chloroplast` 与 `pct_counts_mt` 并行计算并在 QC/过滤/指标中同等对待。
 
@@ -112,7 +112,7 @@ context:
 
 **Commands:**
 - `python skills/cell-annotation/scripts/step1_prepare.py --dump-schema`(每个脚本同法)-- expected: 末行合法 JSON
-- `python -c "from harness.skill_loader import load_skill; s=load_skill('skills/cell-annotation'); print(len(s.tool_schemas), len(s.tool_runtime))"` -- expected: 工具数 = 全部子命令数
+- `python -c "from annot_harness.skill_loader import load_skill; s=load_skill('skills/cell-annotation'); print(len(s.tool_schemas), len(s.tool_runtime))"` -- expected: 工具数 = 全部子命令数
 - `python skills/cell-annotation/scripts/step7_diagnose.py run --project-dir <dir>`(以插桩/计数方式确认 0 次 h5ad 读取)
 - 端到端:`step1 run → step2 run → step3 query → step4 run → step5 run → step6 run → step7 run`(用真实 2GB 数据集,容忍较长运行时间)
 - `grep -c '"type":"exec"' run_log.jsonl` -- expected: 47

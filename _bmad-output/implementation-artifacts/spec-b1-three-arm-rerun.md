@@ -24,7 +24,7 @@ context:
 **Always:**
 - 删除目标仅限 `output/B1_r3/` 与 `output/B1/`（若存在）。其它 `output/`（p2、p5、C2、N1 等）不动。
 - 新产物只写 `output/B1/{arm1_default,arm2_rule,arm3_llm,eval}/`。禁止往旧 `run_log.jsonl` 追加。
-- 同一 raw：`dataset/h5ad/SRP171040.h5ad`，`--organ root`。①② 走 `experiments/scripted_driver.py`；③ 走 `python -m harness.session --no-notebook`（或等价 `run_session(..., notebook=False)`）。
+- 同一 raw：`dataset/h5ad/SRP171040.h5ad`，`--organ root`。①② 走 `experiments/scripted_driver.py`；③ 走 `python -m annot_harness.session --no-notebook`（或等价 `run_session(..., notebook=False)`）。
 - `--no-notebook` 时：schema/runtime **不含** `write_note`/`retrieve_notes`；发给 LLM 的 loop base prompt **不含**笔记本指引。`RAG_EMBEDDING=off` 可并行，但不能替代该开关。
 - ③ 每个工具 timeout ≥ 14400s；`--max-turns 800`。跑完调用 `materialize_llm_labels`，再 `evaluate_cell_level` → `bootstrap_test` → `analyze_traps`。
 - 解释器沿用 B1_r3：`D:\data\programe\environment\conda\win\LM\python.exe`。
@@ -56,9 +56,9 @@ context:
 
 ## Code Map
 
-- `harness/session.py` -- `run_session` / CLI：`notebook` 参数与 `--no-notebook`
-- `harness/loop.py` -- `LOOP_BASE_PROMPT` 保留默认；无笔记本变体（或由 session 在关闭时裁掉笔记本段落）
-- `harness/tests/test_session_notebook_flag.py` -- 新建：关/开时 schema 与 prompt 断言（不调真 LLM）
+- `annot_harness/session.py` -- `run_session` / CLI：`notebook` 参数与 `--no-notebook`
+- `annot_harness/loop.py` -- `LOOP_BASE_PROMPT` 保留默认；无笔记本变体（或由 session 在关闭时裁掉笔记本段落）
+- `annot_harness/tests/test_session_notebook_flag.py` -- 新建：关/开时 schema 与 prompt 断言（不调真 LLM）
 - `experiments/run_b1.py` -- 清档 + ①②③ + materialize + 三评估（勿放 `output/`）
 - `experiments/scripted_driver.py` -- ①② 入口，只调用
 - `experiments/judges/_common.py` -- `materialize_llm_labels`，只调用
@@ -68,8 +68,8 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `harness/session.py` + `harness/loop.py` -- 增加 `notebook=True` 默认；`--no-notebook` 不合并笔记本工具并去掉 base prompt 中笔记本段落 -- B1 ③ 需要真实开关
-- [x] `harness/tests/test_session_notebook_flag.py` -- 覆盖 NB_OFF / NB_ON -- 不依赖 h5ad/LLM
+- [x] `annot_harness/session.py` + `annot_harness/loop.py` -- 增加 `notebook=True` 默认；`--no-notebook` 不合并笔记本工具并去掉 base prompt 中笔记本段落 -- B1 ③ 需要真实开关
+- [x] `annot_harness/tests/test_session_notebook_flag.py` -- 覆盖 NB_OFF / NB_ON -- 不依赖 h5ad/LLM
 - [x] `experiments/run_b1.py` -- 删除 `output/B1_r3` 与 `output/B1`，跑 ①②③（③ `--no-notebook`、timeout 14400、max_turns=800），然后 materialize + eval -- 可重复编排
 - [x] `output/B1/` -- 执行 `run_b1.py` 写出三臂与 eval -- 用户要求的清档重跑
 - [x] `_bmad-output/implementation-artifacts/b1-three-arm-eval.md` -- 记录本轮 accuracy 并注明未做 followup -- 避免把本轮当成已修 DE 不公后的 killer 结论
@@ -94,7 +94,7 @@ context:
 ## Verification
 
 **Commands:**
-- `python -m pytest harness/tests/test_session_notebook_flag.py harness/tests/test_measure_judge_decouple.py` -- expected: 通过
+- `python -m pytest annot_harness/tests/test_session_notebook_flag.py annot_harness/tests/test_measure_judge_decouple.py` -- expected: 通过
 - `python experiments/run_b1.py` -- expected: 退出 0；`output/B1/eval/evaluation_report.json` 存在
 - `rg "write_note|retrieve_notes" output/B1/arm3_llm/conversation.jsonl` -- expected: 无 tool 调用命中（任务词里的禁止句可以有）
 
@@ -106,16 +106,16 @@ context:
 **笔记本真开关**
 
 - 默认仍合并笔记本；`notebook=False` 时工具表与 prompt 一起关掉
-  [`session.py:79`](../../harness/session.py#L79)
+  [`session.py:79`](../../annot_harness/session.py#L79)
 
 - 关笔记本用的 loop 底稿，不含 write_note 指引
-  [`loop.py:41`](../../harness/loop.py#L41)
+  [`loop.py:41`](../../annot_harness/loop.py#L41)
 
 - resume 时重盖 SystemMessage，避免旧会话仍教模型调已删除的工具
-  [`session.py:99`](../../harness/session.py#L99)
+  [`session.py:99`](../../annot_harness/session.py#L99)
 
 - CLI `--no-notebook`；`--dump-skill` 打印 session 合并后的工具名
-  [`session.py:212`](../../harness/session.py#L212)
+  [`session.py:212`](../../annot_harness/session.py#L212)
 
 **B1 清档重跑**
 
@@ -134,7 +134,7 @@ context:
 **测试与数字**
 
 - NB_OFF/ON、resume 重盖 prompt、dump-skill 合同
-  [`test_session_notebook_flag.py:35`](../../harness/tests/test_session_notebook_flag.py#L35)
+  [`test_session_notebook_flag.py:35`](../../annot_harness/tests/test_session_notebook_flag.py#L35)
 
 - 本轮三臂数字；未修 followup，不是 killer 结论
   [`b1-three-arm-eval.md:70`](./b1-three-arm-eval.md#L70)

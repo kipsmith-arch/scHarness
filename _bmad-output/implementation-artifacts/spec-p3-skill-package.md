@@ -56,7 +56,7 @@ context:
 - `knowledge/cell-annotation-sop.md` -- sop.md 素材(SOP-1~6 + 质量检查 + 症状速查)
 - `knowledge/metrics_interpretation.md` -- metrics.md 素材 + 6 陷阱来源
 - `knowledge/kg_schema.md` -- kg-schema.md 素材
-- `harness/skill_loader.py` -- 加载契约(frontmatter;body→system_prompt)
+- `annot_harness/skill_loader.py` -- 加载契约(frontmatter;body→system_prompt)
 - `design/trajectory_design.md` §3.2/§10 -- 决策枚举词表 + 日志模板
 - `design/experiment_design.md` §4.1 -- "解读参考值 ≠ 决策阈值"红线依据
 
@@ -94,7 +94,7 @@ context:
 ## Verification
 
 **Commands:**
-- `python -c "from harness.skill_loader import load_skill; s=load_skill('skills/cell-annotation'); print(s.name, len(s.tool_schemas), len(s.system_prompt.splitlines()))"` -- expected: cell-annotation 11 <500
+- `python -c "from annot_harness.skill_loader import load_skill; s=load_skill('skills/cell-annotation'); print(s.name, len(s.tool_schemas), len(s.system_prompt.splitlines()))"` -- expected: cell-annotation 11 <500
 - `wc -l skills/cell-annotation/SKILL.md skills/cell-annotation/references/*.md` -- expected: SKILL.md < 500
 - `grep -oE "references/[a-z-]+\.md" skills/cell-annotation/SKILL.md | sort -u` -- expected: sop/metrics/traps/kg-schema 全在
 - `grep -nE "若.{0,20}(则|就).{0,10}(重跑|接受|拒绝|通过|失败)" skills/cell-annotation/SKILL.md` -- expected: 无输出(红线自检)

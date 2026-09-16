@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from harness.dispatcher import dispatch
-from harness.skill_loader import load_skill
+from annot_harness.dispatcher import dispatch
+from annot_harness.skill_loader import load_skill
 
 ECHO_SKILL = Path(__file__).resolve().parent.parent.parent / "skills" / "echo"
 
@@ -156,7 +156,7 @@ def test_function_missing_module(state):
 
 
 def test_function_raising(state):
-    import harness.tests.test_dispatcher as td
+    import annot_harness.tests.test_dispatcher as td
 
     spec = {"type": "function", "function": f"{td.__name__}._raise_fn"}
     result = dispatch(spec, {}, state)
@@ -169,7 +169,7 @@ def _raise_fn(args, state):
 
 
 def test_function_non_dict_return_wrapped(state):
-    spec = {"type": "function", "function": "harness.tests.test_dispatcher._str_fn"}
+    spec = {"type": "function", "function": "annot_harness.tests.test_dispatcher._str_fn"}
     result = dispatch(spec, {}, state)
     assert result == {"status": "ok", "data": "plain string"}
 

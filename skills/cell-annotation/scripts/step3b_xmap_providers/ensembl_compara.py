@@ -36,7 +36,7 @@ from .base import BaseCrossSpeciesProvider, MappingRecord, register_provider
 ENSEMBL_TIMEOUT_DEFAULT = 10
 ENSEMBL_MAX_RETRIES_DEFAULT = 4
 ENSEMBL_BACKOFF_BASE = 1.5
-ENSEMBL_USER_AGENT = "scHarness-cell-annotation/1.0 (cross-species mapping)"
+ENSEMBL_USER_AGENT = "annotHarness-cell-annotation/1.0 (cross-species mapping)"
 
 
 @register_provider

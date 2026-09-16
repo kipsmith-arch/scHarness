@@ -1,7 +1,7 @@
 """Cell-annotation DAG instance (47 ops + 14 decision_after bindings).
 
 Lives in experiments/ so harness stays domain-agnostic. The walker is
-``harness.scripted_driver.run_scripted``.
+``annot_harness.scripted_driver.run_scripted``.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import json
 import os
 from typing import Any
 
-from harness.dag import DecisionAfter, Node, all_decision_points, all_ops
+from annot_harness.dag import DecisionAfter, Node, all_decision_points, all_ops
 
 # Atomic op catalogs (design/atomic_operations.md). Unique across the pipeline = 47.
 STEP1_OPS = (

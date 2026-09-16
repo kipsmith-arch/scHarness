@@ -1,6 +1,6 @@
 # generated: 2026-09-01 (auto)
 # last_updated: 2026-09-01 (auto)
-# project: scHarness
+# project: annotHarness
 # project_key: NOKEY
 # tracking_system: file-system
 # story_location: "_bmad-output/implementation-artifacts"
@@ -55,7 +55,7 @@
 
 generated: 2026-09-01
 last_updated: 2026-09-01
-project: scHarness
+project: annotHarness
 project_key: NOKEY
 tracking_system: file-system
 story_location: "_bmad-output/implementation-artifacts"

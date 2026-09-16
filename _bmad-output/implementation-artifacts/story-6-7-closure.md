@@ -94,7 +94,7 @@
 
 ### 2.5 S1 — 合成场景 battery
 
-**Source**:`experiments/build_scenarios.py` + `experiments/run_mini_session.py`(单轮 ChatOpenAI,不调 harness.session)+ `experiments/S1_battery.py`
+**Source**:`experiments/build_scenarios.py` + `experiments/run_mini_session.py`(单轮 ChatOpenAI,不调 annot_harness.session)+ `experiments/S1_battery.py`
 **Outputs**:`experiments/S1/scenarios.json`(8 用例), `experiments/S1/leiden_override.csv`, `experiments/S1/case_*/{metrics.json,llm_judgment.json}`, `experiments/S1/battery_report.json`
 
 - **5/8 用例可用**(30 个纯簇≥90% 纯度,部分稀有类型无第二个纯簇):
@@ -145,7 +145,7 @@
 4. **N2 使用率 2 < 阈值 3**:真实负面发现 — LLM 在长 session 中倾向于"快做决定"而非"用笔记本积累经验"。这意味着:
    - **loop 通用性(loop 能力存在)已被 N3 证明**(PASS)
    - **loop 默认行为偏离设计**(FAIL)
-   - 修复路径:在 SKILL.md §"loop-level prompt" 或 `harness.loop.LOOP_BASE_PROMPT` 加强"开始决策前 retrieve_notes"指导 — 这是 **story 7.4 / 7.5 范围**(Epic 7 .skill 打包前的最后一轮迭代)
+   - 修复路径:在 SKILL.md §"loop-level prompt" 或 `annot_harness.loop.LOOP_BASE_PROMPT` 加强"开始决策前 retrieve_notes"指导 — 这是 **story 7.4 / 7.5 范围**(Epic 7 .skill 打包前的最后一轮迭代)
 5. **C2 macroF1 anomaly**:无 KG 时 macroF1 反而高(+0.039),提示 macroF1 本身对均匀分布策略不敏感。**为 A3 baseline 报告**的方法学警示:A3 单独报告需指明 macroF1 单指标不足以揭示 LLM 退化,必须配 strict / purity
 6. **C2 实现的两个妥协**:
    - **marker_dict 来源**:从 B1 arm3_llm 的 KG hits 反推,**而非独立来源**(如 CellMarker 公开库)。理由是公平对比 C2 应基于"同一信息源的不同用途",而不是 KG vs 外部资源
@@ -263,6 +263,6 @@ python experiments/S1_battery.py  # 重新汇总, llm_skipped=False
 - **当前状态**:`in-review`(LLM 子实验的脚本骨架就绪,实跑产物待你触发)
 - **下一步行动**(你):
   1. 触发 5 × `run_mini_session.py` 拿到 S1 ③ 数据 → `S1_battery.py` 重跑出 S1-1/S1-2 verdict
-  2. (可选) 跑 1 个 notebook-on LLM session(`harness.session`)→ `experiments/evaluate_cell_level.py` 对比 ⑥⑦ → 出 N1 verdict
+  2. (可选) 跑 1 个 notebook-on LLM session(`annot_harness.session`)→ `experiments/evaluate_cell_level.py` 对比 ⑥⑦ → 出 N1 verdict
   3. (可选) 跑 1 个 ground-truth.json(强制 step5 subcluster)→ `S1_battery.py` 出 ground_truth vs ② ③ 比较
 - **status 推进**:完成上述步骤后改 `sprint-status.yaml` 6-7 行 → `done`,追加 closure 链接

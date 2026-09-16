@@ -34,9 +34,9 @@ skill 仍要「查参考知识」，但只调 HTTP（或同等）接口。Cypher
 
 - `skills/cell-annotation/.env.example`、`common.SKILL_DOTENV_KEYS`
 - `docs/CONFIGURATION_REFERENCE.md` §3.0、`--uri/--user/--password` SUPPRESS 约定
-- `harness/tests/test_skill_dotenv.py`
-- `harness/tests/test_step3c_kg_schema.py`（测的是 argparse 隐藏项，不是图 schema）
-- `harness/tests/test_step3a_kg_precheck.py` 及旧 `test_step3_kg_precheck.py` 的真连测
+- `annot_harness/tests/test_skill_dotenv.py`
+- `annot_harness/tests/test_step3c_kg_schema.py`（测的是 argparse 隐藏项，不是图 schema）
+- `annot_harness/tests/test_step3a_kg_precheck.py` 及旧 `test_step3_kg_precheck.py` 的真连测
 - `experiments/run_b1.py` 的 `test-connection` preflight
 
 ## 文档（skill/LLM 将多余，服务实现方仍需要内部模型）

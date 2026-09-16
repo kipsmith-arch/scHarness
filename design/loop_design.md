@@ -50,7 +50,7 @@ loop 换一个 skill 就能跑完全不同的任务,不需要改 loop 代码。
 
 ## 3. Loop 对 Skill 的接口需求
 
-loop 通过**标准 skill 加载器**(`harness/skill_loader.py`)从标准 skill 包派生三样东西,不感知领域内容。标准包形态与派生规则见 `implementation_plan.md` §1 / §3.2:
+loop 通过**标准 skill 加载器**(`annot_harness/skill_loader.py`)从标准 skill 包派生三样东西,不感知领域内容。标准包形态与派生规则见 `implementation_plan.md` §1 / §3.2:
 
 ```
 skills/<name>/
@@ -347,7 +347,7 @@ session 中断后,`conversation.jsonl` 保留了完整历史。重新启动时�
 ## 8. 文件结构
 
 ```
-harness/
+annot_harness/
 ├── loop.py             ← 通用 agent loop(LangGraph)
 ├── dispatcher.py       ← tool dispatcher(subprocess / function / builtin)
 ├── skill_loader.py     ← 标准 skill 加载器(frontmatter + --dump-schema 派生三接口)
@@ -398,7 +398,7 @@ Loop (通用)
 | **L-2** | 标准 skill 加载器(`skill_loader.py`)+ 接口协议派生 | 接口规范 + 加载器 | ✅ 已完成 |
 | **L-3** | 端到端测试:echo skill(标准格式)验证 loop 通用性 | 验证 | ✅ 已完成 |
 | **L-4** | `notebook.py`(write_note / retrieve_notes)+ 通用提示拼接 + env 配置 | 内置记忆(见 `rag_design.md` §8 M-1/M-2) | ✅ 已完成 |
-| **L-5** | 会话入口 CLI(`python -m harness.session`,含 `--dump-skill` / `--resume`) | 入口 + 冒烟 | ✅ 已完成 |
+| **L-5** | 会话入口 CLI(`python -m annot_harness.session`,含 `--dump-skill` / `--resume`) | 入口 + 冒烟 | ✅ 已完成 |
 | **L-6** | 本文档同步修订(职责/架构图/State 补笔记本字段;skill 接口改述为“从标准包派生”) | 文档一致 | ✅ 已完成 |
 
 技能的具体实现(工具清单、知识文件、日志格式)属于 skill 设计(P2/P3)。

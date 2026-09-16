@@ -1,7 +1,7 @@
 """Domain-agnostic DAG for scripted (non-LLM) tool walks.
 
 This module holds the data model and topological sort only. The walker lives
-in ``harness.scripted_driver``. Cell-annotation node lists, oracle tables, and
+in ``annot_harness.scripted_driver``. Cell-annotation node lists, oracle tables, and
 judges must not be imported here.
 
 Retry cap (enforced by the walker AND by skill ``next_run_id``):

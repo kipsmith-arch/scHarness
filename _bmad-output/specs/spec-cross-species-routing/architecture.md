@@ -104,7 +104,7 @@
 
 按既有约定,新工具通过 `--dump-schema` 自动派生 `tool_schemas` / `tool_runtime`(见 `skills/cell-annotation/scripts/common.py:dump_schema`)。`step3c_kg.py` 改 `--ortholog-map` 不需要手动维护 schema。
 
-`step3a_kg_precheck.py` 与 `step3b_cross_species_map.py` 同样实现 `--dump-schema`,loader 在 `harness/skill_loader.py` 自动识别。
+`step3a_kg_precheck.py` 与 `step3b_cross_species_map.py` 同样实现 `--dump-schema`,loader 在 `annot_harness/skill_loader.py` 自动识别。
 
 ## 7. 凭据与环境
 

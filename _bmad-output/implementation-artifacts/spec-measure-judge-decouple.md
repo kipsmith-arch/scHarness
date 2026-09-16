@@ -34,7 +34,7 @@ context:
   - **触顶仍想 adjust：** 只要存在 ≥1 次 ok exec → **放行**该次产物，写 judgment：`decision` 用已有 accept 枚举（如 `clustering_accept` / `markers_accept`），`action=cap_exhausted_proceed`，`reasoning` 写清 attempt 数与「闸门未满足、用最后一次成功测量继续」。session **不中止**（B1 臂必须有可评估产物）。
   - **一次 ok exec 都没有**（脚本全失败或从未跑成）→ **该 op 任务失败**：不再往下游走，`session_end` 带 error；不捏造 label。这与「闸门不满意」不是一类事。
 - SKILL.md 可说明触顶应 `cap_exhausted_proceed` 并继续 SOP；执法仍是脚本拒绝 `#7`。loop 不解析 `action` 字符串。
-- harness **不知道** cell-annotation：`harness/dag.py` 只编码「节点 / 依赖 / decision_after / 重试」；细胞注释 DAG 实例与 oracle 表不进 harness。
+- harness **不知道** cell-annotation：`annot_harness/dag.py` 只编码「节点 / 依赖 / decision_after / 重试」；细胞注释 DAG 实例与 oracle 表不进 harness。
 - 一个子命令一次 h5ad 加载。重试必须走已有子命令（`step1_prepare recluster`、带新参的 `step2_markers run` 等），不新开加载路径。
 - `final_annotations.json` 的 `label` / `confidence` / `status` **只由判断层写入**。`evaluate_cell_level.py` 只读这三项；**删除**现行 `load_arm_judgment_confidence` / `load_arm_unknown_label` 对 `run_log` 的第二套覆盖。计分公式不变。
 - 改名必须锁步：脚本、产物目录、`run_id` 前缀、SKILL/references/tests 中的 `step4_judge` → `step4_rank`。
@@ -42,7 +42,7 @@ context:
 
 **Ask First:**
 - `marker_quality` adjust 若无法用现有 `step2_markers run` 重跑完成（需要新的「只过滤」子命令或额外 h5ad 加载）。
-- 通用 DAG 驱动器若必须改 `harness/dispatcher.py` 契约才能挂 judge 钩子。
+- 通用 DAG 驱动器若必须改 `annot_harness/dispatcher.py` 契约才能挂 judge 钩子。
 
 **Never:**
 - 不把 if-then 阈值写进 pipeline 或 SKILL.md。
@@ -71,12 +71,12 @@ context:
 
 ## Code Map
 
-- `harness/dag.py` -- 新建：通用 DAG（nodes / deps / `decision_after` / 每 op 最多 5 次重试）
+- `annot_harness/dag.py` -- 新建：通用 DAG（nodes / deps / `decision_after` / 每 op 最多 5 次重试）
 - `skills/cell-annotation/scripts/common.py` -- `next_run_id`/`exec_record`：`attempt > 6` 拒绝写入（③ 也走这里）
-- `harness/scripted_driver.py` -- 新建：`run_scripted(dag, judge, tool_runtime, project_dir)`，与 loop 共用 `dispatcher.dispatch`
-- `harness/dispatcher.py` -- 只读，确认不必改契约
+- `annot_harness/scripted_driver.py` -- 新建：`run_scripted(dag, judge, tool_runtime, project_dir)`，与 loop 共用 `dispatcher.dispatch`
+- `annot_harness/dispatcher.py` -- 只读，确认不必改契约
 - `experiments/cell_annotation_dag.py` -- 新建：47 op + 13 个 `decision_after` 绑定（skill 外的实验 DAG 实例）
-- `experiments/scripted_driver.py` -- 改为薄 CLI，委托 `harness.scripted_driver` + 上表 DAG
+- `experiments/scripted_driver.py` -- 改为薄 CLI，委托 `annot_harness.scripted_driver` + 上表 DAG
 - `experiments/judges/_common.py` -- judge 协议：`decide(dp, exec_record, history) -> judgment`；`commit_labels()` 只物化已写入的 judgment
 - `experiments/judges/default_judge.py` -- 改为当场回调：永不 adjust、永不路由 step5
 - `experiments/judges/rule_judge.py` -- 改为当场回调：可读 metrics，可 adjust / 路由；阈值数字不改
@@ -88,14 +88,14 @@ context:
 - `skills/cell-annotation/scripts/step6_validate.py` -- 删除 `_confidence_evidence` 与自动 `label=`；测量物不含决策枚举
 - `skills/cell-annotation/scripts/step7_diagnose.py` -- 改读 `step4_rank/`；`top_strictly_ahead` 仅作测量布尔
 - `skills/cell-annotation/SKILL.md` -- path 改为 `step4_rank`；枚举只来自 `write_judgment`；③ 的 `action` 必须再调工具才生效
-- `harness/tests/test_trajectory_schema.py` -- `run_ref` 前缀更新
+- `annot_harness/tests/test_trajectory_schema.py` -- `run_ref` 前缀更新
 - `experiments/evaluate_cell_level.py` -- 断言 label 来自判断层；去掉对 pipeline `_confidence_evidence` 的兜底叙述
 - `design/experiment_design.md` -- 文件结构段与实现对齐（driver 在 harness，DAG 实例在 experiments）
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `harness/dag.py` + `harness/scripted_driver.py` -- 实现通用 walk / `decision_after` / adjust 重试（每 op 最多 5 次） -- ①② 与 loop 共用派发
+- [x] `annot_harness/dag.py` + `annot_harness/scripted_driver.py` -- 实现通用 walk / `decision_after` / adjust 重试（每 op 最多 5 次） -- ①② 与 loop 共用派发
 - [x] `skills/cell-annotation/scripts/common.py` -- `next_run_id` 在 attempt>6 时失败 -- ③ 再调工具也被硬限制
 - [x] `experiments/cell_annotation_dag.py` -- 绑定 13 决策点到对应 op -- DAG 实例不进 harness
 - [x] `experiments/scripted_driver.py` -- 改为 CLI 包装 -- 保留现有入口路径
@@ -106,8 +106,8 @@ context:
 - [x] `skills/cell-annotation/scripts/step5_refine.py` -- 以判断层簇列表为唯一入口 -- 去掉 pipeline 内 routing
 - [x] `skills/cell-annotation/scripts/step6_validate.py` -- 删除 `_confidence_evidence` 与自动 label -- 测量与判断分离
 - [x] `skills/cell-annotation/scripts/step7_diagnose.py` + SKILL.md + `references/metrics.md` + `assets/tools.md` -- path 锁步改名；SKILL 写明 ③ 须再调工具执行 action
-- [x] `harness/tests/test_measure_judge_decouple.py` -- 覆盖 I/O 矩阵（fake dispatch，不加载 h5ad）-- 回归不依赖 2GB 数据
-- [x] `harness/tests/test_trajectory_schema.py` + 引用 `step4_judge` 的测试 -- 更新前缀
+- [x] `annot_harness/tests/test_measure_judge_decouple.py` -- 覆盖 I/O 矩阵（fake dispatch，不加载 h5ad）-- 回归不依赖 2GB 数据
+- [x] `annot_harness/tests/test_trajectory_schema.py` + 引用 `step4_judge` 的测试 -- 更新前缀
 - [x] `experiments/evaluate_cell_level.py` -- 删除 run_log 第二套覆盖；缺判断层字段则失败
 - [x] `design/experiment_design.md` -- 更正「judges 在 harness / ①② 已走 dispatch」的过时结构图
 
@@ -156,13 +156,13 @@ step1 已有 `metrics` / `run` / `recluster`：先 metrics → 判 `qc_threshold
 **DAG 驱动器（harness 领域无关）**
 
 - 入口：`run_scripted` 走 topo、`decision_after`、retry/skip/cap
-  [`scripted_driver.py:206`](../../harness/scripted_driver.py#L206)
+  [`scripted_driver.py:206`](../../annot_harness/scripted_driver.py#L206)
 
 - 通用节点 / 钩子 / 每 op `#1`+5 次上限
-  [`dag.py:26`](../../harness/dag.py#L26)
+  [`dag.py:26`](../../annot_harness/dag.py#L26)
 
 - 触顶必须用钩子上的 `accept_decision`，不写细胞注释枚举
-  [`scripted_driver.py:301`](../../harness/scripted_driver.py#L301)
+  [`scripted_driver.py:301`](../../annot_harness/scripted_driver.py#L301)
 
 **细胞注释 DAG 实例（不进 harness）**
 
@@ -208,5 +208,5 @@ step1 已有 `metrics` / `run` / `recluster`：先 metrics → 判 `qc_threshold
 **测试**
 
 - I/O 矩阵用假 dispatch，不加载 h5ad
-  [`test_measure_judge_decouple.py:1`](../../harness/tests/test_measure_judge_decouple.py#L1)
+  [`test_measure_judge_decouple.py:1`](../../annot_harness/tests/test_measure_judge_decouple.py#L1)
 

@@ -9,7 +9,7 @@ Design sources:
 Every CLI script in this package:
     1. declares its subcommands + args purely via argparse (single source of truth),
     2. supports ``--dump-schema`` which prints, as the LAST stdout line, the JSON
-       tool declaration consumed by harness/skill_loader.py,
+       tool declaration consumed by annot_harness/skill_loader.py,
     3. prints the standard tool result contract ``{"status": "ok", "data": {...}}``
        or ``{"status": "error", ...}`` as the LAST stdout line,
     4. appends one ``exec`` record to ``<project-dir>/run_log.jsonl`` after every
@@ -31,12 +31,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
-# Skill scripts run as subprocesses from harness/dispatcher.py. The parent
-# loop process has already imported ``harness.config`` (via the package
+# Skill scripts run as subprocesses from annot_harness/dispatcher.py. The parent
+# loop process has already imported ``annot_harness.config`` (via the package
 # ``__init__``), which populated ``os.environ`` with every key from the
 # project-root ``.env``; subprocesses inherit that environment automatically.
 #
-# This module therefore does NOT import ``harness.config`` itself — that
+# This module therefore does NOT import ``annot_harness.config`` itself — that
 # would couple the skill to the harness package layout (tool_design.md §10:
 # "skill 本身保持环境无关"). When invoked directly outside the loop (e.g.
 # ``python skills/cell-annotation/scripts/step1_prepare.py metrics``) the
@@ -964,7 +964,7 @@ def resolve_batch_key(obs_columns, batch_key: Optional[str], default: str = "Ori
 
 
 # ---------------------------------------------------------------------------
-# Skill-level dotenv loader (mirrors the pattern of harness/config.py but
+# Skill-level dotenv loader (mirrors the pattern of annot_harness/config.py but
 # scoped to the cell-annotation skill's own .env file).
 #
 # Why here (and not a separate _skill_dotenv.py): the dotenv loader has
@@ -999,7 +999,7 @@ def load_skill_dotenv(override: bool = False) -> list[str]:
         - ``<skill_dir>/.env`` (gitignored, per-user secrets) — overrides
 
     Within a single file, shell env still wins unless ``override=True``;
-    this mirrors ``harness/config.py:load_dotenv``.
+    this mirrors ``annot_harness/config.py:load_dotenv``.
 
     Returns:
         List of keys actually populated from disk (only SKILL_DOTENV_KEYS).

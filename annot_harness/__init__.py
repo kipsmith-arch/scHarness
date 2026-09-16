@@ -1,4 +1,4 @@
-"""scHarness loop package.
+"""annotHarness loop package (细胞注释 harness).
 
 Generic, domain-agnostic agent loop (loop_design.md):
 - skill_loader  : load a standard skill package -> system_prompt / tool_schemas / tool_runtime
@@ -10,12 +10,12 @@ Generic, domain-agnostic agent loop (loop_design.md):
 - session       : run_session() entry point + CLI
 - conversation  : conversation.jsonl read/write
 - config        : project-root .env loader (auto-imported so that any
-                  ``from harness.X import ...`` triggers the dotenv load)
+                  ``from annot_harness.X import ...`` triggers the dotenv load)
 """
 
-# Importing ``harness.config`` here triggers the project-root .env /
+# Importing ``annot_harness.config`` here triggers the project-root .env /
 # .env.example load exactly once, before any submodule evaluates. Skill
-# scripts and the eval tooling do NOT import from harness; they rely on
+# scripts and the eval tooling do NOT import from annot_harness; they rely on
 # subprocess inheritance from the parent loop for harness-owned env vars
 # (LLM gateway, RAG toggles) and load their own skill-level .env via
 # scripts/common.py for skill-owned config (e.g. cell-annotation's Neo4j).

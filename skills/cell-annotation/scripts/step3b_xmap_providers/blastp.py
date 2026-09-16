@@ -27,7 +27,7 @@ from .base import BaseCrossSpeciesProvider, MappingRecord, register_provider
 
 
 DEFAULT_BLASTDB_DIR = str(
-    Path.home() / ".cache" / "sc-harness" / "cell-annotation" / "blastdb"
+    Path.home() / ".cache" / "annot-harness" / "cell-annotation" / "blastdb"
 )
 DEFAULT_BLASTDB_URL = "https://xener.dcs.cloud/api/public/download?file=blastdb.zip"
 # Pin of the current zip (42,152,397 bytes, 2025-11-04 build). Override via

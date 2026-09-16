@@ -19,7 +19,7 @@ context: []
 ## Boundaries & Constraints
 
 **Always:**
-- `harness/` 零改动(领域无关红线,loop_design);评估/校验代码放项目根 `scripts/` + `experiments/`,不进 harness、不进 skill 包
+- `annot_harness/` 零改动(领域无关红线,loop_design);评估/校验代码放项目根 `scripts/` + `experiments/`,不进 harness、不进 skill 包
 - 一个子命令 = 一次 h5ad 加载;评估只读 sidecar(obs_snapshot.csv / final_annotations.json / run_log.jsonl),不读 processed.h5ad(gt_cells 对齐校验除外,限一次)
 - `run_log.jsonl` 是唯一轨迹文件,不新增并行日志
 - decision 只能落在 trajectory §3.2 枚举内;validate_log 强制校验
@@ -51,7 +51,7 @@ context: []
 - `skills/cell-annotation/scripts/common.py` -- append_log / run_id 约定(validate_log 参照)
 - `design/trajectory_design.md` -- run_log 记录格式 §2、决策枚举 §3.2(校验依据)
 - `output/p2/` -- 已有 pipeline 产物(step1~step7 + run_log),E-1 复用 step1 结果
-- `harness/session.py` -- 跑测入口 `python3 -m harness.session --skill skills/cell-annotation --project-dir ... --task ...`
+- `annot_harness/session.py` -- 跑测入口 `python3 -m annot_harness.session --skill skills/cell-annotation --project-dir ... --task ...`
 - `skills/cell-annotation/SKILL.md` -- 13 决策点/枚举/SOP(E-2~E-4 断言依据)
 - `design/experiment_implementation.md` -- §1.2 D-1/D-2/D-4 定义、label_map 预填映射
 
@@ -150,7 +150,7 @@ context: []
 **健壮性**
 
 - dcsapi 概率性断连 → max_retries(env 可调)
-  [`session.py:56`](../../harness/session.py#L56)
+  [`session.py:56`](../../annot_harness/session.py#L56)
 
 **LLM 指导与设计回填**
 

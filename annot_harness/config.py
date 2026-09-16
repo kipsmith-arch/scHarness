@@ -14,7 +14,7 @@ Why a dedicated module:
       the canonical schema).
     - The skill stays environment-agnostic (``tool_design.md §10``: "skill 本身
       保持环境无关"); skills read ``os.environ`` via their own loader, they
-      do not import from ``harness.config``.
+      do not import from ``annot_harness.config``.
     - Loading happens once at import time; later mutations of ``os.environ``
       (e.g. ``experiments/judges/rule_judge.py``'s save / restore of
       ``PROJECT_DIR``) take effect immediately without re-running the loader.
@@ -23,8 +23,8 @@ Priority chain (tool_design.md §10): ``CLI flag > env var > hardcoded default``
 This module only mediates the *env var* step; CLI overrides are still applied
 by each script's argparse layer above this loader.
 
-Disable loading (tests / CI): set ``SC_HARNESS_SKIP_DOTENV=1`` in the environment
-*before* importing anything from ``harness``; this skips ``load_dotenv`` and
+Disable loading (tests / CI): set ``ANNOT_HARNESS_SKIP_DOTENV=1`` in the environment
+*before* importing anything from ``annot_harness``; this skips ``load_dotenv`` and
 makes the codebase behave exactly like the pre-config-file version (only
 vars explicitly set in the shell are visible).
 """
@@ -57,7 +57,7 @@ RECOGNIZED_KEYS: tuple[str, ...] = (
 # ---- loader ------------------------------------------------------------
 
 def _project_root() -> Path:
-    """Repo root = parent of the ``harness`` package."""
+    """Repo root = parent of the ``annot_harness`` package."""
     return Path(__file__).resolve().parent.parent
 
 
@@ -92,7 +92,8 @@ def load_dotenv(override: bool = False) -> list[str]:
 
     Mirrors ``python-dotenv.dotenv_values`` semantics, but:
         - loads from a project-relative path (not the cwd of the caller)
-        - skips when ``SC_HARNESS_SKIP_DOTENV=1`` is already set in the shell
+        - skips when ``ANNOT_HARNESS_SKIP_DOTENV=1`` (or the alias
+          ``SC_HARNESS_SKIP_DOTENV=1``) is already set in the shell
         - never raises — a missing ``python-dotenv`` or unreadable file just
           returns ``[]``; the rest of the codebase keeps its hardcoded
           defaults (tool_design.md §10: "硬编码默认值").
@@ -110,7 +111,9 @@ def load_dotenv(override: bool = False) -> list[str]:
         recognized keys; unknown keys are still loaded into ``os.environ`` so
         power users can stash extras, but they are not reported here).
     """
-    if os.environ.get("SC_HARNESS_SKIP_DOTENV") == "1":
+    if os.environ.get("ANNOT_HARNESS_SKIP_DOTENV") == "1" or os.environ.get(
+        "SC_HARNESS_SKIP_DOTENV"
+    ) == "1":
         return []
     try:
         from dotenv import dotenv_values
@@ -210,7 +213,7 @@ def get(key: str, default: str | None = None) -> str | None:
 
 
 # ---- eager bootstrap ----------------------------------------------------
-# Importing this module (directly or transitively, e.g. ``harness.session``)
+# Importing this module (directly or transitively, e.g. ``annot_harness.session``)
 # auto-loads the dotenv files exactly once. Side effects are limited to
 # ``os.environ`` mutation, so importing is otherwise a no-op.
 _LOADED_AT_IMPORT = False

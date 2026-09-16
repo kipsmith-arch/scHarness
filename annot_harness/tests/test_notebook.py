@@ -13,8 +13,8 @@ import shutil
 
 import pytest
 
-from harness import notebook
-from harness.notebook import Note, tokenize
+from annot_harness import notebook
+from annot_harness.notebook import Note, tokenize
 
 from .conftest import FakeEmbedder, make_session_state
 

@@ -6,7 +6,7 @@ import json
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from harness.conversation import load_conversation, save_conversation, serialize_message
+from annot_harness.conversation import load_conversation, save_conversation, serialize_message
 
 
 def test_serialize_system_and_user():

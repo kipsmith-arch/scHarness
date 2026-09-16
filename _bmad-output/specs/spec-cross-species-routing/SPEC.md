@@ -86,7 +86,7 @@ sources:
 | 维度 | 内容 |
 |---|---|
 | 范围 | CAP-1 (`step3a_kg_precheck`) + CAP-2 (`step2_cross_species_map`) |
-| 新增文件 | `skills/cell-annotation/scripts/step3a_kg_precheck.py`、`step2_ortholog.py`、`harness/tests/test_step3a_kg_precheck.py`、`test_step2_ortholog.py` |
+| 新增文件 | `skills/cell-annotation/scripts/step3a_kg_precheck.py`、`step2_ortholog.py`、`annot_harness/tests/test_step3a_kg_precheck.py`、`test_step2_ortholog.py` |
 | 修改文件 | `skills/cell-annotation/scripts/common.py`(新增 `SPECIES_NAME_ALIASES` / `normalize_species_name` / `ensembl_rest_host`) |
 | 不动文件 | `SKILL.md`、`references/*`、`scripts/step3c_kg.py`、`scripts/trajectory_schema.py`、`scripts/write_judgment.py` |
 | 验证手段 | `python -m pytest`(89 + 新增 ≥ 4 测试全过);手动调 `step3a_kg_precheck__run --target-species=arabidopsis_thaliana --organ=root` 看 coverage_report.json;手动调 `step2_ortholog__run --target-species=arabidopsis_thaliana --reference-species=oryza_sativa` 看 ortholog_map.json;B1 default arm 三数字(strict=0.9236 / macroF1=0.4501 / low-conf=0)严格保持 |
@@ -132,7 +132,7 @@ sources:
 
 ## Success signal
 
-- **批 1 完成时:** 新工具 `step3a_kg_precheck__run` 与 `step2_ortholog__run` 在拟南芥数据(SRP171040)上端到端跑通,输出 `coverage_report.json`(arabidopsis_thaliana 应返回 `coverage_tier=high`, `recommended_strategy=single_species` 主导,推荐参考物种列表含 oryza_sativa 等近缘 Plant)与 `ortholog_map.json`(arabidopsis_thaliana→oryza_sativa 应有大量命中且 perc_id 中位数 >70%)。B1 default arm strict 不退化,harness/tests 89+ 个测试全过。
+- **批 1 完成时:** 新工具 `step3a_kg_precheck__run` 与 `step2_ortholog__run` 在拟南芥数据(SRP171040)上端到端跑通,输出 `coverage_report.json`(arabidopsis_thaliana 应返回 `coverage_tier=high`, `recommended_strategy=single_species` 主导,推荐参考物种列表含 oryza_sativa 等近缘 Plant)与 `ortholog_map.json`(arabidopsis_thaliana→oryza_sativa 应有大量命中且 perc_id 中位数 >70%)。B1 default arm strict 不退化,annot_harness/tests 89+ 个测试全过。
 - **批 2 完成时:** SKILL.md 新增 `cross_species_routing` 决策点后,在拟南芥数据上跑完整 7 步 + 14 决策点(含 cross_species_routing 与改写后的 candidate_gap),`run_log.jsonl` 经 `scripts/validate_log.py` 通过,judgment 的 decision 全部落在 `REQUIRED_SCOPE` 枚举内。B1 三臂(strict/macroF1/low-conf)数字维持。
 - **批 2 真实价值验证(必做,使用 PRJNA935359):** 用 **PRJNA935359 (Sorghum bicolor, 高粱)** 数据集(10580 细胞,plant root,**已在 dataset/init.py 走完标准化**,但 ground-truth `gt_cells_sorghum.csv` / `label_map_sorghum.json` 尚未生成 — 见 OQ-1 决断与 NG-6)做端到端验证,分两阶段:
   - **阶段一(可立即跑,批 2 完成时):** 用 sorghum bicolor 数据跑 `step1_prepare → step2_markers → step3a_kg_precheck → step2_ortholog → step3c_kg`(跨物种路径),验证:

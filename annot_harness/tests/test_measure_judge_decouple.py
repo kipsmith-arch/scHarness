@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from harness.dag import MAX_ATTEMPTS, DecisionAfter, Node
-from harness.scripted_driver import ScriptedRunError, run_scripted
+from annot_harness.dag import MAX_ATTEMPTS, DecisionAfter, Node
+from annot_harness.scripted_driver import ScriptedRunError, run_scripted
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SKILL_SCRIPTS = PROJECT_ROOT / "skills" / "cell-annotation" / "scripts"
@@ -480,7 +480,7 @@ def test_cell_annotation_dag_binds_14_and_47():
     from experiments.cell_annotation_dag import (
         CELL_ANNOTATION_DAG, unique_pipeline_ops,
     )
-    from harness.dag import all_decision_points
+    from annot_harness.dag import all_decision_points
     assert len(unique_pipeline_ops()) == 47
     assert len(all_decision_points(CELL_ANNOTATION_DAG)) == 14
     tools = {n.tool for n in CELL_ANNOTATION_DAG}

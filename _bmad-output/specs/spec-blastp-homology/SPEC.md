@@ -61,7 +61,7 @@ BLAST **不**直接给出细胞类型。3c 的 `confidence` 仍是图谱边 `mar
 
 | 变量 | 默认 | 用途 |
 |---|---|---|
-| `CELL_ANNOTATION_BLASTDB_DIR` | `~/.cache/sc-harness/cell-annotation/blastdb` | 解压后的库根（其下为 `prot/`） |
+| `CELL_ANNOTATION_BLASTDB_DIR` | `~/.cache/annot-harness/cell-annotation/blastdb` | 解压后的库根（其下为 `prot/`） |
 | `CELL_ANNOTATION_BLASTDB_URL` | `https://xener.dcs.cloud/api/public/download?file=blastdb.zip` | subject zip |
 | `CELL_ANNOTATION_BLASTDB_SHA256` | 实现时 pin 该 zip 的 hex | 校验 |
 | `CELL_ANNOTATION_QUERY_FASTA` | 无 | `--query-fasta` 的默认路径 |
@@ -223,7 +223,7 @@ CI **不**访问 xener、**不**跑真 `blastp`、**不**下真 zip。
 - 改：`step3a_kg_precheck.py`（去掉推荐排序；覆盖档与 strategy 保留）
 - 改：Ensembl 合并逻辑与 BLAST 共用每物种 best-1
 - 文档：`SKILL.md`、`references/sop.md`、`references/kg-schema.md`（可链到新表）、新 `references/reference-species.md`、`.env.example`
-- 测试：`harness/tests/` 新增 blastp / ensure_db / FASTA 过滤；扩展现有 step3b 测试
+- 测试：`annot_harness/tests/` 新增 blastp / ensure_db / FASTA 过滤；扩展现有 step3b 测试
 
 ## 10. 开放（实现期可定，不挡开工）
 
