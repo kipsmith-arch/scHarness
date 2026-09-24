@@ -6,8 +6,8 @@
 Cell-level semantics (``design/eval_design.md``):
     predicted → alias → node A; this cell's GT → pin → node B;
     relation from ontology_relation ancestors (or alias exact/synonym if KG skipped).
-    strict_correct = relation in {exact, synonym}
-    relaxed        = relation weight only (exact/synonym=1, subtype/supertype=0.5)
+    accuracy       = mean weight (exact/synonym/subtype=1, supertype=0)
+    hierarchy_score = mean weight (exact/synonym=1, subtype=1.5, supertype=0.5)
     label_unknown  = raw "unknown" → relation=unmatched
     label_downgraded keeps the predicted label; low confidence is reported as
     ``low_conf_rate``, not multiplied into accuracy.
@@ -44,9 +44,10 @@ from experiments.ontology_eval import (  # noqa: E402
     load_gt_ontology,
 )
 
-STRICT_HIT = {"exact", "synonym"}
+ACCURACY_HIT = {"exact", "synonym", "subtype"}
 PARTIAL_HIT = {"subtype", "supertype"}
-WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5, "unrelated": 0.0, "unmatched": 0.0}
+ACCURACY_WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 1.0, "supertype": 0.0, "unrelated": 0.0, "unmatched": 0.0}
+HIERARCHY_WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 1.5, "supertype": 0.5, "unrelated": 0.0, "unmatched": 0.0}
 # Recorded on per_cell for diagnostics; not used in strict / relaxed / macro-F1.
 CONFIDENCE_WEIGHT = {"high": 1.0, "medium": 1.0, "low": 0.5}
 SKIP_SKILL_DOTENV = "CELL_ANNOTATION_SKIP_DOTENV"
@@ -129,36 +130,35 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
         relation = scorer.relation(raw, true)
         if relation == "unmatched" and raw != "unknown":
             unmatched_terms[raw] += 1
-        rel_w = WEIGHT.get(relation, 0.0)
+        acc_w = ACCURACY_WEIGHT.get(relation, 0.0)
+        hier_w = HIERARCHY_WEIGHT.get(relation, 0.0)
         conf_w = CONFIDENCE_WEIGHT.get(conf, 0.5)
-        cell_w = rel_w
-        is_strict = relation in STRICT_HIT
+        is_accurate = relation in ACCURACY_HIT
         per_cell.append({
             "cell": cell, "true": true, "leiden": leiden, "raw": raw,
             "confidence": conf, "status": status, "relation": relation,
             "node_a": scorer.resolve_predicted(raw),
             "node_b": scorer.resolve_gt(true),
             "mapped_true": scorer.mapped_true(raw),
-            "relation_weight": rel_w, "confidence_weight": conf_w, "cell_weight": cell_w,
-            "is_strict_correct": is_strict,
+            "accuracy_weight": acc_w, "hierarchy_weight": hier_w,
+            "relation_weight": hier_w, "confidence_weight": conf_w, "cell_weight": hier_w,
+            "is_accurate": is_accurate, "is_strict_correct": is_accurate,
         })
 
     n = len(per_cell)
     if n == 0:
         raise SystemExit(f"error: {name} 无可评估细胞(obs 与 gt 无交集)")
 
-    strict_hits = sum(1 for c in per_cell if c["is_strict_correct"])
-    score_sum = sum(c["cell_weight"] for c in per_cell)
-    strict_acc = strict_hits / n
-    relaxed_acc = score_sum / n
+    accuracy = sum(c["accuracy_weight"] for c in per_cell) / n
+    hierarchy_score = sum(c["hierarchy_weight"] for c in per_cell) / n
 
     true_labels = sorted(set(c["true"] for c in per_cell))
     tp = {t: 0.0 for t in true_labels}
     fp = {t: 0.0 for t in true_labels}
     fn = {t: 0.0 for t in true_labels}
     for c in per_cell:
-        if c["relation"] in STRICT_HIT or c["relation"] in PARTIAL_HIT:
-            tp[c["true"]] += c["cell_weight"]
+        if c["hierarchy_weight"] > 0:
+            tp[c["true"]] += c["hierarchy_weight"]
         else:
             fn[c["true"]] += 1.0
             mapped_true = c.get("mapped_true")
@@ -180,7 +180,7 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
         total = sum(cnt.values())
         top_true, top_n = cnt.most_common(1)[0]
         hits = [c for c in per_cell if c["leiden"] == leiden]
-        strict_count = sum(1 for c in hits if c["is_strict_correct"])
+        accurate_count = sum(1 for c in hits if c["is_accurate"])
         last_ent = ann.get(str(leiden), {})
         cluster_per_arm[leiden] = {
             "leiden": leiden, "n_cells": total, "predicted": hits[0]["raw"],
@@ -189,7 +189,7 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
             "top3_expression": last_ent.get("top3_expression", []),
             "subcluster": last_ent.get("subcluster"),
             "top_true": top_true, "top_true_n": top_n, "purity": top_n / total,
-            "strict_correct_cells": strict_count,
+            "accurate_cells": accurate_count,
         }
     mean_purity = sum(v["purity"] for v in cluster_per_arm.values()) / max(len(cluster_per_arm), 1)
 
@@ -200,8 +200,8 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
         "arm": name,
         "project_dir": project_dir,
         "n_cells_evaluated": n,
-        "strict_accuracy": round(strict_acc, 4),
-        "relaxed_accuracy": round(relaxed_acc, 4),
+        "accuracy": round(accuracy, 4),
+        "hierarchy_score": round(hierarchy_score, 4),
         "macro_f1_soft": round(macro_f1, 4),
         "mean_cluster_purity": round(mean_purity, 4),
         "n_clusters": len(cluster_per_arm),
@@ -340,8 +340,8 @@ def main() -> int:
         summary_table.append({
             "arm": r["arm"],
             "n_cells": r["n_cells_evaluated"],
-            "strict_accuracy": r["strict_accuracy"],
-            "relaxed_accuracy": r["relaxed_accuracy"],
+            "accuracy": r["accuracy"],
+            "hierarchy_score": r["hierarchy_score"],
             "macro_f1_soft": r["macro_f1_soft"],
             "mean_cluster_purity": r["mean_cluster_purity"],
             "low_conf_rate": r["low_conf_rate"],
@@ -354,10 +354,11 @@ def main() -> int:
         "gt_ontology_verified": pin_meta.get("verified") is True,
         "aliases_verified": alias_meta.get("verified") is True,
         "kg_hierarchy": "skipped" if scorer.hierarchy.skipped else "used",
-        "weights": {"relation": WEIGHT,
+        "weights": {"accuracy": ACCURACY_WEIGHT,
+                    "hierarchy_score": HIERARCHY_WEIGHT,
                     "confidence_diagnostic_only": CONFIDENCE_WEIGHT,
-                    "strict_requires": "relation in {exact, synonym}",
-                    "relaxed": "relation weight; confidence not multiplied"},
+                    "accuracy_definition": "mean of accuracy weights; subtype=1, supertype=0",
+                    "hierarchy_score_definition": "mean of hierarchy weights; subtype=1.5, supertype=0.5; may exceed 1"},
         "arms_summary": summary_table,
         "arms": [
             {k: v for k, v in r.items() if k != "per_cell"} for r in arms
@@ -374,11 +375,11 @@ def main() -> int:
 
     print(f"[evaluate_cell_level] gt_ontology_verified={pin_meta.get('verified') is True} "
           f"kg_hierarchy={report['kg_hierarchy']}")
-    print(f"{'arm':<12} {'cells':>6} {'strict':>8} {'relaxed':>9} {'macroF1':>9} {'purity':>8} {'low_conf':>10}")
+    print(f"{'arm':<12} {'cells':>6} {'accuracy':>8} {'hierarchy':>9} {'macroF1':>9} {'purity':>8} {'low_conf':>10}")
     for r in arms:
         low = r["confidence_distribution"].get("low", 0)
         print(f"{r['arm']:<12} {r['n_cells_evaluated']:>6} "
-              f"{r['strict_accuracy']:>8.4f} {r['relaxed_accuracy']:>9.4f} "
+              f"{r['accuracy']:>8.4f} {r['hierarchy_score']:>9.4f} "
               f"{r['macro_f1_soft']:>9.4f} {r['mean_cluster_purity']:>8.4f} "
               f"{low:>10}")
     print(f"  report: {args.out or '<stdout only>'}")

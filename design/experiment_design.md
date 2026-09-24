@@ -217,7 +217,7 @@ def rule_judge(dp, exec_record, history):
 4. **评估口径**:三臂按**细胞级评估**(计分见 `eval_design.md`,实验用法见 `experiment_implementation.md` §1.4)——逐细胞标签 vs 该细胞 GT,不再要求簇 ID 对齐。原"三臂同一份 processed.h5ad、簇 ID 配对"与 qc/resolution/clustering 三个决策点必然改变聚类的设计自相矛盾,已废弃。
 
 #### 指标(细胞级,公式见 `eval_design.md`)
-- **headline**:per-cell strict(exact/synonym);**并列** relaxed(subtype/supertype=0.5)
+- **headline**:per-cell 准确率(exact/synonym/subtype=1);**并列** 层次得分(subtype=1.5, supertype=0.5,可以大于 1)
 - **辅**:macro-F1(不得单独当 headline;`Unknown` 会压低)、unknown_rate、relation 直方图、聚类纯度
 - 统计检验:cluster-aware bootstrap(按簇整组重抽样)对两臂差做 95% CI;per-type Wilcoxon 作参考(不用细胞级 McNemar)
 

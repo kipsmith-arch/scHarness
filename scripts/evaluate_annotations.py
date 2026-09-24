@@ -6,8 +6,8 @@
   × final_annotations.json(leiden→预测标签)
   × label_map.json(预测术语→真值,relation)
   × gt_cells.csv(条码→真值)
-- 输出:strict accuracy(exact/synonym 计对)、relaxed accuracy(subtype/supertype 计 0.5)、
-  soft macro-F1(partial=0.5)、聚类纯度(每簇最大真值占比均值)、逐簇表、unmatched 报告
+- 输出:strict accuracy(exact/synonym 计对)、relaxed accuracy(subtype=1.5, supertype=0.5)、
+  soft macro-F1(按关系权重累加 TP)、聚类纯度(每簇最大真值占比均值)、逐簇表、unmatched 报告
 - label_map 缺预测术语 → 记 unmatched 且报告不掩藏;leiden 列缺失 → 报错
 
 本脚本是 P5 测试循环评估工具,不在 harness / skill 包内。
@@ -23,7 +23,7 @@ from collections import Counter
 
 STRICT_HIT = {"exact", "synonym"}
 PARTIAL_HIT = {"subtype", "supertype"}
-WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5, "unrelated": 0.0}
+WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 1.5, "supertype": 0.5, "unrelated": 0.0}
 
 
 def load_obs_snapshot(path: str) -> dict[str, str]:
@@ -203,7 +203,7 @@ def main() -> int:
     print(f"[evaluate_annotations] {args.project_dir}")
     print(f"  细胞数: {n}")
     print(f"  strict accuracy(exact/synonym): {report['strict_accuracy']}")
-    print(f"  relaxed accuracy(partial=0.5):  {report['relaxed_accuracy']}")
+    print(f"  relaxed accuracy(subtype=1.5, supertype=0.5):  {report['relaxed_accuracy']}")
     print(f"  macro-F1(soft):                 {report['macro_f1_soft']}")
     print(f"  聚类纯度(均值):                  {report['mean_cluster_purity']}  ({len(cluster_rows)} 簇)")
     if unmatched_terms:

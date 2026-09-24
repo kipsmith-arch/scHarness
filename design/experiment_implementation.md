@@ -62,12 +62,12 @@
 
 ### 1.4 评估指标体系(细胞级,被 B1/A1/N1/C2/C4 共用)
 
-**计分公式、关系判定、钉表/别名**以 `eval_design.md` 为准(headline = strict; relaxed 并列; macro-F1 为辅; 把握不进准确率)。本节只保留实验怎么用这些数字。
+**计分公式、关系判定、钉表/别名**以 `eval_design.md` 为准(headline = 准确率; 层次得分并列; macro-F1 为辅; 把握不进分数)。本节只保留实验怎么用这些数字。
 
 | 层级 | 指标 | 定义 | 用途 |
 |---|---|---|---|
-| **headline** | per-cell strict | exact/synonym 细胞占比 | 注释是否点到该细胞 GT 节点 |
-| **并列** | per-cell relaxed | 细胞权重平均(subtype/supertype=0.5) | 同一枝上的粗/细 |
+| **headline** | per-cell 准确率 | 细胞权重平均(exact/synonym/subtype=1, supertype=0) | 不超过 1 |
+| **并列** | 层次得分 | 细胞权重平均(subtype=1.5, supertype=0.5) | 可以大于 1,不叫准确率 |
 | 辅 | per-cell macro-F1 | 各类 soft-F1 算术平均 | 类型均衡;`Unknown` 会压低,不作唯一主判据 |
 | 辅 | 混淆 / per-type F1 / relation 直方图 | 真值×预测与细/粗/错枝 | 失败模式 |
 | 辅 | unknown 率 | `session_end.final_summary.unknown_rate` 与 unmatched | KG 覆盖与放弃标注 |

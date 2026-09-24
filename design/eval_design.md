@@ -45,13 +45,13 @@ GT / 钉表 / 别名 / 评分脚本  ∈  实验层(experiments/ + scripts/)
 
 ```
 评分 = 该细胞的预测节点 vs 该细胞的 GT 节点
-headline = strict(同一节点才满分)
-relaxed  = 同一枝上的粗/细给部分分,始终与 strict 并列报告
+headline = 准确率(同一节点或更细记 1,不超过 1)
+层次得分 = 更细记 1.5、更粗记 0.5,可以大于 1,与准确率并列报告
 ```
 
 - **禁止 `hits[0]`**:不能按「这个预测词在某张表里的第一行」给分。同一预测词、不同细胞 GT,关系必须不同。
 - **不限制输出词表**:钉表只钉 GT,不规定 pipeline 只能输出哪些 `Ontology.Name`。
-- **把握不进准确率**:`confidence` / `label_downgraded` 只进 `low_conf_rate` 诊断,不乘进 strict / relaxed。
+- **把握不进分数**:`confidence` / `label_downgraded` 只进 `low_conf_rate` 诊断,不乘进准确率或层次得分。
 
 ---
 
@@ -148,35 +148,38 @@ sibling / 邻层没有祖先边,就是 unrelated,不给部分分。
 
 ### 6.1 细胞权重
 
-| 关系 | 权重 $w$ |
-|---|---|
-| exact / synonym | 1.0 |
-| subtype / supertype | 0.5 |
-| unrelated / unmatched | 0.0 |
+两套权重,只在 `subtype` 上不同。不是 hop 数、不是图距离、不是生物学常数。1 hop 与 3 hop 用同一格。
 
-$w = 0.5$ 是预先约定的部分分:**同一条本体枝上的粗/细既不当满分,也不当零分。** 不是 hop 数、不是图距离、不是生物学常数。1 hop 与 3 hop 同为 0.5。改权重或按 hop 衰减视为评分版本变更,须改本文档并重评,不得只改代码。
+| 关系 | 准确率 $w^{acc}$ | 层次得分 $w^{hier}$ |
+|---|---|---|
+| exact / synonym | 1.0 | 1.0 |
+| subtype | 1.0 | 1.5 |
+| supertype | 0.0 | 0.5 |
+| unrelated / unmatched | 0.0 | 0.0 |
+
+准确率里子类型与同一节点相同,记 1,故准确率不超过 1。层次得分里子类型记 1.5、超类型记 0.5,均值可以大于 1,因此不叫准确率。改权重或按 hop 衰减视为评分版本变更,须改本文档并重评,不得只改代码。
 
 `confidence` 另有诊断权重(high/medium=1, low=0.5),**只写入 per_cell,不进入下面任何准确率或 F1。**
 
 ### 6.2 汇总(N = 可对齐的细胞数)
 
 $$
-\mathrm{strict} = \frac{1}{N}\sum_i \mathbf{1}[w_i = 1]
+\mathrm{accuracy} = \frac{1}{N}\sum_i w^{acc}_i
 $$
 
 $$
-\mathrm{relaxed} = \frac{1}{N}\sum_i w_i
+\mathrm{hierarchy\ score} = \frac{1}{N}\sum_i w^{hier}_i
 $$
 
-- **headline = strict**。表示「预测节点与该细胞 GT 节点是同一/同义」。
-- **relaxed 必须与 strict 并列报告**,不可只报其中一个。
-- unknown / unmatched 进分母、权重 0,从而压低两条准确率;这是刻意的(无类型真值不能假装对)。可另报「去掉 `Unknown` GT 后的 strict/relaxed」作诊断,不替代 headline。
+- **headline = 准确率**。同一节点、同义或更细的子类型记 1;更粗、错枝、未匹配记 0。
+- **层次得分必须与准确率并列报告**,不可只报其中一个。它不是准确率,可以大于 1。
+- unknown / unmatched 进分母、权重 0,从而压低两个分数;这是刻意的(无类型真值不能假装对)。可另报「去掉 `Unknown` GT 后的准确率 / 层次得分」作诊断,不替代 headline。
 
 ### 6.3 macro-F1(辅)
 
 对每个真值类型 $t$:
 
-- 细胞权重 $w_i>0$ 记入该类 TP(累加 $w_i$)
+- 层次得分权重 $w^{hier}_i>0$ 记入该类 TP(累加 $w^{hier}_i$)
 - $w_i=0$ 记入该类 FN(+1)
 - 预测节点映射回某个**其它**钉住的 GT 名时,记入那一类 FP
 
@@ -202,7 +205,7 @@ $$
 
 - 抽样单元 = 该次运行的 leiden 簇:有放回抽 N 个簇,抽中则带上该簇全部细胞
 - 默认 1000 次,95% CI
-- 每次重抽样同时算 strict、relaxed、macro-F1 的差
+- 每次重抽样同时算准确率、层次得分、macro-F1 的差
 
 B1 预先注册的效应量判定线(≥ 0.03 且 CI 不含 0)写在 `experiment_implementation.md` §3.1,服务的是**实验假说**,不是本评分公式。新实验要换判定线,改实验文档,不改本节。
 
@@ -212,7 +215,7 @@ B1 预先注册的效应量判定线(≥ 0.03 且 CI 不含 0)写在 `experiment
 
 | 现象 | 本评分怎么处理 |
 |---|---|
-| ③ 选了更细的 KG 词 | 若是该细胞 GT 的子孙 → strict 0、relaxed 0.5;否则 unrelated 0。细不等于加分 |
+| ③ 选了更细的 KG 词 | 若是该细胞 GT 的子孙 → 准确率记 1、层次得分记 1.5;否则两边都是 0 |
 | 交付锁死 `first_candidate` | 评分只看 `final_annotations.label`,不看 rank 第二名、不看 judgment 正文 |
 | 聚类切得更碎 | 只通过「换了一批细胞的 label」进入分数;纯度单独报 |
 | 决策点枚举 / run_log 缺字段 | P5 `validate_log.py` + evals,不是本文件 |

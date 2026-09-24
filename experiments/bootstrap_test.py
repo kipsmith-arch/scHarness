@@ -41,7 +41,7 @@ from collections import Counter
 
 STRICT_HIT = {"exact", "synonym"}
 PARTIAL_HIT = {"subtype", "supertype"}
-WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 0.5, "supertype": 0.5,
+WEIGHT = {"exact": 1.0, "synonym": 1.0, "subtype": 1.5, "supertype": 0.5,
           "unrelated": 0.0, "unmatched": 0.0}
 
 

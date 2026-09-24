@@ -74,8 +74,8 @@ def test_low_confidence_exact_counts_as_strict(tmp_path):
     assert by_cell["c2"]["is_strict_correct"] is True
     assert by_cell["c0"]["cell_weight"] == 1.0
     assert by_cell["c1"]["cell_weight"] == 0.0
-    assert report["strict_accuracy"] == 0.6667
-    assert report["relaxed_accuracy"] == 0.6667
+    assert report["accuracy"] == 0.6667
+    assert report["hierarchy_score"] == 0.6667
     assert report["low_conf_rate"] == 0.6667
     assert report["confidence_distribution"].get("low") == 2
 
@@ -106,7 +106,7 @@ def test_evaluate_arm_scores_against_this_cell_gt(tmp_path):
     assert by_cell["stele"]["is_strict_correct"] is True
     assert by_cell["cortex"]["relation"] == "unrelated"
     assert by_cell["cortex"]["is_strict_correct"] is False
-    assert report["strict_accuracy"] == 0.5
+    assert report["accuracy"] == 0.5
 
 
 def test_label_map_cli_is_rejected(monkeypatch):
