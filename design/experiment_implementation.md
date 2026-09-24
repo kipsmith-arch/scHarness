@@ -540,7 +540,7 @@ API 用量:③×1 + ⑥补×1 + ⑦×2 = **4 个全 session**,外加 S1 的 8 �
 ```
 experiment_design.md   策略层(假设/实验总览)   ← 本文档为其实施层(12 个实验全覆盖)
 eval_design.md         注释对错怎么打分(SCORE);§1.4 指标定义以它为准
-trajectory_design.md   13 决策点 + run_log 格式(B1/B3/B4 数据来源)
+trajectory_design.md   14 决策点 + run_log 格式(B1/B3/B4 数据来源)
 atomic_operations.md   47 原子操作(三臂跑的就是这些 op)
 operations_metrics_catalog.md  247 指标(B3 分析对象)
 tool_design.md         pipeline 实现(执行载体)

@@ -5,7 +5,7 @@
 本工程的科学贡献有四点,实验即围绕其验证:
 
 1. **Loop/Skill/Pipeline 三层分离** — 通用 agent harness(换 skill 可跑别的任务)
-2. **LLM 作为 13 个决策点的判断引擎** — 贯穿 pipeline 做 accept/adjust 判断,而非只在末端给标签
+2. **LLM 作为 14 个决策点的判断引擎** — 贯穿 pipeline 做 accept/adjust 判断,而非只在末端给标签。第 14 个是 `cross_species_routing`(覆盖预检之后、查图谱之前)
 3. **轨迹日志设计** — `run_log.jsonl` 记录判断的 inputs(看了哪些指标)+ reasoning + output,可导出训练对
 4. **247 个结构化指标 → LLM 判断** — 把统计测量"翻译"成决策
 5. **Loop 级通用记忆(笔记本)** — loop 内置、完全被动、与 skill 解耦的经验库;跨会话复用"上次类似情况怎么判的",验证其对判断质量的增益(见 §4.4 N 组)
@@ -55,7 +55,7 @@
 ### 4.1 B1 — 三臂决策对比(killer experiment)
 
 #### 假设
-LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.md` §3.1)的判断,能让 pipeline 产出比"固定默认参数"和"阈值启发式"更准确的细胞类型注释。
+LLM 在 14 个决策点(`qc_threshold`~`global_quality`,含 `cross_species_routing`,见 `trajectory_design.md` §3.1)的判断,能让 pipeline 产出比"固定默认参数"和"阈值启发式"更准确的细胞类型注释。
 
 #### 方案
 同一条 7 步 pipeline(47 原子操作),三组条件,唯一变量是决策方式:
@@ -66,7 +66,7 @@ LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.m
 | ② Rule-based | 阈值启发式 | 公平对照,排除"非默认就更好"的混淆 |
 | ③ LLM-judge | 本 harness 的 agent | 被测对象 |
 
-#### 三臂的逐决策点配置(13 个决策点)
+#### 三臂的逐决策点配置(14 个决策点)
 
 **关键背景**:`metrics_interpretation.md §原则1` 明确"pipeline 产出测量值,LLM 产出判断……**不写进代码**"。即整个项目的论点是反对硬编码决策阈值。先厘清两个易混术语:
 
@@ -103,6 +103,7 @@ LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.m
 | 决策点 | 读取指标(出处) | ① Default 标志 | ② Rule(阈值出处) | ② 预期失效(陷阱,出处) |
 |---|---|---|---|---|
 | `batch_effect` | `batch_mixing`:batch_graph_autocorr、per_cluster_batch_entropy、per_cluster_max_batch_fraction(metrics §batch_mixing) | well_mixed(假定无批次) | autocorr>0.3→batch_effect;单簇单批次且对应基因型→condition_specific;否则 well_mixed | **突变体/条件特异群体天然单批次**(陷阱6)——② 易误判 batch_effect 去做批次校正,抹掉真实群体 |
+| `cross_species_routing` | `step3a_kg_precheck` 的 `coverage_tier`、`recommended_strategy`(SOP-3;同源用来提高 KG 命中率) | `routing_accept`,跟随预检策略:`single_species` 跳过 step3b。本点要读覆盖档,不能固定成「永不映射」,否则零覆盖物种跑不通 | 同①:接受预检策略,不另点参考物种 | 覆盖档没有亲缘。参考物种按名录点名,最多 3 个。③ 还可 `routing_force_single` / `routing_force_cross` / `routing_multi_reference` |
 | `candidate_gap` (cluster) | `rank_candidates`:first/second_count、count_ratio、count_diff、first_second_ancestor_overlap(metrics §rank_candidates、§4 LLM 判断逻辑) | first_decisive(全跳过 step5) | ratio>2 AND count_diff≥3→decisive;ancestor_overlap→ambiguous_parent_child(选更具体,不入 step5);first≈second 无 overlap→ambiguous_true(路由 step5);first=None→unknown | **小样本 ratio 骗人**(陷阱3,2 vs 1 ratio=2 但只差 1)——须 count_diff 配合;**层级本体并列不是模糊**(陷阱2,root cap ⊃ lateral root cap 共享 marker)——② 若不查 ancestor_overlap 会误入 step5 |
 | `candidate_disambiguate` (cluster,仅并列簇) | `rank_candidates`:first_second_ancestor_overlap、first/second_mean_confidence | (① 无并列簇,此点不存在) | overlap→parent_child/synonym;无 overlap→ambiguous_true | 同义词 vs 父子类需本体遍历,阈值易把"同义"判成"真模糊" |
 | `refine_effect` (cluster,仅 analyzed) | `candidate_autocorr`:morans_i;`subcluster`:n_subclusters_with_distinct_type;`marker_overlap`:Jaccard(SOP-5、metrics §5) | (① 不进 step5,此点不存在) | morans_i>0.3 AND sub_distinct≥1 AND max_Jaccard<0.5→effective;morans_i<0.1→autocorr_low(skip);否则 ineffective | 子簇类型与父候选"完全无关"才是假分裂(SOP-5),阈值只看 Jaccard 无法判"无关" |
@@ -118,7 +119,7 @@ LLM 在 13 个决策点(`qc_threshold`~`global_quality`,见 `trajectory_design.m
 | 能触发重试/改参? | 否(静态) | 是(A/B 组规则触发) | 是(LLM 触发) |
 | 处理"陷阱"上下文? | 否 | **否(阈值无上下文)** | 是(读知识 + 上下文) |
 
-- ① = 盲 + 静态(完全无判断层);②③ 都读 metrics 且能重试,差别在"阈值 vs 推理"。
+- ① = 盲 + 静态(完全无判断层);②③ 都读 metrics 且能重试,差别在"阈值 vs 推理"。例外:`cross_species_routing` 上 ①② 都读预检策略再决定是否跳过同源。
 - **① vs ②**:加"读 metrics + 规则"比"完全不判"强吗?(判断层有无价值)
 - **② vs ③**:在 6 个陷阱点上,LLM 推理能否胜过硬编码阈值?(智能判断的价值——**核心假设,有具体预测落点**)
 
@@ -153,7 +154,7 @@ annot_harness/
 ├── scripted_driver.py  ← ①② 专用(走 DAG,确定性;与 loop 共用 dispatch)
 └── dag.py               ← 通用 DAG(nodes / deps / decision_after / 重试上限)
 experiments/
-├── cell_annotation_dag.py  ← 47 op + 13 个 decision_after(skill 外的 DAG 实例)
+├── cell_annotation_dag.py  ← 47 op + 14 个 decision_after(skill 外的 DAG 实例)
 ├── scripted_driver.py      ← 薄 CLI,委托 annot_harness.scripted_driver
 └── judges/
     ├── default_judge.py ← ①(当场 decide(),永不 adjust,不路由 step5)
@@ -240,7 +241,7 @@ def rule_judge(dp, exec_record, history):
 ### 4.2 B3 — 指标最小充分集
 
 #### 假设
-LLM 在 13 决策点实际高频引用的指标,只是 247 个中的一小部分(~30)。
+LLM 在 14 决策点实际高频引用的指标,只是 247 个中的一小部分(~30)。
 
 #### 方案
 从所有 `run_log.jsonl` 的 `judgment.records` 提取 `inputs[].path`,按 `{step}.{op}.{metric_path}` 聚合:
@@ -306,7 +307,7 @@ for key, records in by_key.items():
 - `refine_effect`:子簇 silhouette 是否提升
 
 #### 指标
-- 纠正对总数(最多 13 决策点 × 簇数)
+- 纠正对总数(最多 14 决策点 × 簇数)
 - 其中"改善"的比例(末版指标优于首版)
 - 平均改善幅度
 
@@ -321,7 +322,7 @@ for key, records in by_key.items():
 
 ### 4.4 N 组 — 笔记本消融与使用(通用记忆)
 
-> 被测对象是 loop 内置笔记本(`write_note` / `retrieve_notes`,见 `rag_design.md`)。本组不绑定 13 个决策点——记忆是 loop 级通用能力,评估也随之解耦。
+> 被测对象是 loop 内置笔记本(`write_note` / `retrieve_notes`,见 `rag_design.md`)。本组不绑定那 14 个决策点——记忆是 loop 级通用能力,评估也随之解耦。
 
 #### 假设
 loop 内置笔记本能让 LLM 跨会话复用经验,提升判断质量;且该能力与 skill 无关。
@@ -408,7 +409,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 ### 6.2 C4 — 多 API 模型对比(强烈建议)
 
 同一 pipeline 同一 skill,换不同 API 后端(GPT-4o / Claude-3.5 / Gemini 等),比:
-- 13 决策点的判断一致性(同输入下 decision 是否一致)
+- 14 决策点的判断一致性(同输入下 decision 是否一致)
 - 最终细胞级准确率
 - token 成本
 
@@ -421,7 +422,7 @@ N2 的使用率是"N1 结论是否可信"的前提:若 ⑦ 几乎不调用笔记
 ```
 atomic_operations.md            47 原子操作 — B1 三臂跑的就是这些 op
 operations_metrics_catalog.md   247 指标   — B3 分析 LLM 引用了哪些
-trajectory_design.md            13 决策点  — B1/B3/B4 的数据来源
+trajectory_design.md            14 决策点  — B1/B3/B4 的数据来源
 tool_design.md                  pipeline 实现 — 实验的执行载体
 loop_design.md                  通用 loop   — C4 换模型只改 loop 的 LLM 后端
 rag_design.md                   通用笔记本  — N1/N2/N3 的被测对象

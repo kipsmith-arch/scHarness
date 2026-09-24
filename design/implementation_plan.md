@@ -10,7 +10,7 @@
 
 | 资产 | 状态 | 说明 |
 |---|---|---|
-| 设计文档 | ✅ 完备 | `design/` 8 份 + `knowledge/` 4 份:47 原子操作 / 247 指标 / 13 决策点 / 12 实验 |
+| 设计文档 | ✅ 完备 | `design/` 8 份 + `knowledge/` 4 份:47 原子操作 / 247 指标 / 14 决策点 / 12 实验 |
 | 数据入库 | ✅ 完成 | `dataset/h5ad/<dataset_id>.h5ad`、`dataset/index/<dataset_id>.h5ad.csv`(真值类型列) |
 | 知识图谱 | ✅ 在线 | `NEO4J_*` 可连 |
 | 基因 ID 预处理 | ✅ 就绪（可选资源） | 物种基因 ID 对照表—— **不再被 skill 调用**,用户按需在 pipeline 上游完成 ID 转换 |
@@ -157,7 +157,7 @@ scripts/*.py         → 每个脚本执行 `--dump-schema` 输出 {subcommand, 
 | # | 任务 | 素材 | 产出 |
 |---|---|---|---|
 | S-1 | 建标准包骨架:`skills/cell-annotation/`(SKILL.md + scripts/ + references/ + assets/ + evals/),scripts/ 直接入住 P2 产物 | skill-creator anatomy | 合规目录 |
-| S-2 | **SKILL.md body(<500 行,中文,imperative)**:角色与任务理解 → 13 决策点流程(SOP-1~6 映射)→ 6 大陷阱警告 → 判断必附 reasoning 的依据 → **"何时读哪个 references 文件"指引** → 日志指导(session_start/judgment/session_end 模板) | knowledge/cell-annotation-sop.md、metrics_interpretation.md、trajectory §10 | SKILL.md |
+| S-2 | **SKILL.md body(<500 行,中文,imperative)**:角色与任务理解 → 14 决策点流程(SOP-1~6 映射,含 `cross_species_routing`)→ 6 大陷阱警告 → 判断必附 reasoning 的依据 → **"何时读哪个 references 文件"指引** → 日志指导(session_start/judgment/session_end 模板) | knowledge/cell-annotation-sop.md、metrics_interpretation.md、trajectory §10 | SKILL.md |
 | S-3 | **references/ 分块**(按决策点组织,配合 SKILL.md 的"看什么"清单):`sop.md`(全文)、`metrics.md`(247 指标解读全文)、`traps.md`(陷阱清单 + 反例)、`kg-schema.md` | knowledge/ 4 文件 | references/ |
 | S-4 | **frontmatter description**(触发机制):面向"注释单细胞数据/找 marker/细胞类型判断"等真实用户说法,写触发词;参照 skill-creator 的"pushy"原则 | — | frontmatter |
 | S-5 | 红线自检:**SKILL.md 不含 if-then 决策阈值**(只含解读参考值 + SOP 合格标准);动作空间 ⊆ trajectory §3.2 枚举 | experiment §4.1 | 合规检查 |

@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-pipeline 有 47 个原子操作,产出 247 个统计指标;LLM 在 13 个决策点做判断。所有指标和判断需要:
+pipeline 有 47 个原子操作,产出 247 个统计指标;LLM 在 14 个决策点做判断。所有指标和判断需要:
 
 1. **统一存储** — 一个文件,append-only,不覆盖
 2. **时间线** — 时间戳 + 序号,自然区分新旧
@@ -175,6 +175,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | batch_effect | step1_prepare batch_mixing 后 | session | 1 |
 | de_method | step2_markers 前 | session | 1 |
 | marker_quality | step2_markers filter_markers 后 | session | 1 |
+| cross_species_routing | step3a_kg_precheck 覆盖预检之后、同源映射或 step3c_kg 之前 | session | 1 |
 | kg_match | step3c_kg query_genes 后 | session | 1 |
 | candidate_gap | step4_judge rank_candidates 后 | cluster | N(簇数) |
 | candidate_disambiguate | step4_judge rank_candidates 后 | cluster | ≤N(仅并列簇) |
@@ -183,7 +184,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | label_confirm | step6_validate marker_expression 后 | cluster | N(簇数) |
 | global_quality | step7_diagnose cross_cluster 后 | session | 1 |
 
-一个 29 簇数据集约产出 **29×2 + 9 + 8 = 67 条** judgment 记录。
+一个 29 簇数据集约产出 **29×2 + 10 + 8 = 68 条** judgment 记录。session 级 10 个(含 `cross_species_routing`);29×2 为每簇的 `candidate_gap` 与 `label_confirm`;+8 为仅部分簇出现的消歧与细化。
 
 ### 3.2 decision 枚举词汇表
 
@@ -195,6 +196,7 @@ LLM 做完判断后追加。`run_ref` 指向该判断基于的 exec 记录的 `r
 | batch_effect | `batch_effect` / `condition_specific` / `well_mixed` | 批次效应 / 条件特异 / 混合良好 |
 | de_method | `wilcoxon` / `pseudobulk_all` / `pseudobulk_rare` | DE 方法选择 |
 | marker_quality | `markers_accept` / `markers_adjust_filter` / `markers_fail` | 接受 / 调参 / 失败 |
+| cross_species_routing | `routing_accept` / `routing_force_single` / `routing_force_cross` / `routing_multi_reference` | 接受预检策略 / 强制单物种 / 强制跨物种 / 点名多个参考物种(≤3) |
 | kg_match | `id_match_ok` / `id_mismatch_gene_key` / `id_mismatch_organ` | ID 匹配诊断 |
 | candidate_gap | `first_decisive` / `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` / `unknown` | 候选差距判断 |
 | candidate_disambiguate | `ambiguous_parent_child` / `ambiguous_synonym` / `ambiguous_true` | 并列候选消歧(仅并列簇;candidate_gap 词表子集) |
