@@ -286,6 +286,23 @@ def op_unknown_overlap(markers_json, annotations, log_path, params) -> dict:
     return m
 
 
+def subcluster_delivery(barcodes, sub_ids, sub_results: dict) -> dict:
+    """Keep each subcluster's already computed name, and which cells belong to it.
+
+    ``sub_results`` is ``{sub_id: {first_candidate: cell type or None}}``.
+    Cells with no candidate are recorded as ``unknown`` rather than dropped.
+    """
+    cell_subcluster: dict[str, str] = {}
+    for bc, sid in zip(barcodes, sub_ids):
+        cell_subcluster[str(bc)] = str(sid)
+    labels: dict[str, str] = {}
+    for sid in sorted(set(cell_subcluster.values())):
+        info = (sub_results or {}).get(sid) or {}
+        name = info.get("first_candidate")
+        labels[sid] = name if name else "unknown"
+    return {"labels": labels, "cell_subcluster": cell_subcluster}
+
+
 def op_write_refined(out_dir, log_path, params, payload) -> dict:
     path = os.path.join(out_dir, "refined_annotations.json")
     common.write_json(path, payload)
@@ -391,6 +408,14 @@ def cmd_run(args) -> dict:
                 "overlap_metrics": overlap.get(c),
                 "type_membership": {k: v for k, v in membership.items() if k.startswith(f"{c}.")},
             }
+            if c in subs:
+                delivery = subcluster_delivery(
+                    list(subs[c].obs_names),
+                    subs[c].obs["sub_leiden"].astype(str).tolist(),
+                    sub_results.get(c, {}),
+                )
+                entry["subcluster"]["labels"] = delivery["labels"]
+                entry["subcluster"]["cell_subcluster"] = delivery["cell_subcluster"]
             if entry["status"] == "analyzed":
                 counts["n_analyzed"] += 1
             else:

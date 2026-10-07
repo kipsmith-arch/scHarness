@@ -41,6 +41,42 @@ def _scorer() -> OntologyScorer:
     )
 
 
+def test_subcluster_name_is_the_cell_label(tmp_path):
+    obs = tmp_path / "obs_snapshot.csv"
+    gt = tmp_path / "gt.csv"
+    ann = tmp_path / "final_annotations.json"
+    _write_csv(obs, ["cell_id", "leiden"], [
+        {"cell_id": "c0", "leiden": "5"},
+        {"cell_id": "c1", "leiden": "5"},
+    ])
+    _write_csv(gt, ["cell_barcode", "true_type"], [
+        {"cell_barcode": "c0", "true_type": "Lateral Root Cap"},
+        {"cell_barcode": "c1", "true_type": "Root stele"},
+    ])
+    ann.write_text(json.dumps({
+        "annotations": {
+            "5": {
+                "label": "lateral root cap",
+                "confidence": "high",
+                "status": "decisive",
+                "subcluster": {
+                    "outcome": "analyzed",
+                    "labels": {"0": "lateral root cap", "1": "root stele"},
+                    "cell_subcluster": {"c0": "0", "c1": "1"},
+                },
+            },
+        }
+    }), encoding="utf-8")
+    report = evaluate_arm(
+        "arm_t", str(tmp_path), str(obs), str(ann), _scorer(), load_gt(str(gt)),
+    )
+    by_cell = {c["cell"]: c for c in report["per_cell"]}
+    assert by_cell["c0"]["raw"] == "lateral root cap"
+    assert by_cell["c1"]["raw"] == "root stele"
+    assert by_cell["c0"]["is_strict_correct"] is True
+    assert by_cell["c1"]["is_strict_correct"] is True
+
+
 def test_low_confidence_exact_counts_as_strict(tmp_path):
     obs = tmp_path / "obs_snapshot.csv"
     gt = tmp_path / "gt.csv"

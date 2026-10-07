@@ -106,6 +106,22 @@ def load_gt(path: str) -> dict[str, str]:
     return mapping
 
 
+def delivered_label(entry: dict, cell: str) -> str:
+    """Cell name after subdivision, else the cluster label.
+
+    Subdivision already computed a name per subcluster. When that name and the
+    cell's subcluster id were written onto the annotation, the cell keeps its
+    own name instead of the parent cluster's single label.
+    """
+    sc = entry.get("subcluster") or {}
+    if sc.get("outcome") == "analyzed":
+        sid = (sc.get("cell_subcluster") or {}).get(cell)
+        name = (sc.get("labels") or {}).get(sid) if sid is not None else None
+        if name:
+            return name
+    return entry.get("label") or "unknown"
+
+
 def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
                  scorer: OntologyScorer, gt: dict) -> dict:
     """Return a per-arm evaluation report (accuracy from GT-pin + hierarchy)."""
@@ -124,7 +140,7 @@ def evaluate_arm(name: str, project_dir: str, obs_path: str, ann_path: str,
             unknown_leiden.add(str(leiden))
             raw, conf, status = "unknown", "low", "unknown"
         else:
-            raw = ent.get("label") or "unknown"
+            raw = delivered_label(ent, cell)
             conf = ent.get("confidence") or "medium"
             status = ent.get("status") or "decisive"
         relation = scorer.relation(raw, true)

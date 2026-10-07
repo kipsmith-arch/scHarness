@@ -374,6 +374,9 @@ def cmd_run(args) -> dict:
             "marker_gene_overlap_score": expr.get(c, {}).get("marker_gene_overlap_score"),
             "subcluster": r.get("subcluster"),
         }
+        sc = r.get("subcluster") or {}
+        if sc.get("outcome") == "analyzed" and sc.get("labels"):
+            annotations_out[c]["subcluster_labels"] = sc["labels"]
 
     from importlib.metadata import version as _pkg_version
     try:

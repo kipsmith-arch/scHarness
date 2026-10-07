@@ -453,6 +453,20 @@ def test_res_explicit_rejects_missing_target(tmp_path):
     assert "target-resolution" in result["error"]
 
 
+def test_subcluster_delivery_keeps_computed_names():
+    step5 = _load_module("step5_refine", SKILL_SCRIPTS / "step5_refine.py")
+    got = step5.subcluster_delivery(
+        ["c0", "c1", "c2"],
+        ["0", "1", "0"],
+        {
+            "0": {"first_candidate": "columella root cap cell"},
+            "1": {"first_candidate": None},
+        },
+    )
+    assert got["labels"] == {"0": "columella root cap cell", "1": "unknown"}
+    assert got["cell_subcluster"] == {"c0": "0", "c1": "1", "c2": "0"}
+
+
 def test_step5_refuses_without_clusters(tmp_path):
     step5 = _load_module("step5_refine", SKILL_SCRIPTS / "step5_refine.py")
     for name in ("step4_rank", "step3c_kg", "step2_markers"):
