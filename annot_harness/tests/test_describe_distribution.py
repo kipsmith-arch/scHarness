@@ -31,6 +31,14 @@ def test_histogram_is_count_list_beside_percentiles():
     np.testing.assert_allclose(edges[-1], d["max"])
 
 
+def test_ulp_scale_range_keeps_histogram_length():
+    values = np.array([1.0, 1.0 + 2e-16] * 10)
+    d = common.describe_distribution(values, n_bins=20)
+    assert d is not None
+    assert len(d["histogram"]) == 20
+    assert sum(d["histogram"]) == 20
+
+
 def test_compact_floats_keep_json_short():
     values = np.array([0.1234567890123, 1.0, 2.0])
     d = common.describe_distribution(values)

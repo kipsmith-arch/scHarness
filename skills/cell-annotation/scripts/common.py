@@ -303,7 +303,13 @@ def describe_distribution(values, n_bins: int = 20) -> Optional[dict]:
     from scipy.stats import skew, kurtosis
 
     pct_keys = [1, 5, 10, 25, 50, 75, 90, 95, 99]
-    counts, _edges = np.histogram(values, bins=n_bins)
+    try:
+        counts, _edges = np.histogram(values, bins=n_bins)
+    except ValueError:
+        # Identical or ulp-scale values cannot be split into n_bins finite edges
+        # (numpy: "Too many bins for data range"). Keep a length-n_bins histogram.
+        counts = np.zeros(n_bins, dtype=int)
+        counts[0] = len(values)
     mean = float(values.mean())
     std = float(values.std())
     p25, p75 = np.percentile(values, [25, 75])
