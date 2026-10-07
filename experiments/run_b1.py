@@ -41,6 +41,7 @@ ORGAN = "root"
 SPECIES: str | None = "arabidopsis_thaliana"
 SPECIES_TYPE = "Plant"
 ORGANISM = "Arabidopsis thaliana"
+BATCH_KEY: str | None = None
 QUERY_FASTA: str | None = None
 PY = sys.executable
 TOOL_TIMEOUT = 14400
@@ -86,6 +87,31 @@ def wipe_history() -> None:
 def arm3_task(project_dir: str) -> str:
     raw_rel = os.path.relpath(RAW, REPO_ROOT).replace("\\", "/")
     species_line = SPECIES or "(不传 --species，按 SKILL / KG 默认)"
+    batch_line = BATCH_KEY or "(不传 --batch-key，用脚本回退列)"
+    animal = (SPECIES_TYPE or "").strip().lower() == "animal"
+    if animal:
+        organ_line = "- organ: （动物不传。图谱不按器官区分，step3a/step3c 不要带 --organ）"
+        kg_rules = (
+            f"4. step3c_kg__query 不要带 --organ。必须带 --species {species_line} --species-type {SPECIES_TYPE}。\n"
+            f"5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --species-type {SPECIES_TYPE}，不要 --organ），写 cross_species_routing。"
+            "3a 只给覆盖档、不推荐参考物种。single_species 直接查 KG；mixed/cross_species_only 先 step3b_cross_species_map__run"
+            f"（自带 --query-fasta 若上面有 FASTA，并传入 --reference-species，同样带 --species-type {SPECIES_TYPE}）"
+            "再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。\n"
+        )
+    else:
+        organ_line = f"- organ: {ORGAN}"
+        kg_rules = (
+            f"4. step3c_kg__query 必须带 --organ {ORGAN} --species {species_line} --species-type {SPECIES_TYPE}。\n"
+            f"5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --organ {ORGAN} --species-type {SPECIES_TYPE}），写 cross_species_routing。"
+            "3a 只给覆盖档、不推荐参考物种。single_species 直接查 KG；mixed/cross_species_only 先 step3b_cross_species_map__run"
+            f"（自带 --query-fasta 若上面有 FASTA，并传入 --reference-species，同样带 --species-type {SPECIES_TYPE}）"
+            "再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。\n"
+        )
+    batch_rule = ""
+    if BATCH_KEY:
+        batch_rule = (
+            f"5b. step1_prepare__metrics 与 step1_prepare__run 必须带 --batch-key {BATCH_KEY}。\n"
+        )
     if QUERY_FASTA:
         fasta_rel = os.path.relpath(QUERY_FASTA, REPO_ROOT).replace("\\", "/")
         fasta_block = (
@@ -102,18 +128,17 @@ def arm3_task(project_dir: str) -> str:
 - raw h5ad: {raw_rel}
 - project-dir: {project_dir}
 - organism: {ORGANISM}
-- organ: {ORGAN}
-- species（step3c_kg --species）: {species_line}
+{organ_line}
+- species（step3c_kg --species，必须是图谱里的 Species 字符串）: {species_line}
 - species-type: {SPECIES_TYPE}
+- batch-key: {batch_line}
 {fasta_block}
 
 硬性要求：
 1. 第一次调工具前先 write_judgment__session-start。
 2. 严格按 SKILL SOP 走 step1→step7。每个决策点都要 write_judgment__add。
 3. step1_prepare__run 与 recluster 必须带显式 --target-resolution（脚本不再 knee 选定）。
-4. step3c_kg__query 必须带 --organ {ORGAN}。
-5. marker 接受后先 step3a_kg_precheck__run（--target-species {species_line} --organ {ORGAN}），写 cross_species_routing。3a 只给覆盖档、不推荐参考物种。single_species 直接查 KG；mixed/cross_species_only 先 step3b_cross_species_map__run（自带 --query-fasta 若上面有 FASTA，并传入 --reference-species）再 step3c_kg__query --ortholog-map。同源是 SOP-3 查图谱的一部分，用来提高 KG 命中率。不要先打空 KG 再补同源。
-6. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
+{kg_rules}{batch_rule}6. 需要细化时再调 step5_refine__run，并传入 --clusters（逗号分隔簇 id）；不要让脚本自路由。
 7. write_judgment 的 output.action 不会被 loop 执行：要重跑/换参必须再调对应工具。
 8. 同一 {{step}}.{{op}} 最多 #1 + 5 次重试（#2–#6）。不要调用第 7 次；若闸门仍不满足，judgment 用该点的 accept 枚举且 action=cap_exhausted_proceed，然后继续 SOP。
 9. 不要调用 write_note / retrieve_notes（本臂禁用笔记本；session 已 --no-notebook）。
@@ -200,6 +225,10 @@ def run_arm12(arm: str, project_dir: Path, session_id: str) -> None:
     ]
     if SPECIES:
         cmd.extend(["--species", SPECIES])
+    if SPECIES_TYPE:
+        cmd.extend(["--species-type", SPECIES_TYPE])
+    if BATCH_KEY:
+        cmd.extend(["--batch-key", BATCH_KEY])
     if QUERY_FASTA:
         cmd.extend(["--query-fasta", QUERY_FASTA])
     run(cmd)
@@ -291,7 +320,7 @@ def _refuse_stale_logs() -> None:
 
 
 def main() -> int:
-    global RAW, OUT, GT_CSV, GT_ONTOLOGY, ALIASES, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM, QUERY_FASTA
+    global RAW, OUT, GT_CSV, GT_ONTOLOGY, ALIASES, ORGAN, SPECIES, SPECIES_TYPE, ORGANISM, QUERY_FASTA, BATCH_KEY
     ap = argparse.ArgumentParser(description="Wipe B1 history and rerun three arms.")
     ap.add_argument("--no-wipe", action="store_true", help="Keep existing --out (do not delete).")
     ap.add_argument("--skip-preflight", action="store_true")
@@ -301,6 +330,8 @@ def main() -> int:
     ap.add_argument("--species", default=SPECIES)
     ap.add_argument("--species-type", default=SPECIES_TYPE)
     ap.add_argument("--organism", default=ORGANISM)
+    ap.add_argument("--batch-key", default=None,
+                    help="obs batch column passed to step1 (e.g. sample)")
     ap.add_argument("--gt-csv", type=Path, default=GT_CSV)
     ap.add_argument("--gt-ontology", type=Path, default=GT_ONTOLOGY,
                     help="GT 字符串 → Ontology.Name 钉表")
@@ -326,6 +357,7 @@ def main() -> int:
     SPECIES = args.species or None
     SPECIES_TYPE = args.species_type
     ORGANISM = args.organism
+    BATCH_KEY = args.batch_key or None
     if args.query_fasta:
         qf = args.query_fasta if args.query_fasta.is_absolute() else REPO_ROOT / args.query_fasta
         if not qf.is_file():
@@ -352,7 +384,8 @@ def main() -> int:
     log(f"python={PY}")
     if "LM" not in PY.replace("\\", "/"):
         log(f"WARN interpreter may not be conda LM: {PY}")
-    log(f"raw={RAW} out={OUT} organ={ORGAN} species={SPECIES} query_fasta={QUERY_FASTA}")
+    log(f"raw={RAW} out={OUT} organ={ORGAN} species={SPECIES} "
+        f"species_type={SPECIES_TYPE} batch_key={BATCH_KEY} query_fasta={QUERY_FASTA}")
     run_arm12("default", ARM1, "sess-b1-arm1-default")
     run_arm12("rule", ARM2, "sess-b1-arm2-rule")
     run_arm3()

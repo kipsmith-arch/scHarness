@@ -472,6 +472,12 @@ def _rank_candidates(per_cluster_genes, gene_to_cts, target):
         for key, e in agg.items():
             uniq_markers = list(dict.fromkeys(e["supporting_markers"]))
             organs = sorted(e["organs"])
+            # Animals: organ is unset. Every candidate stays "unknown" so ranking
+            # falls through to marker_count. Plants still classify against target.
+            if target and str(target).strip():
+                organ_status = _organ_status(organs, target)
+            else:
+                organ_status = "unknown"
             cand = {
                 "cell_type": key,
                 "supporting_markers": uniq_markers,
@@ -480,7 +486,7 @@ def _rank_candidates(per_cluster_genes, gene_to_cts, target):
                 "min_confidence": float(np.min(e["confidences"])) if e["confidences"] else None,
                 "sources": sorted(e["sources"]),
                 "organ": organs,
-                "organ_status": _organ_status(organs, target),
+                "organ_status": organ_status,
             }
             if e["source_paths"]:
                 cand["source_path_set"] = sorted(e["source_paths"])
@@ -575,14 +581,15 @@ def cmd_query(args) -> dict:
     markers = common.read_json(os.path.join(step2_dir, "markers.json"))
     if not markers:
         return common.fail("缺少 step2_markers/markers.json,请先运行 step2_markers run")
-    # target organ 必填(spec 设计:代码中不硬编码任何 organ 名称;缺 --organ 则 fail-fast)
-    if not args.organ or not str(args.organ).strip():
-        return common.fail("--organ 必填:目标 organ 名称(如 root / brain / leaf);默认不提供任何 organ")
-
     # B 类参数:CLI 未传时从 SUPPRESS 落到代码默认(env 不接管,运维仅靠 CLI 临时改)
     min_confidence = common.env_or_default(args, "min_confidence", (), 0.0, cast=float)
     max_ancestor_hops = common.env_or_default(args, "max_ancestor_hops", (), 3, cast=int)
     species_type = common.env_or_default(args, "species_type", (), "Plant")
+    # 植物按器官过滤,缺省 fail-fast。动物图谱不区分器官,默认不传 --organ。
+    organ = (args.organ or "").strip() or None
+    if species_type != "Animal" and not organ:
+        return common.fail("--organ 必填:植物目标 organ(如 root / leaf);动物不传")
+    args.organ = organ
 
     cfg = common.neo4j_config(args)
     p = {"organ": args.organ, "species": args.species, "species_type": species_type,

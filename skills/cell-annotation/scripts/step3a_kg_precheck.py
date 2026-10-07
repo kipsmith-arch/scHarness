@@ -38,8 +38,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # A-class (LLM-visible): biological decisions + I/O paths
     p_r.add_argument("--target-species", required=True,
                      help="target species in Ensembl/KG format (lower_underscore, e.g. arabidopsis_thaliana)")
-    p_r.add_argument("--organ", required=True,
-                     help="target organ (passed through for downstream step3c_kg)")
+    p_r.add_argument("--organ", default=None,
+                     help="target organ for plants; omit for animals (KG has no organ split)")
     p_r.add_argument("--species-type", default="Plant",
                      help="species type for KG/Species_type filter (Plant / Animal / Fungi ...)")
     p_r.add_argument("--project-dir", default="output",
@@ -121,8 +121,11 @@ def cmd_run(args) -> dict:
     cfg = common.neo4j_config(args)
     target = args.target_species
     species_type = args.species_type or "Plant"
+    organ = (args.organ or "").strip() or None
+    if species_type != "Animal" and not organ:
+        return common.fail("--organ 必填:植物图谱按器官过滤;动物不传")
 
-    params = {"target_species": target, "organ": args.organ, "species_type": species_type,
+    params = {"target_species": target, "organ": organ, "species_type": species_type,
               "high_threshold": args.high_threshold, "low_threshold": args.low_threshold}
 
     driver = _driver(cfg)
@@ -141,7 +144,7 @@ def cmd_run(args) -> dict:
     payload = {
         "target_species": target,
         "target_species_type": species_type,
-        "target_organ": args.organ,
+        "target_organ": organ,
         "computed_at": common.now_iso(),
         "kg_query_stats": {
             "n_target_genes_in_kg": cov["n_target_genes_in_kg"],

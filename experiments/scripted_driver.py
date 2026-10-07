@@ -34,7 +34,11 @@ def main() -> int:
     ap.add_argument("--raw", default=None, help="Raw h5ad path (passed as --input to step1)")
     ap.add_argument("--organ", default="root")
     ap.add_argument("--species", default=None,
-                    help="Passed to step3c_kg__query --species (e.g. sorghum_bicolor)")
+                    help="Passed to step3c_kg__query --species (KG Species string, e.g. Human)")
+    ap.add_argument("--species-type", default="Plant",
+                    help="KG Species_type filter (Plant / Animal). Default Plant matches the Arabidopsis runs.")
+    ap.add_argument("--batch-key", default=None,
+                    help="obs column for step1 batch mixing. Omit to use the script fallback.")
     ap.add_argument("--query-fasta", default=None,
                     help="Protein FASTA for step3b (exists → blastp). Also CELL_ANNOTATION_QUERY_FASTA.")
     ap.add_argument("--session-id", default=None)
@@ -48,6 +52,9 @@ def main() -> int:
     # Only flags every tool accepts. --organ/--input are per-node (step2 has
     # --input but must not receive the raw h5ad; step2/4/6/7 have no --organ).
     base_args = {"project_dir": args.project_dir}
+    # Animal KG nodes have no organ split (organ field is Unknown). Do not pass
+    # --organ into KG steps. step1 still records the sample tissue.
+    kg_organ = None if (args.species_type or "").strip().lower() == "animal" else args.organ
     dag = []
     for node in CELL_ANNOTATION_DAG:
         extra = dict(node.default_args)
@@ -55,17 +62,24 @@ def main() -> int:
             extra["organ"] = args.organ
             if args.raw:
                 extra["input"] = args.raw
+            if args.batch_key:
+                extra["batch_key"] = args.batch_key
         elif node.id == "step3a_kg_precheck.run":
-            extra["organ"] = args.organ
+            if kg_organ:
+                extra["organ"] = kg_organ
             extra["target_species"] = args.species or "arabidopsis_thaliana"
+            extra["species_type"] = args.species_type
         elif node.id == "step3b_cross_species_map.run":
             extra["target_species"] = args.species or "arabidopsis_thaliana"
+            extra["species_type"] = args.species_type
             extra["input"] = os.path.join(args.project_dir, "step2_markers", "markers.json")
             fasta = args.query_fasta or os.environ.get("CELL_ANNOTATION_QUERY_FASTA")
             if fasta:
                 extra["query_fasta"] = fasta
         elif node.id == "step3c_kg.query":
-            extra["organ"] = args.organ
+            if kg_organ:
+                extra["organ"] = kg_organ
+            extra["species_type"] = args.species_type
             if args.species:
                 extra["species"] = args.species
         dag.append(replace(node, default_args=extra) if extra != node.default_args else node)

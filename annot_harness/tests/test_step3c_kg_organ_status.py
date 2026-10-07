@@ -315,3 +315,28 @@ class TestOrganStatus:
         for orgs, target, want in cases:
             got = step3c_kg._organ_status(orgs, target)
             assert got == want, f"_organ_status({orgs=}, {target=!r}) = {got!r}, want {want!r}"
+
+
+def test_rank_without_organ_keeps_candidates():
+    """Animal queries omit --organ. Ranking must not require a target organ."""
+    per_cluster = step3c_kg._rank_candidates(
+        {"0": ["CD3D", "IL7R"]},
+        {
+            "CD3D": [{
+                "cell_type": "natural killer cell",
+                "confidence": 0.7,
+                "source": "kg",
+                "organ": "Unknown",
+            }],
+            "IL7R": [{
+                "cell_type": "T cell",
+                "confidence": 0.7,
+                "source": "kg",
+                "organ": "Unknown",
+            }],
+        },
+        None,
+    )
+    cands = per_cluster["0"]["candidates"]
+    assert {c["cell_type"] for c in cands} == {"natural killer cell", "T cell"}
+    assert all(c["organ_status"] == "unknown" for c in cands)
